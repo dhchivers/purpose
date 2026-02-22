@@ -509,4 +509,57 @@ Create a comprehensive purpose synthesis that includes:
 Be authentic, inspiring, and specific to THEIR unique responses. This should feel deeply personal to them.
 ''';
   }
+
+  /// Generate clarification questions for Phase 2 of value creation
+  Future<List<String>> generateValueClarificationQuestions({
+    required String seedValue,
+  }) async {
+    final prompt = '''
+You are a values clarification expert helping a user explore what a value truly means to them.
+
+The user has selected "$seedValue" as a value they want to develop and articulate.
+
+Generate exactly 3 clarification questions that will help them:
+1. Define what this value personally means to them (not just dictionary definition)
+2. Identify how this value shows up or could show up in their life
+3. Connect the value to their deeper motivations or aspirations
+
+Questions should be:
+- Open-ended and thought-provoking
+- Personal and introspective
+- Specific enough to generate meaningful answers
+- Focused on the user's unique interpretation and experience
+
+Return ONLY a JSON array of 3 question strings, like this:
+["Question 1 here?", "Question 2 here?", "Question 3 here?"]
+
+No additional text or formatting, just the JSON array.
+''';
+
+    try {
+      final response = await _makeOpenAIRequest(
+        model: AIConfig.defaultModel,
+        messages: [
+          {
+            'role': 'user',
+            'content': prompt,
+          },
+        ],
+        temperature: 0.8, // Higher temperature for creative questions
+        maxTokens: 500,
+      );
+      
+      final content = _extractContent(response);
+      final questions = jsonDecode(content) as List;
+      return questions.cast<String>();
+    } catch (e) {
+      print('Error generating clarification questions: $e');
+      // Fallback to generic questions if AI fails
+      return [
+        'What does "$seedValue" mean to you personally?',
+        'Can you describe a time when this value was particularly important to you?',
+        'How would your life be different if you more fully lived this value?',
+      ];
+    }
+  }
 }
