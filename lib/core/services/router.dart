@@ -13,6 +13,8 @@ import 'package:purpose/features/admin/admin_values_seeds_page.dart';
 import 'package:purpose/features/purpose/purpose_modules_page.dart';
 import 'package:purpose/features/purpose/module_questionnaire_page.dart';
 import 'package:purpose/features/purpose/identity_analysis_page.dart';
+import 'package:purpose/features/values/values_page.dart';
+import 'package:purpose/features/values/value_creation_flow_page.dart';
 import 'package:purpose/core/constants/app_constants.dart';
 
 /// Provider for GoRouter configuration
@@ -115,6 +117,16 @@ final routerProvider = Provider<GoRouter>((ref) {
         path: '/purpose/analysis',
         name: 'purpose-analysis',
         builder: (context, state) => const IdentityAnalysisPage(),
+      ),
+      GoRoute(
+        path: '/values',
+        name: 'values',
+        builder: (context, state) => const ValuesPage(),
+      ),
+      GoRoute(
+        path: '/values/create',
+        name: 'values-create',
+        builder: (context, state) => const ValueCreationFlowPage(),
       ),
       // TODO: Add more routes as features are developed
       // GoRoute(
