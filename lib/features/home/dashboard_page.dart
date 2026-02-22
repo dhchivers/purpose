@@ -258,11 +258,7 @@ class DashboardPage extends ConsumerWidget {
                       child: _QuickActionButton(
                         icon: Icons.diamond_outlined,
                         label: 'Values',
-                        onTap: () {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(content: Text('Values module coming soon!')),
-                          );
-                        },
+                        onTap: () => context.go('/values'),
                       ),
                     ),
                     const SizedBox(width: 8),
@@ -461,9 +457,12 @@ class _ValuesCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
+      child: InkWell(
+        onTap: () => context.go('/values'),
+        borderRadius: BorderRadius.circular(12),
+        child: Padding(
+          padding: const EdgeInsets.all(16.0),
+          child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Row(
@@ -539,6 +538,7 @@ class _ValuesCard extends StatelessWidget {
               ),
           ],
         ),
+      ),
       ),
     );
   }
