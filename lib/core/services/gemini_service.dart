@@ -562,4 +562,82 @@ No additional text or formatting, just the JSON array.
       ];
     }
   }
+
+  /// Generate scope narrowing questions and refined label for Phase 3
+  Future<Map<String, dynamic>> generateValueScopeNarrowing({
+    required String seedValue,
+    required List<String> phase2Questions,
+    required List<String> phase2Answers,
+  }) async {
+    final answersContext = StringBuffer();
+    for (int i = 0; i < phase2Questions.length; i++) {
+      answersContext.writeln('Q: ${phase2Questions[i]}');
+      answersContext.writeln('A: ${phase2Answers[i]}');
+      answersContext.writeln();
+    }
+
+    final prompt = '''
+You are a values clarification expert helping a user narrow down and refine their understanding of a value.
+
+Original Value: "$seedValue"
+
+The user has answered clarification questions:
+$answersContext
+
+Based on their responses, you need to:
+1. Generate a refined, more specific label for this value (2-4 words)
+2. Create 3 follow-up questions that help narrow the scope further
+
+The refined label should:
+- Capture the essence of what they described
+- Be more specific than the original "$seedValue"
+- Feel personal and authentic to their responses
+- Be concise (2-4 words)
+
+The 3 questions should:
+- Help identify specific contexts where this value applies
+- Clarify boundaries or limits of this value
+- Distinguish what this value is vs. what it's not for them
+
+Return ONLY a JSON object in this exact format:
+{
+  "refinedLabel": "Your refined 2-4 word label here",
+  "questions": [
+    "Question 1 here?",
+    "Question 2 here?",
+    "Question 3 here?"
+  ]
+}
+
+No additional text, just the JSON object.
+''';
+
+    try {
+      final response = await _makeOpenAIRequest(
+        model: AIConfig.defaultModel,
+        messages: [
+          {
+            'role': 'user',
+            'content': prompt,
+          },
+        ],
+        temperature: 0.8,
+        maxTokens: 600,
+      );
+      
+      final content = _extractContent(response);
+      return jsonDecode(content) as Map<String, dynamic>;
+    } catch (e) {
+      print('Error generating scope narrowing: $e');
+      // Fallback
+      return {
+        'refinedLabel': 'Personal $seedValue',
+        'questions': [
+          'In what specific areas of your life does this value matter most?',
+          'What are some situations where this value does NOT apply for you?',
+          'How is your version of this value different from how others might define it?',
+        ],
+      };
+    }
+  }
 }

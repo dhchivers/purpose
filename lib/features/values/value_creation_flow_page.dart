@@ -31,6 +31,12 @@ class _ValueCreationFlowPageState extends ConsumerState<ValueCreationFlowPage> {
   final _phase2Answer3Controller = TextEditingController();
   final _phase2FormKey = GlobalKey<FormState>();
 
+  // Phase 3 controllers
+  final _phase3Answer1Controller = TextEditingController();
+  final _phase3Answer2Controller = TextEditingController();
+  final _phase3Answer3Controller = TextEditingController();
+  final _phase3FormKey = GlobalKey<FormState>();
+
   @override
   void initState() {
     super.initState();
@@ -43,6 +49,9 @@ class _ValueCreationFlowPageState extends ConsumerState<ValueCreationFlowPage> {
     _phase2Answer1Controller.dispose();
     _phase2Answer2Controller.dispose();
     _phase2Answer3Controller.dispose();
+    _phase3Answer1Controller.dispose();
+    _phase3Answer2Controller.dispose();
+    _phase3Answer3Controller.dispose();
     super.dispose();
   }
 
@@ -507,7 +516,7 @@ class _ValueCreationFlowPageState extends ConsumerState<ValueCreationFlowPage> {
     );
   }
 
-  void _submitPhase2Answers() {
+  void _submitPhase2Answers() async {
     if (!_phase2FormKey.currentState!.validate()) {
       return;
     }
@@ -519,28 +528,217 @@ class _ValueCreationFlowPageState extends ConsumerState<ValueCreationFlowPage> {
     ];
 
     setState(() {
-      _session = _session?.copyWith(
+      _isLoading = true;
+    });
+
+    try {
+      // Generate Phase 3 questions and refined label
+      final geminiService = await ref.read(geminiServiceProvider.future);
+      final result = await geminiService.generateValueScopeNarrowing(
+        seedValue: _session!.seedValue,
+        phase2Questions: _session!.phase2Questions!,
         phase2Answers: answers,
-        currentPhase: 3, // Move to Phase 3
+      );
+
+      final refinedLabel = result['refinedLabel'] as String;
+      final questions = (result['questions'] as List).cast<String>();
+
+      setState(() {
+        _session = _session?.copyWith(
+          phase2Answers: answers,
+          currentPhase: 3,
+          refinedValuePhase3: refinedLabel,
+          phase3Questions: questions,
+        );
+        _isLoading = false;
+      });
+    } catch (e) {
+      setState(() {
+        _isLoading = false;
+      });
+      
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error generating Phase 3: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
+  /// Phase 3: Scope Narrowing
+  Widget _buildPhase3ScopeNarrowing() {
+    if (_session!.phase3Questions == null || _session!.phase3Questions!.isEmpty) {
+      return const Center(child: CircularProgressIndicator());
+    }
+
+    final questions = _session!.phase3Questions!;
+    final refinedLabel = _session!.refinedValuePhase3 ?? _session!.seedValue;
+
+    return SingleChildScrollView(
+      child: Form(
+        key: _phase3FormKey,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            // Header
+            Container(
+              padding: const EdgeInsets.all(24),
+              color: AppTheme.primaryTintLight,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 6,
+                        ),
+                        decoration: BoxDecoration(
+                          color: AppTheme.primary,
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                        child: const Text(
+                          'PHASE 3',
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 12,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      const Expanded(
+                        child: Text(
+                          'Narrow the Scope',
+                          style: TextStyle(
+                            fontSize: 20,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 16),
+                  // Show refined label
+                  Container(
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: AppTheme.primary, width: 2),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          'Refined Value:',
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w500,
+                            color: Colors.black54,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          refinedLabel,
+                          style: TextStyle(
+                            fontSize: 24,
+                            fontWeight: FontWeight.bold,
+                            color: AppTheme.primary,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  const Text(
+                    'Let\'s narrow down the specific ways this value applies to your life.',
+                    style: TextStyle(fontSize: 14, height: 1.5),
+                  ),
+                ],
+              ),
+            ),
+
+            // Questions
+            Padding(
+              padding: const EdgeInsets.all(24),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  _buildQuestionCard(
+                    questionNumber: 1,
+                    question: questions[0],
+                    controller: _phase3Answer1Controller,
+                  ),
+                  const SizedBox(height: 24),
+                  _buildQuestionCard(
+                    questionNumber: 2,
+                    question: questions[1],
+                    controller: _phase3Answer2Controller,
+                  ),
+                  const SizedBox(height: 24),
+                  _buildQuestionCard(
+                    questionNumber: 3,
+                    question: questions[2],
+                    controller: _phase3Answer3Controller,
+                  ),
+                  const SizedBox(height: 32),
+                  
+                  // Next button
+                  ElevatedButton(
+                    onPressed: _submitPhase3Answers,
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppTheme.primary,
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(vertical: 16),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                    ),
+                    child: const Text(
+                      'Continue to Next Phase',
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _submitPhase3Answers() {
+    if (!_phase3FormKey.currentState!.validate()) {
+      return;
+    }
+
+    final answers = [
+      _phase3Answer1Controller.text.trim(),
+      _phase3Answer2Controller.text.trim(),
+      _phase3Answer3Controller.text.trim(),
+    ];
+
+    setState(() {
+      _session = _session?.copyWith(
+        phase3Answers: answers,
+        currentPhase: 4, // Move to Phase 4
       );
     });
 
     // TODO: Save session to Firestore
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(
-        content: Text('Phase 2 complete! Moving to Phase 3...'),
+        content: Text('Phase 3 complete! Moving to Phase 4...'),
         duration: Duration(seconds: 2),
-      ),
-    );
-  }
-
-  /// Phase 3: Scope Narrowing (placeholder)
-  Widget _buildPhase3ScopeNarrowing() {
-    return const Center(
-      child: Text(
-        'Phase 3: Scope Narrowing\n(Coming next)',
-        textAlign: TextAlign.center,
-        style: TextStyle(fontSize: 18),
       ),
     );
   }
