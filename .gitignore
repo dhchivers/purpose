@@ -51,5 +51,9 @@ app.*.map.json
 firebase-debug.log
 firestore-debug.log
 
+# Firebase Functions
+functions/node_modules/
+functions/.eslintrc.json
+
 # Environment variables
 .env

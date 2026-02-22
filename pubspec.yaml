@@ -45,6 +45,7 @@ dependencies:
   firebase_core: ^3.7.1
   firebase_auth: ^5.3.4
   cloud_firestore: ^5.6.2
+  cloud_functions: ^5.1.5
   
   # HTTP Client for AI API calls
   http: ^1.2.2

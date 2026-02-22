@@ -1,5 +1,7 @@
 import 'dart:convert';
 import 'package:dart_openai/dart_openai.dart';
+import 'package:cloud_functions/cloud_functions.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:purpose/core/config/ai_config.dart';
 import 'package:purpose/core/models/user_answer.dart';
 import 'package:purpose/core/models/question.dart';
@@ -8,14 +10,97 @@ import 'package:purpose/core/models/question_module.dart';
 /// Service for interacting with OpenAI's GPT models
 class GeminiService {
   final String apiKey;
+  final FirebaseFunctions _functions = FirebaseFunctions.instance;
 
   GeminiService({String? apiKey}) : apiKey = apiKey ?? AIConfig.openAiApiKey {
     if (this.apiKey.isEmpty) {
       throw Exception('OpenAI API key not configured. Please set your API key.');
     }
     
-    // Initialize OpenAI with API key
-    OpenAI.apiKey = this.apiKey;
+    // Initialize OpenAI with API key (only used for non-web platforms)
+    if (!kIsWeb) {
+      OpenAI.apiKey = this.apiKey;
+    }
+  }
+
+  /// Make OpenAI API request, routing through Cloud Functions on web
+  Future<Map<String, dynamic>> _makeOpenAIRequest({
+    required String model,
+    required List<Map<String, dynamic>> messages,
+    double? temperature,
+    int? maxTokens,
+    Map<String, dynamic>? responseFormat,
+  }) async {
+    if (kIsWeb) {
+      // On web: use Firebase Cloud Function to avoid CORS
+      print('Using Cloud Function for OpenAI request (web platform)');
+      
+      final callable = _functions.httpsCallable('openaiProxy');
+      final result = await callable.call({
+        'requestBody': {
+          'model': model,
+          'messages': messages,
+          if (temperature != null) 'temperature': temperature,
+          if (maxTokens != null) 'max_tokens': maxTokens,
+          if (responseFormat != null) 'response_format': responseFormat,
+        },
+      });
+      
+      return result.data as Map<String, dynamic>;
+    } else {
+      // On native platforms: use dart_openai directly
+      print('Using dart_openai directly (native platform)');
+      
+      // Build messages for dart_openai
+      final openAIMessages = messages.map((m) {
+        return OpenAIChatCompletionChoiceMessageModel(
+          role: m['role'] == 'system' 
+              ? OpenAIChatMessageRole.system 
+              : OpenAIChatMessageRole.user,
+          content: [
+            OpenAIChatCompletionChoiceMessageContentItemModel.text(
+              m['content'] is List ? m['content'][0]['text'] : m['content']
+            ),
+          ],
+        );
+      }).toList();
+      
+      // Call OpenAI with appropriate parameters
+      final response = responseFormat != null
+          ? await OpenAI.instance.chat.create(
+              model: model,
+              messages: openAIMessages,
+              temperature: temperature,
+              maxTokens: maxTokens,
+              responseFormat: responseFormat.cast<String, String>(),
+            )
+          : await OpenAI.instance.chat.create(
+              model: model,
+              messages: openAIMessages,
+              temperature: temperature,
+              maxTokens: maxTokens,
+            );
+      
+      // Convert to same format as cloud function response
+      return {
+        'choices': response.choices.map((c) => {
+          'message': {
+            'content': c.message.content?.first.text ?? '',
+          },
+        }).toList(),
+      };
+    }
+  }
+
+  /// Extract content from OpenAI response
+  String _extractContent(Map<String, dynamic> response) {
+    final choices = response['choices'] as List;
+    if (choices.isEmpty) return '';
+    
+    final firstChoice = choices[0] as Map<String, dynamic>;
+    final message = firstChoice['message'] as Map<String, dynamic>;
+    
+    return message['content'] as String? ?? '';
   }
 
   /// Analyze a single answer and provide insights
@@ -27,21 +112,19 @@ class GeminiService {
     final prompt = _buildSingleAnswerPrompt(answer, question, module);
 
     try {
-      final response = await OpenAI.instance.chat.create(
+      final response = await _makeOpenAIRequest(
         model: AIConfig.defaultModel,
         messages: [
-          OpenAIChatCompletionChoiceMessageModel(
-            role: OpenAIChatMessageRole.user,
-            content: [
-              OpenAIChatCompletionChoiceMessageContentItemModel.text(prompt),
-            ],
-          ),
+          {
+            'role': 'user',
+            'content': prompt,
+          },
         ],
         temperature: AIConfig.temperature,
         maxTokens: AIConfig.maxTokens,
       );
       
-      return response.choices.first.message.content?.first.text ?? 'No response generated';
+      return _extractContent(response);
     } catch (e) {
       print('Error analyzing answer: $e');
       rethrow;
@@ -58,21 +141,19 @@ class GeminiService {
 
     try {
       // Use Pro model for comprehensive module analysis
-      final response = await OpenAI.instance.chat.create(
+      final response = await _makeOpenAIRequest(
         model: AIConfig.proModel,
         messages: [
-          OpenAIChatCompletionChoiceMessageModel(
-            role: OpenAIChatMessageRole.user,
-            content: [
-              OpenAIChatCompletionChoiceMessageContentItemModel.text(prompt),
-            ],
-          ),
+          {
+            'role': 'user',
+            'content': prompt,
+          },
         ],
         temperature: AIConfig.temperature,
         maxTokens: AIConfig.maxTokens,
       );
       
-      return response.choices.first.message.content?.first.text ?? 'No response generated';
+      return _extractContent(response);
     } catch (e) {
       print('Error analyzing module: $e');
       rethrow;
@@ -88,21 +169,19 @@ class GeminiService {
     final prompt = _buildPurposeStatementPrompt(allAnswers, allQuestions, modules);
 
     try {
-      final response = await OpenAI.instance.chat.create(
+      final response = await _makeOpenAIRequest(
         model: AIConfig.proModel,
         messages: [
-          OpenAIChatCompletionChoiceMessageModel(
-            role: OpenAIChatMessageRole.user,
-            content: [
-              OpenAIChatCompletionChoiceMessageContentItemModel.text(prompt),
-            ],
-          ),
+          {
+            'role': 'user',
+            'content': prompt,
+          },
         ],
         temperature: AIConfig.temperature,
         maxTokens: AIConfig.maxTokens,
       );
       
-      return response.choices.first.message.content?.first.text ?? 'No purpose statement generated';
+      return _extractContent(response);
     } catch (e) {
       print('Error generating purpose statement: $e');
       rethrow;
@@ -117,30 +196,24 @@ class GeminiService {
     final prompt = _buildIdentitySynthesisPrompt(jsonData);
 
     try {
-      final response = await OpenAI.instance.chat.create(
+      final response = await _makeOpenAIRequest(
         model: AIConfig.proModel, // Use gpt-4o for complex synthesis
         messages: [
-          OpenAIChatCompletionChoiceMessageModel(
-            role: OpenAIChatMessageRole.system,
-            content: [
-              OpenAIChatCompletionChoiceMessageContentItemModel.text(
-                _getIdentitySynthesisDirective()
-              ),
-            ],
-          ),
-          OpenAIChatCompletionChoiceMessageModel(
-            role: OpenAIChatMessageRole.user,
-            content: [
-              OpenAIChatCompletionChoiceMessageContentItemModel.text(prompt),
-            ],
-          ),
+          {
+            'role': 'system',
+            'content': _getIdentitySynthesisDirective(),
+          },
+          {
+            'role': 'user',
+            'content': prompt,
+          },
         ],
         temperature: 0.7,
         maxTokens: 4096,
         responseFormat: {"type": "json_object"}, // Request JSON response
       );
       
-      final content = response.choices.first.message.content?.first.text ?? '{}';
+      final content = _extractContent(response);
       return jsonDecode(content) as Map<String, dynamic>;
     } catch (e) {
       print('Error synthesizing identity: $e');
