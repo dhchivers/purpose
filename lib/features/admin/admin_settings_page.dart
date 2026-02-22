@@ -119,6 +119,16 @@ class AdminSettingsPage extends ConsumerWidget {
                 ),
                 const SizedBox(height: 12),
 
+                // Values Seeds Management
+                _buildAdminTile(
+                  context: context,
+                  icon: Icons.lightbulb_outline,
+                  title: 'Values Seeds',
+                  subtitle: 'Manage value options for exploration',
+                  onTap: () => context.go('/admin/values-seeds'),
+                ),
+                const SizedBox(height: 12),
+
                 // User Management
                 _buildAdminTile(
                   context: context,

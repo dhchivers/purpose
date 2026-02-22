@@ -589,4 +589,77 @@ class FirestoreService {
 
     await batch.commit();
   }
+
+  // ========== CONFIG/SEEDS OPERATIONS ==========
+
+  /// Get reference to config collection
+  CollectionReference get _configCollection => _db.collection('config');
+
+  /// Stream of value seeds from config/seeds document
+  Stream<List<String>> valueSeedsStream() {
+    return _configCollection.doc('seeds').snapshots().map((doc) {
+      if (!doc.exists) {
+        print('⚠️ Seeds document does not exist, returning empty list');
+        return <String>[];
+      }
+      
+      final data = doc.data() as Map<String, dynamic>?;
+      if (data == null || !data.containsKey('values')) {
+        print('⚠️ Seeds document has no values field, returning empty list');
+        return <String>[];
+      }
+
+      final values = data['values'];
+      if (values is! List) {
+        print('⚠️ Values field is not a list, returning empty list');
+        return <String>[];
+      }
+
+      return values.cast<String>();
+    });
+  }
+
+  /// Get value seeds as a future
+  Future<List<String>> getValueSeeds() async {
+    final doc = await _configCollection.doc('seeds').get();
+    if (!doc.exists) return [];
+    
+    final data = doc.data() as Map<String, dynamic>?;
+    if (data == null || !data.containsKey('values')) return [];
+
+    final values = data['values'];
+    if (values is! List) return [];
+
+    return values.cast<String>();
+  }
+
+  /// Add a new value seed
+  Future<void> addValueSeed(String value) async {
+    await _configCollection.doc('seeds').set({
+      'values': FieldValue.arrayUnion([value]),
+    }, SetOptions(merge: true));
+  }
+
+  /// Delete a value seed
+  Future<void> deleteValueSeed(String value) async {
+    await _configCollection.doc('seeds').update({
+      'values': FieldValue.arrayRemove([value]),
+    });
+  }
+
+  /// Update a value seed (replace old with new)
+  Future<void> updateValueSeed(String oldValue, String newValue) async {
+    final batch = _db.batch();
+    final docRef = _configCollection.doc('seeds');
+
+    // Remove old value and add new value atomically
+    batch.update(docRef, {
+      'values': FieldValue.arrayRemove([oldValue]),
+    });
+    batch.update(docRef, {
+      'values': FieldValue.arrayUnion([newValue]),
+    });
+
+    await batch.commit();
+  }
 }
