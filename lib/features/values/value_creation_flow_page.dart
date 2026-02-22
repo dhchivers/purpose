@@ -69,7 +69,7 @@ class _ValueCreationFlowPageState extends ConsumerState<ValueCreationFlowPage> {
     );
 
     if (confirm == true && mounted) {
-      context.go('/dashboard');
+      context.go('/');
     }
   }
 

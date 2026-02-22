@@ -19,7 +19,7 @@ class ValuesPage extends ConsumerWidget {
         title: const Text('My Values'),
         leading: IconButton(
           icon: const Icon(Icons.arrow_back),
-          onPressed: () => context.go('/dashboard'),
+          onPressed: () => context.go('/'),
         ),
       ),
       body: currentUserAsync.when(
