@@ -40,7 +40,7 @@ class _ModuleInsightsPageState extends ConsumerState<ModuleInsightsPage> {
     });
 
     try {
-      final aiProcessor = ref.read(aiProcessorServiceProvider);
+      final aiProcessor = await ref.read(aiProcessorServiceProvider.future);
       final firestoreService = ref.read(firestoreServiceProvider);
       
       // Get the module first

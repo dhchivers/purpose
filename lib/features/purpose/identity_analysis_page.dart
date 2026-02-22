@@ -11,7 +11,7 @@ final identitySynthesisResultProvider = FutureProvider<IdentitySynthesisResult?>
   final user = ref.watch(currentUserProvider).value;
   if (user == null) return null;
   
-  final synthesisService = ref.watch(identitySynthesisServiceProvider);
+  final synthesisService = await ref.watch(identitySynthesisServiceProvider.future);
   return await synthesisService.getOrSynthesize(user.uid);
 });
 
@@ -76,7 +76,7 @@ class _IdentityAnalysisPageState extends ConsumerState<IdentityAnalysisPage> {
       final user = ref.read(currentUserProvider).value;
       if (user == null) throw Exception('User not logged in');
       
-      final synthesisService = ref.read(identitySynthesisServiceProvider);
+      final synthesisService = await ref.read(identitySynthesisServiceProvider.future);
       await synthesisService.synthesizeAndSave(user.uid);
       
       // Refresh the provider
@@ -111,7 +111,7 @@ class _IdentityAnalysisPageState extends ConsumerState<IdentityAnalysisPage> {
       _statementController.text = result.purposeOptions[index].statement;
     });
     
-    final synthesisService = ref.read(identitySynthesisServiceProvider);
+    final synthesisService = await ref.read(identitySynthesisServiceProvider.future);
     await synthesisService.selectPurposeOption(
       result: result,
       optionIndex: index,
@@ -125,7 +125,7 @@ class _IdentityAnalysisPageState extends ConsumerState<IdentityAnalysisPage> {
     
     setState(() => _editedStatement = _statementController.text);
     
-    final synthesisService = ref.read(identitySynthesisServiceProvider);
+    final synthesisService = await ref.read(identitySynthesisServiceProvider.future);
     await synthesisService.editPurposeStatement(
       result: result,
       editedStatement: _statementController.text,
@@ -158,7 +158,7 @@ class _IdentityAnalysisPageState extends ConsumerState<IdentityAnalysisPage> {
         editedStatement: _editedStatement,
       );
       
-      final synthesisService = ref.read(identitySynthesisServiceProvider);
+      final synthesisService = await ref.read(identitySynthesisServiceProvider.future);
       await synthesisService.promotePurposeToProfile(
         userId: user.uid,
         result: updatedResult,

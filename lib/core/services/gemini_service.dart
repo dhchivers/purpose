@@ -7,13 +7,15 @@ import 'package:purpose/core/models/question_module.dart';
 
 /// Service for interacting with OpenAI's GPT models
 class GeminiService {
-  GeminiService() {
-    if (!AIConfig.isConfigured) {
-      throw Exception('OpenAI API key not configured. Please set your API key in ai_config.dart');
+  final String apiKey;
+
+  GeminiService({String? apiKey}) : apiKey = apiKey ?? AIConfig.openAiApiKey {
+    if (this.apiKey.isEmpty) {
+      throw Exception('OpenAI API key not configured. Please set your API key.');
     }
     
     // Initialize OpenAI with API key
-    OpenAI.apiKey = AIConfig.openAiApiKey;
+    OpenAI.apiKey = this.apiKey;
   }
 
   /// Analyze a single answer and provide insights
