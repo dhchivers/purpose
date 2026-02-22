@@ -4,6 +4,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:purpose/core/services/firebase_config.dart';
 import 'package:purpose/core/constants/app_constants.dart';
 import 'package:purpose/core/services/router.dart';
+import 'package:purpose/core/theme/app_theme.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -44,59 +45,12 @@ class MyApp extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final router = ref.watch(routerProvider);
 
-    // Graphite + Signal Blue theme colors
-    const signalBlue = Color(0xFF1E6BFF); // Primary blue
-    const lightBlue = Color(0xFF4D90FE); // Accent blue
-    const graphite = Color(0xFF121417); // Dark graphite
-    const lightBackground = Color(0xFFF5F5F7); // Light gray background
-    const cardWhite = Color(0xFFFFFFFF); // Card background
-
     return MaterialApp.router(
       title: AppConstants.appName,
       debugShowCheckedModeBanner: false,
-      theme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(
-          seedColor: signalBlue,
-          brightness: Brightness.light,
-          primary: signalBlue,
-          secondary: lightBlue,
-          surface: cardWhite,
-          background: lightBackground,
-        ),
-        useMaterial3: true,
-        scaffoldBackgroundColor: lightBackground,
-        appBarTheme: const AppBarTheme(
-          backgroundColor: graphite,
-          foregroundColor: Colors.white,
-          elevation: 0,
-        ),
-        cardTheme: const CardThemeData(
-          color: cardWhite,
-          elevation: 2,
-        ),
-      ),
-      darkTheme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(
-          seedColor: signalBlue,
-          brightness: Brightness.dark,
-          primary: signalBlue,
-          secondary: lightBlue,
-          surface: graphite,
-          background: Color(0xFF0A0A0A),
-        ),
-        useMaterial3: true,
-        scaffoldBackgroundColor: Color(0xFF0A0A0A),
-        appBarTheme: const AppBarTheme(
-          backgroundColor: graphite,
-          foregroundColor: Colors.white,
-          elevation: 0,
-        ),
-        cardTheme: const CardThemeData(
-          color: graphite,
-          elevation: 2,
-        ),
-      ),
-      themeMode: ThemeMode.light, // Light theme
+      theme: AppTheme.lightTheme,
+      darkTheme: AppTheme.darkTheme,
+      themeMode: ThemeMode.light,
       routerConfig: router,
     );
   }

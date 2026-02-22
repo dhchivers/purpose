@@ -5,6 +5,7 @@ import 'package:purpose/core/models/question_module.dart';
 import 'package:purpose/core/services/ai_processor_provider.dart';
 import 'package:purpose/core/services/firestore_provider.dart';
 import 'package:purpose/core/services/auth_provider.dart';
+import 'package:purpose/core/theme/app_theme.dart';
 
 /// Page to display AI-generated insights for a completed module
 class ModuleInsightsPage extends ConsumerStatefulWidget {
@@ -97,7 +98,7 @@ class _ModuleInsightsPageState extends ConsumerState<ModuleInsightsPage> {
 
         return Scaffold(
           appBar: AppBar(
-            backgroundColor: Colors.purple,
+            backgroundColor: AppTheme.primary,
             foregroundColor: Colors.white,
             title: Text('${module.name} - Insights'),
             leading: IconButton(
@@ -203,12 +204,8 @@ class _ModuleInsightsPageState extends ConsumerState<ModuleInsightsPage> {
           Container(
             width: double.infinity,
             padding: const EdgeInsets.all(24),
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                colors: [Colors.purple.shade700, Colors.purple.shade400],
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-              ),
+            decoration: const BoxDecoration(
+              gradient: AppTheme.primaryGradient,
             ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -313,7 +310,7 @@ class _ModuleInsightsPageState extends ConsumerState<ModuleInsightsPage> {
                   child: ElevatedButton.icon(
                     onPressed: () => context.go('/purpose'),
                     style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.purple,
+                      backgroundColor: AppTheme.primary,
                       foregroundColor: Colors.white,
                     ),
                     icon: const Icon(Icons.check_circle),

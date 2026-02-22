@@ -5,14 +5,23 @@ import 'package:purpose/core/models/identity_synthesis_result.dart';
 import 'package:purpose/core/models/tier_analysis.dart';
 import 'package:purpose/core/services/auth_provider.dart';
 import 'package:purpose/core/services/identity_synthesis_provider.dart';
+import 'package:purpose/core/theme/app_theme.dart';
 
 /// Provider for identity synthesis result
-final identitySynthesisResultProvider = FutureProvider<IdentitySynthesisResult?>((ref) async {
+/// Uses autoDispose to ensure fresh data on each page visit
+final identitySynthesisResultProvider = FutureProvider.autoDispose<IdentitySynthesisResult?>((ref) async {
   final user = ref.watch(currentUserProvider).value;
   if (user == null) return null;
   
+  print('=== IDENTITY SYNTHESIS PROVIDER TRIGGERED ===');
+  print('User ID: ${user.uid}');
+  print('Timestamp: ${DateTime.now().toIso8601String()}');
+  
   final synthesisService = await ref.watch(identitySynthesisServiceProvider.future);
-  return await synthesisService.getOrSynthesize(user.uid);
+  final result = await synthesisService.getOrSynthesize(user.uid);
+  
+  print('Provider result ID: ${result?.id ?? "error"}');
+  return result;
 });
 
 class IdentityAnalysisPage extends ConsumerStatefulWidget {
@@ -197,7 +206,7 @@ class _IdentityAnalysisPageState extends ConsumerState<IdentityAnalysisPage> {
 
     return Scaffold(
       appBar: AppBar(
-        backgroundColor: Colors.purple,
+        backgroundColor: AppTheme.primary,
         foregroundColor: Colors.white,
         title: const Text('Identity Analysis'),
         leading: IconButton(
@@ -308,7 +317,7 @@ class _IdentityAnalysisPageState extends ConsumerState<IdentityAnalysisPage> {
           children: [
             Row(
               children: [
-                Icon(Icons.psychology, color: Colors.purple[700]),
+                const Icon(Icons.psychology, color: AppTheme.primary),
                 const SizedBox(width: 8),
                 const Text(
                   'Integrated Identity',
@@ -375,7 +384,7 @@ class _IdentityAnalysisPageState extends ConsumerState<IdentityAnalysisPage> {
           children: [
             Row(
               children: [
-                Icon(Icons.layers, color: Colors.purple[700]),
+                const Icon(Icons.layers, color: AppTheme.primary),
                 const SizedBox(width: 8),
                 const Text(
                   'Tier Analysis',
@@ -474,7 +483,7 @@ class _IdentityAnalysisPageState extends ConsumerState<IdentityAnalysisPage> {
           children: [
             Row(
               children: [
-                Icon(Icons.edit, color: Colors.purple[700]),
+                const Icon(Icons.edit, color: AppTheme.primary),
                 const SizedBox(width: 8),
                 const Text(
                   'Edit Your Purpose Statement',
@@ -521,7 +530,7 @@ class _IdentityAnalysisPageState extends ConsumerState<IdentityAnalysisPage> {
           children: [
             Row(
               children: [
-                Icon(Icons.lightbulb, color: Colors.purple[700]),
+                const Icon(Icons.lightbulb, color: AppTheme.primary),
                 const SizedBox(width: 8),
                 const Text(
                   'Purpose Statement Options',
@@ -546,11 +555,11 @@ class _IdentityAnalysisPageState extends ConsumerState<IdentityAnalysisPage> {
                     padding: const EdgeInsets.all(16),
                     decoration: BoxDecoration(
                       border: Border.all(
-                        color: isSelected ? Colors.purple : Colors.grey[300]!,
+                        color: isSelected ? AppTheme.primary : Colors.grey[300]!,
                         width: isSelected ? 2 : 1,
                       ),
                       borderRadius: BorderRadius.circular(8),
-                      color: isSelected ? Colors.purple[50] : null,
+                      color: isSelected ? AppTheme.primaryTintLight : null,
                     ),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
@@ -558,15 +567,15 @@ class _IdentityAnalysisPageState extends ConsumerState<IdentityAnalysisPage> {
                         Row(
                           children: [
                             if (isSelected)
-                              const Icon(Icons.check_circle, color: Colors.purple, size: 20)
+                              const Icon(Icons.check_circle, color: AppTheme.primary, size: 20)
                             else
                               Icon(Icons.radio_button_unchecked, color: Colors.grey[400], size: 20),
                             const SizedBox(width: 8),
                             Text(
                               option.label,
-                              style: TextStyle(
+                              style: const TextStyle(
                                 fontWeight: FontWeight.bold,
-                                color: isSelected ? Colors.purple[700] : null,
+                                color: AppTheme.primary,
                               ),
                             ),
                           ],
@@ -577,7 +586,7 @@ class _IdentityAnalysisPageState extends ConsumerState<IdentityAnalysisPage> {
                           style: TextStyle(
                             fontSize: 16,
                             height: 1.5,
-                            color: isSelected ? Colors.purple[900] : null,
+                            color: isSelected ? AppTheme.graphite : null,
                           ),
                         ),
                       ],
@@ -603,7 +612,7 @@ class _IdentityAnalysisPageState extends ConsumerState<IdentityAnalysisPage> {
                 ? () => _promoteToPurpose(result)
                 : null,
             style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.purple,
+              backgroundColor: AppTheme.primary,
               foregroundColor: Colors.white,
               padding: const EdgeInsets.symmetric(vertical: 16),
               disabledBackgroundColor: Colors.grey[300],

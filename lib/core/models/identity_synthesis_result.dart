@@ -1,4 +1,5 @@
 import 'package:json_annotation/json_annotation.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:purpose/core/models/tier_analysis.dart';
 import 'package:purpose/core/models/integrated_identity.dart';
 import 'package:purpose/core/models/purpose_option.dart';
@@ -61,14 +62,37 @@ class IdentitySynthesisResult {
 
   /// Helper to convert DateTime from Firestore Timestamp
   static DateTime _dateTimeFromJson(dynamic json) {
+    if (json == null) return DateTime.now();
+    
+    // Handle Firestore Timestamp (works on both web and native)
+    if (json is Timestamp) {
+      return json.toDate();
+    }
+    
+    // Handle milliseconds since epoch (int)
     if (json is int) {
       return DateTime.fromMillisecondsSinceEpoch(json);
-    } else if (json is String) {
-      return DateTime.parse(json);
-    } else if (json is Map) {
-      // Firestore Timestamp format
-      return DateTime.fromMillisecondsSinceEpoch(json['_seconds'] * 1000);
     }
+    
+    // Handle ISO 8601 string
+    if (json is String) {
+      return DateTime.parse(json);
+    }
+    
+    // Handle JS object with toMillis method (from Firestore web SDK)
+    if (json is Map && json.containsKey('toMillis')) {
+      try {
+        // This is likely a Firestore Timestamp that wasn't properly converted
+        // Try to get milliseconds if available
+        final millis = json['toMillis']?.call();
+        if (millis is int) {
+          return DateTime.fromMillisecondsSinceEpoch(millis);
+        }
+      } catch (e) {
+        print('Error converting timestamp from map: $e');
+      }
+    }
+    
     return DateTime.now();
   }
 

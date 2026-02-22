@@ -60,7 +60,9 @@ exports.openaiProxy = functions.https.onCall(async (data, context) => {
     }
 
     const responseData = await response.json();
-    return responseData;
+    
+    // Convert to plain JSON to avoid Int64 serialization issues on web
+    return JSON.parse(JSON.stringify(responseData));
   } catch (error) {
     console.error("Error in openaiProxy:", error);
     if (error instanceof functions.https.HttpsError) {

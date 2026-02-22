@@ -5,8 +5,7 @@ import 'package:go_router/go_router.dart';
 import 'package:purpose/core/models/question_module.dart';
 import 'package:purpose/core/models/module_type.dart';
 import 'package:purpose/core/services/firestore_provider.dart';
-import 'package:purpose/core/services/auth_provider.dart';
-import 'dart:convert';
+import 'package:purpose/core/services/auth_provider.dart';import 'package:purpose/core/theme/app_theme.dart';import 'dart:convert';
 
 /// Provider for streaming Purpose modules
 final purposeModulesProvider = StreamProvider<List<QuestionModule>>((ref) {
@@ -49,17 +48,22 @@ final allPurposeModulesCompleteProvider = StreamProvider.family<bool, String>((r
     return;
   }
   
-  // Watch all module completions
-  final completionProviders = modulesAsync.map((module) {
-    return ref.watch(moduleCompletionProvider((userId: userId, moduleId: module.id)));
-  }).toList();
-  
-  // Wait for all to have data
-  final allComplete = completionProviders.every((async) {
-    return async.whenOrNull(data: (isComplete) => isComplete) ?? false;
-  });
-  
-  yield allComplete;
+  // Create streams for each module completion and combine them
+  await for (final _ in Stream.periodic(const Duration(milliseconds: 500))) {
+    // Get current completion status for all modules
+    final completionStates = modulesAsync.map((module) {
+      final completionAsync = ref.read(
+        moduleCompletionProvider((userId: userId, moduleId: module.id))
+      );
+      return completionAsync.whenOrNull(data: (isComplete) => isComplete) ?? false;
+    }).toList();
+    
+    // Check if all are complete
+    final allComplete = completionStates.isNotEmpty && 
+                        completionStates.every((isComplete) => isComplete);
+    
+    yield allComplete;
+  }
 });
 
 class PurposeModulesPage extends ConsumerWidget {
@@ -72,7 +76,7 @@ class PurposeModulesPage extends ConsumerWidget {
 
     return Scaffold(
       appBar: AppBar(
-        backgroundColor: Colors.purple,
+        backgroundColor: AppTheme.primary,
         foregroundColor: Colors.white,
         title: const Text('Purpose - Context Collection'),
         leading: IconButton(
@@ -104,7 +108,7 @@ class PurposeModulesPage extends ConsumerWidget {
                       Icon(
                         Icons.star_outline,
                         size: 80,
-                        color: Colors.purple[200],
+                        color: AppTheme.primaryLight,
                       ),
                       const SizedBox(height: 16),
                       const Text(
@@ -130,12 +134,8 @@ class PurposeModulesPage extends ConsumerWidget {
                   Container(
                     width: double.infinity,
                     padding: const EdgeInsets.all(24),
-                    decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                        colors: [Colors.purple.shade700, Colors.purple.shade400],
-                        begin: Alignment.topLeft,
-                        end: Alignment.bottomRight,
-                      ),
+                    decoration: const BoxDecoration(
+                      gradient: AppTheme.primaryGradient,
                     ),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
@@ -169,17 +169,17 @@ class PurposeModulesPage extends ConsumerWidget {
                   // Progress indicator
                   Container(
                     padding: const EdgeInsets.all(16),
-                    color: Colors.purple.shade50,
+                    color: AppTheme.primaryTintLight,
                     child: Row(
                       children: [
-                        const Icon(Icons.info_outline, color: Colors.purple),
+                        const Icon(Icons.info_outline, color: AppTheme.primary),
                         const SizedBox(width: 12),
                         Expanded(
                           child: Text(
                             'Answer questions in each module sequentially. Your responses will help shape your purpose statement.',
-                            style: TextStyle(
+                            style: const TextStyle(
                               fontSize: 14,
-                              color: Colors.purple.shade900,
+                              color: AppTheme.graphite,
                             ),
                           ),
                         ),
@@ -218,15 +218,15 @@ class PurposeModulesPage extends ConsumerWidget {
                             width: double.infinity,
                             padding: const EdgeInsets.all(16),
                             decoration: BoxDecoration(
-                              color: Colors.purple.shade50,
+                              color: AppTheme.primaryTintLight,
                               border: Border(
-                                top: BorderSide(color: Colors.purple.shade200),
+                                top: BorderSide(color: AppTheme.primaryLight),
                               ),
                             ),
                             child: ElevatedButton.icon(
                               onPressed: () => context.go('/purpose/analysis'),
                               style: ElevatedButton.styleFrom(
-                                backgroundColor: Colors.purple,
+                                backgroundColor: AppTheme.primary,
                                 foregroundColor: Colors.white,
                                 padding: const EdgeInsets.symmetric(vertical: 16),
                               ),
@@ -510,7 +510,7 @@ class _ModuleCard extends ConsumerWidget {
                       decoration: BoxDecoration(
                         color: isCompleted
                             ? Colors.green.shade100
-                            : Colors.purple.shade100,
+                            : AppTheme.primaryTintLight,
                         borderRadius: BorderRadius.circular(8),
                       ),
                       child: Center(
@@ -522,10 +522,10 @@ class _ModuleCard extends ConsumerWidget {
                               )
                             : Text(
                                 '${module.order}',
-                                style: TextStyle(
-                                  fontSize: 24,
-                                  fontWeight: FontWeight.bold,
-                                  color: Colors.purple.shade700,
+                                style: const TextStyle(
+                                  fontSize: 18,
+                                  fontWeight: FontWeight.w600,
+                                  color: AppTheme.primary,
                                 ),
                               ),
                       ),
@@ -673,16 +673,16 @@ class _ModuleCard extends ConsumerWidget {
                   width: 48,
                   height: 48,
                   decoration: BoxDecoration(
-                    color: Colors.purple.shade100,
+                    color: AppTheme.primaryTintLight,
                     borderRadius: BorderRadius.circular(8),
                   ),
                   child: Center(
                     child: Text(
                       '${module.order}',
-                      style: TextStyle(
+                      style: const TextStyle(
                         fontSize: 24,
                         fontWeight: FontWeight.bold,
-                        color: Colors.purple.shade700,
+                        color: AppTheme.primary,
                       ),
                     ),
                   ),

@@ -26,6 +26,23 @@ class FirestoreService {
   CollectionReference get _identitySynthesisResultsCollection =>
       _db.collection(AppConstants.identitySynthesisResultsCollection);
 
+  /// Helper to convert all Timestamp objects to ISO strings to avoid Int64 issues on web
+  /// Recursively processes Maps and Lists
+  static dynamic _convertTimestampsToStrings(dynamic data) {
+    if (data is Timestamp) {
+      return data.toDate().toIso8601String();
+    } else if (data is Map) {
+      // Convert to standard Map<String, dynamic> to avoid LinkedMap issues on web
+      return Map<String, dynamic>.from(
+        data.map((key, value) => 
+          MapEntry(key, _convertTimestampsToStrings(value)))
+      );
+    } else if (data is List) {
+      return data.map((item) => _convertTimestampsToStrings(item)).toList();
+    }
+    return data;
+  }
+
   // ========== USER OPERATIONS ==========
 
   /// Create or update a user profile with retry logic
@@ -165,8 +182,11 @@ class FirestoreService {
         .get();
 
     return snapshot.docs
-        .map((doc) =>
-            QuestionModule.fromJson({...doc.data() as Map<String, dynamic>, 'id': doc.id}))
+        .map((doc) {
+          final data = Map<String, dynamic>.from(doc.data() as Map);
+          data['id'] = doc.id;
+          return QuestionModule.fromJson(data);
+        })
         .toList();
   }
 
@@ -174,8 +194,9 @@ class FirestoreService {
   Future<QuestionModule?> getQuestionModule(String moduleId) async {
     final doc = await _questionModulesCollection.doc(moduleId).get();
     if (!doc.exists) return null;
-    return QuestionModule.fromJson(
-        {...doc.data() as Map<String, dynamic>, 'id': doc.id});
+    final data = Map<String, dynamic>.from(doc.data() as Map);
+    data['id'] = doc.id;
+    return QuestionModule.fromJson(data);
   }
 
   /// Stream of question modules for a parent module
@@ -186,8 +207,11 @@ class FirestoreService {
         .orderBy('order')
         .snapshots()
         .map((snapshot) => snapshot.docs
-            .map((doc) => QuestionModule.fromJson(
-                {...doc.data() as Map<String, dynamic>, 'id': doc.id}))
+            .map((doc) {
+              final data = Map<String, dynamic>.from(doc.data() as Map);
+              data['id'] = doc.id;
+              return QuestionModule.fromJson(data);
+            })
             .toList());
   }
 
@@ -211,8 +235,11 @@ class FirestoreService {
   Future<List<QuestionModule>> getAllQuestionModules() async {
     final snapshot = await _questionModulesCollection.orderBy('order').get();
     return snapshot.docs
-        .map((doc) =>
-            QuestionModule.fromJson({...doc.data() as Map<String, dynamic>, 'id': doc.id}))
+        .map((doc) {
+          final data = Map<String, dynamic>.from(doc.data() as Map);
+          data['id'] = doc.id;
+          return QuestionModule.fromJson(data);
+        })
         .toList();
   }
 
@@ -222,8 +249,11 @@ class FirestoreService {
         .orderBy('order')
         .snapshots()
         .map((snapshot) => snapshot.docs
-            .map((doc) => QuestionModule.fromJson(
-                {...doc.data() as Map<String, dynamic>, 'id': doc.id}))
+            .map((doc) {
+              final data = Map<String, dynamic>.from(doc.data() as Map);
+              data['id'] = doc.id;
+              return QuestionModule.fromJson(data);
+            })
             .toList());
   }
 
@@ -238,8 +268,11 @@ class FirestoreService {
         .get();
 
     return snapshot.docs
-        .map((doc) =>
-            Question.fromJson({...doc.data() as Map<String, dynamic>, 'id': doc.id}))
+        .map((doc) {
+          final data = Map<String, dynamic>.from(doc.data() as Map);
+          data['id'] = doc.id;
+          return Question.fromJson(data);
+        })
         .toList();
   }
 
@@ -247,7 +280,9 @@ class FirestoreService {
   Future<Question?> getQuestion(String questionId) async {
     final doc = await _questionsCollection.doc(questionId).get();
     if (!doc.exists) return null;
-    return Question.fromJson({...doc.data() as Map<String, dynamic>, 'id': doc.id});
+    final data = Map<String, dynamic>.from(doc.data() as Map);
+    data['id'] = doc.id;
+    return Question.fromJson(data);
   }
 
   /// Stream of questions for a module
@@ -258,8 +293,11 @@ class FirestoreService {
         .orderBy('order')
         .snapshots()
         .map((snapshot) => snapshot.docs
-            .map((doc) => Question.fromJson(
-                {...doc.data() as Map<String, dynamic>, 'id': doc.id}))
+            .map((doc) {
+              final data = Map<String, dynamic>.from(doc.data() as Map);
+              data['id'] = doc.id;
+              return Question.fromJson(data);
+            })
             .toList());
   }
 
@@ -270,8 +308,11 @@ class FirestoreService {
         .orderBy('order')
         .snapshots()
         .map((snapshot) => snapshot.docs
-            .map((doc) => Question.fromJson(
-                {...doc.data() as Map<String, dynamic>, 'id': doc.id}))
+            .map((doc) {
+              final data = Map<String, dynamic>.from(doc.data() as Map);
+              data['id'] = doc.id;
+              return Question.fromJson(data);
+            })
             .toList());
   }
 
@@ -319,8 +360,9 @@ class FirestoreService {
 
     if (snapshot.docs.isEmpty) return null;
     final doc = snapshot.docs.first;
-    return UserAnswer.fromJson(
-        {...doc.data() as Map<String, dynamic>, 'id': doc.id});
+    final docData = Map<String, dynamic>.from(doc.data() as Map);
+    docData['id'] = doc.id;
+    return UserAnswer.fromJson(docData);
   }
 
   /// Get all user answers for a question module
@@ -333,10 +375,12 @@ class FirestoreService {
         .where('questionModuleId', isEqualTo: questionModuleId)
         .get();
 
-    return snapshot.docs
-        .map((doc) =>
-            UserAnswer.fromJson({...doc.data() as Map<String, dynamic>, 'id': doc.id}))
-        .toList();
+    return snapshot.docs.map((doc) {
+      final docData = Map<String, dynamic>.from(doc.data() as Map);
+      docData['id'] = doc.id;
+      final data = _convertTimestampsToStrings(docData) as Map<String, dynamic>;
+      return UserAnswer.fromJson(data);
+    }).toList();
   }
 
   /// Stream of user's answers for a question module
@@ -348,10 +392,12 @@ class FirestoreService {
         .where('userId', isEqualTo: userId)
         .where('questionModuleId', isEqualTo: questionModuleId)
         .snapshots()
-        .map((snapshot) => snapshot.docs
-            .map((doc) => UserAnswer.fromJson(
-                {...doc.data() as Map<String, dynamic>, 'id': doc.id}))
-            .toList());
+        .map((snapshot) => snapshot.docs.map((doc) {
+              final docData = Map<String, dynamic>.from(doc.data() as Map);
+              docData['id'] = doc.id;
+              final data = _convertTimestampsToStrings(docData) as Map<String, dynamic>;
+              return UserAnswer.fromJson(data);
+            }).toList());
   }
 
   /// Check if a user has answered all questions in a module
@@ -385,8 +431,11 @@ class FirestoreService {
         .get();
 
     return snapshot.docs
-        .map((doc) =>
-            UserAnswer.fromJson({...doc.data() as Map<String, dynamic>, 'id': doc.id}))
+        .map((doc) {
+          final data = Map<String, dynamic>.from(doc.data() as Map);
+          data['id'] = doc.id;
+          return UserAnswer.fromJson(data);
+        })
         .toList();
   }
 
@@ -427,10 +476,18 @@ class FirestoreService {
       return '${a.id}:${a.answer}:${a.updatedAt.millisecondsSinceEpoch}';
     }).join('|');
     
+    print('=== HASH CALCULATION ===');
+    print('Answers count: ${allAnswers.length}');
+    print('Hash content length: ${hashContent.length}');
+    if (allAnswers.length <= 3) {
+      print('Hash content: $hashContent');
+    }
+    
     // Generate MD5 hash
     final bytes = utf8.encode(hashContent);
     final digest = md5.convert(bytes);
     
+    print('Generated hash: ${digest.toString()}');
     return digest.toString();
   }
 
@@ -463,10 +520,14 @@ class FirestoreService {
 
     if (snapshot.docs.isEmpty) return null;
 
-    return IdentitySynthesisResult.fromJson({
-      ...snapshot.docs.first.data() as Map<String, dynamic>,
-      'id': snapshot.docs.first.id,
-    });
+    // Convert LinkedMap to standard Map and add ID
+    final docData = Map<String, dynamic>.from(snapshot.docs.first.data() as Map);
+    docData['id'] = snapshot.docs.first.id;
+    
+    // Convert all Timestamps to ISO strings to avoid Int64 issues on web
+    final data = _convertTimestampsToStrings(docData) as Map<String, dynamic>;
+    
+    return IdentitySynthesisResult.fromJson(data);
   }
 
   /// Check if identity synthesis result is stale (answers changed)
@@ -475,6 +536,10 @@ class FirestoreService {
     IdentitySynthesisResult result,
   ) async {
     final currentHash = await calculateAnswersHash(userId);
+    print('=== STALENESS CHECK ===');
+    print('Current hash: $currentHash');
+    print('Stored hash: ${result.answersHash}');
+    print('Is stale: ${currentHash != result.answersHash}');
     return currentHash != result.answersHash;
   }
 

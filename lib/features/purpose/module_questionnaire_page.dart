@@ -7,6 +7,7 @@ import 'package:purpose/core/models/question.dart';
 import 'package:purpose/core/models/user_answer.dart';
 import 'package:purpose/core/services/firestore_provider.dart';
 import 'package:purpose/core/services/auth_provider.dart';
+import 'package:purpose/core/theme/app_theme.dart';
 
 /// Provider for a specific question module
 final moduleProvider =
@@ -82,7 +83,7 @@ class _ModuleQuestionnairePageState
 
     return Scaffold(
       appBar: AppBar(
-        backgroundColor: Colors.purple,
+        backgroundColor: AppTheme.primary,
         foregroundColor: Colors.white,
         title: moduleAsync.when(
           data: (module) => Text(module?.name ?? 'Questions'),
@@ -117,24 +118,58 @@ class _ModuleQuestionnairePageState
                   answers,
                 ),
                 loading: () => const Center(child: CircularProgressIndicator()),
-                error: (error, _) => Center(child: Text('Error: $error')),
+                error: (error, stack) {
+                  // Log error to console
+                  print('=== ANSWERS ERROR ===');
+                  print('Error: $error');
+                  print('Stack: $stack');
+                  return const Center(
+                    child: Text('Unable to load answers. Check console for details.'),
+                  );
+                },
               );
             },
             loading: () => const Center(child: CircularProgressIndicator()),
             error: (error, stack) {
-              // Print error details for debugging
+              // Log error to console
               print('=== PURPOSE QUESTIONNAIRE ERROR ===');
               print('Error: $error');
               print('Stack: $stack');
-              return _FirestoreErrorWidget(
-                error: error,
-                title: 'Error loading questions',
+              // Return simple error message without displaying full details
+              return const Center(
+                child: Padding(
+                  padding: EdgeInsets.all(16.0),
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(Icons.error_outline, size: 48, color: Colors.red),
+                      SizedBox(height: 16),
+                      Text(
+                        'Unable to load questions',
+                        style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                      ),
+                      SizedBox(height: 8),
+                      Text(
+                        'Check the console for error details',
+                        style: TextStyle(color: Colors.grey),
+                      ),
+                    ],
+                  ),
+                ),
               );
             },
           );
         },
         loading: () => const Center(child: CircularProgressIndicator()),
-        error: (error, _) => Center(child: Text('Error: $error')),
+        error: (error, stack) {
+          // Log error to console
+          print('=== MODULE ERROR ===');
+          print('Error: $error');
+          print('Stack: $stack');
+          return const Center(
+            child: Text('Unable to load module. Check console for details.'),
+          );
+        },
       ),
     );
   }
@@ -193,7 +228,7 @@ class _ModuleQuestionnairePageState
         Container(
           width: double.infinity,
           padding: const EdgeInsets.all(16),
-          color: Colors.purple.shade50,
+          color: AppTheme.primaryTintLight,
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -209,9 +244,9 @@ class _ModuleQuestionnairePageState
                   ),
                   Text(
                     '$progress% Complete',
-                    style: TextStyle(
+                    style: const TextStyle(
                       fontSize: 14,
-                      color: Colors.purple.shade700,
+                      color: AppTheme.primary,
                       fontWeight: FontWeight.bold,
                     ),
                   ),
@@ -223,8 +258,8 @@ class _ModuleQuestionnairePageState
                 child: LinearProgressIndicator(
                   value: (_currentQuestionIndex + 1) / totalQuestions,
                   minHeight: 8,
-                  backgroundColor: Colors.purple.shade100,
-                  valueColor: AlwaysStoppedAnimation<Color>(Colors.purple.shade600),
+                  backgroundColor: AppTheme.primaryTintLight,
+                  valueColor: const AlwaysStoppedAnimation<Color>(AppTheme.primary),
                 ),
               ),
             ],
@@ -299,7 +334,7 @@ class _ModuleQuestionnairePageState
                       });
                     },
                     style: OutlinedButton.styleFrom(
-                      foregroundColor: Colors.purple,
+                      foregroundColor: AppTheme.primary,
                     ),
                     child: const Text('Previous'),
                   ),
@@ -309,7 +344,7 @@ class _ModuleQuestionnairePageState
                 child: ElevatedButton(
                   onPressed: () => _saveAndContinue(user, currentQuestion, questions),
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.purple,
+                    backgroundColor: AppTheme.primary,
                     foregroundColor: Colors.white,
                     padding: const EdgeInsets.symmetric(vertical: 16),
                   ),
@@ -763,7 +798,7 @@ class _ModuleQuestionnairePageState
             ElevatedButton.icon(
               onPressed: () => context.go('/purpose'),
               style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.purple,
+                backgroundColor: AppTheme.primary,
                 foregroundColor: Colors.white,
                 padding: const EdgeInsets.symmetric(
                   horizontal: 32,
@@ -795,141 +830,6 @@ class _ModuleQuestionnairePageState
                 style: TextStyle(fontSize: 16),
               ),
             ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-/// Widget to display Firestore errors with copyable index URLs
-class _FirestoreErrorWidget extends StatelessWidget {
-  final Object error;
-  final String title;
-
-  const _FirestoreErrorWidget({
-    required this.error,
-    required this.title,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final errorStr = error.toString();
-    final isIndexError = errorStr.contains('cloud_firestore/failed-precondition') ||
-        errorStr.contains('requires an index');
-    
-    // Extract the URL if it's an index error
-    String? indexUrl;
-    if (isIndexError) {
-      final urlMatch = RegExp(r'https://[^\s\]]+').firstMatch(errorStr);
-      if (urlMatch != null) {
-        indexUrl = urlMatch.group(0);
-      }
-    }
-
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            const Icon(
-              Icons.error_outline,
-              size: 48,
-              color: Colors.red,
-            ),
-            const SizedBox(height: 16),
-            Text(
-              title,
-              style: const TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              isIndexError
-                  ? 'This query requires a Firestore composite index.'
-                  : 'An error occurred while loading data.',
-              textAlign: TextAlign.center,
-              style: const TextStyle(color: Colors.grey),
-            ),
-            if (indexUrl != null) ...[
-              const SizedBox(height: 16),
-              const Text(
-                'Click the button below to create the required index:',
-                style: TextStyle(fontSize: 14),
-                textAlign: TextAlign.center,
-              ),
-              const SizedBox(height: 12),
-              Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: Colors.grey[100],
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: Colors.grey[300]!),
-                ),
-                child: Column(
-                  children: [
-                    SelectableText(
-                      indexUrl,
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: Colors.blue[700],
-                        fontFamily: 'monospace',
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        ElevatedButton.icon(
-                          onPressed: () async {
-                            await Clipboard.setData(ClipboardData(text: indexUrl!));
-                            if (context.mounted) {
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(
-                                  content: Text('URL copied to clipboard!'),
-                                  duration: Duration(seconds: 2),
-                                ),
-                              );
-                            }
-                          },
-                          icon: const Icon(Icons.copy, size: 18),
-                          label: const Text('Copy URL'),
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 12),
-              Text(
-                'After clicking the URL and creating the index,\nwait a few moments and refresh this page.',
-                style: TextStyle(
-                  fontSize: 12,
-                  color: Colors.grey[600],
-                ),
-                textAlign: TextAlign.center,
-              ),
-            ] else if (!isIndexError) ...[
-              const SizedBox(height: 12),
-              Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: Colors.grey[100],
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: SelectableText(
-                  errorStr,
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: Colors.red[700],
-                    fontFamily: 'monospace',
-                  ),
-                ),
-              ),
-            ],
           ],
         ),
       ),

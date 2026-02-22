@@ -46,7 +46,9 @@ class GeminiService {
         },
       });
       
-      return result.data as Map<String, dynamic>;
+      // Convert to JSON and back to ensure plain Dart types (avoid Int64 issues)
+      final jsonString = jsonEncode(result.data);
+      return jsonDecode(jsonString) as Map<String, dynamic>;
     } else {
       // On native platforms: use dart_openai directly
       print('Using dart_openai directly (native platform)');
