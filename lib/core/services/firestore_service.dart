@@ -1,0 +1,527 @@
+import 'dart:convert';
+import 'package:crypto/crypto.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:purpose/core/models/question_module.dart';
+import 'package:purpose/core/models/question.dart';
+import 'package:purpose/core/models/user_answer.dart';
+import 'package:purpose/core/models/user_model.dart';
+import 'package:purpose/core/models/module_type.dart';
+import 'package:purpose/core/models/module_progress.dart';
+import 'package:purpose/core/models/identity_synthesis_result.dart';
+import 'package:purpose/core/constants/app_constants.dart';
+
+/// Service for managing Firestore database operations
+class FirestoreService {
+  final FirebaseFirestore _db = FirebaseFirestore.instance;
+
+  // Collection references
+  CollectionReference get _usersCollection =>
+      _db.collection(AppConstants.usersCollection);
+  CollectionReference get _questionModulesCollection =>
+      _db.collection(AppConstants.questionModulesCollection);
+  CollectionReference get _questionsCollection =>
+      _db.collection(AppConstants.questionsCollection);
+  CollectionReference get _userAnswersCollection =>
+      _db.collection(AppConstants.userAnswersCollection);
+  CollectionReference get _identitySynthesisResultsCollection =>
+      _db.collection(AppConstants.identitySynthesisResultsCollection);
+
+  // ========== USER OPERATIONS ==========
+
+  /// Create or update a user profile with retry logic
+  Future<void> saveUser(UserModel user) async {
+    int retries = 3;
+    Duration delay = const Duration(seconds: 1);
+    
+    for (int i = 0; i < retries; i++) {
+      try {
+        await _usersCollection.doc(user.uid).set(user.toJson());
+        return; // Success
+      } catch (e) {
+        print('⚠️ Attempt ${i + 1}/$retries failed to save user: $e');
+        if (i < retries - 1) {
+          await Future.delayed(delay);
+          delay = delay * 2; // Exponential backoff
+        } else {
+          print('❌ All retries exhausted for saveUser');
+          rethrow;
+        }
+      }
+    }
+  }
+
+  /// Get a user by ID with retry logic
+  Future<UserModel?> getUser(String uid) async {
+    int retries = 3;
+    Duration delay = const Duration(seconds: 2);
+    
+    for (int i = 0; i < retries; i++) {
+      try {
+        print('📖 getUser attempt ${i + 1}/$retries for uid: $uid');
+        final doc = await _usersCollection.doc(uid).get();
+        print('Document exists: ${doc.exists}');
+        
+        if (!doc.exists) {
+          print('⚠️ User document does not exist');
+          return null;
+        }
+        
+        final data = doc.data() as Map<String, dynamic>;
+        print('📄 User document data: $data');
+        
+        final userModel = UserModel.fromJson(data);
+        print('✅ UserModel deserialized: ${userModel.email}');
+        return userModel;
+      } catch (e, stackTrace) {
+        print('⚠️ Attempt ${i + 1}/$retries failed to get user: $e');
+        print('Stack trace: $stackTrace');
+        if (i < retries - 1) {
+          await Future.delayed(delay);
+          delay = delay * 2; // Exponential backoff
+        } else {
+          print('❌ All retries exhausted for getUser');
+          rethrow;
+        }
+      }
+    }
+    return null;
+  }
+
+  /// Stream of user data with error handling
+  Stream<UserModel?> userStream(String uid) {
+    return _usersCollection.doc(uid).snapshots().map((doc) {
+      print('📡 userStream snapshot received for $uid');
+      print('Document exists: ${doc.exists}');
+      
+      if (!doc.exists) {
+        print('⚠️ Document does not exist in userStream');
+        return null;
+      }
+      
+      try {
+        final data = doc.data() as Map<String, dynamic>;
+        print('📄 Document data: $data');
+        final userModel = UserModel.fromJson(data);
+        print('✅ UserModel deserialized successfully: ${userModel.email}');
+        return userModel;
+      } catch (e, stackTrace) {
+        print('❌ Error deserializing UserModel: $e');
+        print('Stack trace: $stackTrace');
+        return null;
+      }
+    }).handleError((error) {
+      print('❌ Error in userStream snapshots: $error');
+      // Don't propagate the error, just log it
+      return null;
+    });
+  }
+
+  /// Update user's module progress
+  Future<void> updateUserProgress({
+    required String userId,
+    required String questionModuleId,
+    required ModuleProgress progress,
+  }) async {
+    await _usersCollection.doc(userId).update({
+      'moduleProgress.$questionModuleId': progress.toJson(),
+      'updatedAt': FieldValue.serverTimestamp(),
+    });
+
+    // If completed, add to completed list
+    if (progress.isCompleted) {
+      await _usersCollection.doc(userId).update({
+        'completedModuleIds': FieldValue.arrayUnion([questionModuleId]),
+      });
+    }
+  }
+
+  /// Update user's purpose, vision, or mission
+  Future<void> updateUserStatement({
+    required String userId,
+    String? purpose,
+    String? vision,
+    String? mission,
+  }) async {
+    final updates = <String, dynamic>{
+      'updatedAt': FieldValue.serverTimestamp(),
+    };
+
+    if (purpose != null) updates['purpose'] = purpose;
+    if (vision != null) updates['vision'] = vision;
+    if (mission != null) updates['mission'] = mission;
+
+    await _usersCollection.doc(userId).update(updates);
+  }
+
+  // ========== QUESTION MODULE OPERATIONS ==========
+
+  /// Get all question modules for a specific parent module
+  Future<List<QuestionModule>> getQuestionModulesByParent(
+      ModuleType parentModule) async {
+    final snapshot = await _questionModulesCollection
+        .where('parentModule', isEqualTo: parentModule.value)
+        .where('isActive', isEqualTo: true)
+        .orderBy('order')
+        .get();
+
+    return snapshot.docs
+        .map((doc) =>
+            QuestionModule.fromJson({...doc.data() as Map<String, dynamic>, 'id': doc.id}))
+        .toList();
+  }
+
+  /// Get a single question module by ID
+  Future<QuestionModule?> getQuestionModule(String moduleId) async {
+    final doc = await _questionModulesCollection.doc(moduleId).get();
+    if (!doc.exists) return null;
+    return QuestionModule.fromJson(
+        {...doc.data() as Map<String, dynamic>, 'id': doc.id});
+  }
+
+  /// Stream of question modules for a parent module
+  Stream<List<QuestionModule>> questionModulesStream(ModuleType parentModule) {
+    return _questionModulesCollection
+        .where('parentModule', isEqualTo: parentModule.value)
+        .where('isActive', isEqualTo: true)
+        .orderBy('order')
+        .snapshots()
+        .map((snapshot) => snapshot.docs
+            .map((doc) => QuestionModule.fromJson(
+                {...doc.data() as Map<String, dynamic>, 'id': doc.id}))
+            .toList());
+  }
+
+  /// Create a new question module (admin operation)
+  Future<String> createQuestionModule(QuestionModule module) async {
+    final docRef = await _questionModulesCollection.add(module.toJson());
+    return docRef.id;
+  }
+
+  /// Update an existing question module (admin operation)
+  Future<void> updateQuestionModule(QuestionModule module) async {
+    await _questionModulesCollection.doc(module.id).update(module.toJson());
+  }
+
+  /// Delete a question module (admin operation)
+  Future<void> deleteQuestionModule(String moduleId) async {
+    await _questionModulesCollection.doc(moduleId).delete();
+  }
+
+  /// Get all question modules (admin operation)
+  Future<List<QuestionModule>> getAllQuestionModules() async {
+    final snapshot = await _questionModulesCollection.orderBy('order').get();
+    return snapshot.docs
+        .map((doc) =>
+            QuestionModule.fromJson({...doc.data() as Map<String, dynamic>, 'id': doc.id}))
+        .toList();
+  }
+
+  /// Stream of all question modules (admin operation)
+  Stream<List<QuestionModule>> allQuestionModulesStream() {
+    return _questionModulesCollection
+        .orderBy('order')
+        .snapshots()
+        .map((snapshot) => snapshot.docs
+            .map((doc) => QuestionModule.fromJson(
+                {...doc.data() as Map<String, dynamic>, 'id': doc.id}))
+            .toList());
+  }
+
+  // ========== QUESTION OPERATIONS ==========
+
+  /// Get all questions for a question module
+  Future<List<Question>> getQuestionsByModule(String questionModuleId) async {
+    final snapshot = await _questionsCollection
+        .where('questionModuleId', isEqualTo: questionModuleId)
+        .where('isActive', isEqualTo: true)
+        .orderBy('order')
+        .get();
+
+    return snapshot.docs
+        .map((doc) =>
+            Question.fromJson({...doc.data() as Map<String, dynamic>, 'id': doc.id}))
+        .toList();
+  }
+
+  /// Get a single question by ID
+  Future<Question?> getQuestion(String questionId) async {
+    final doc = await _questionsCollection.doc(questionId).get();
+    if (!doc.exists) return null;
+    return Question.fromJson({...doc.data() as Map<String, dynamic>, 'id': doc.id});
+  }
+
+  /// Stream of questions for a module
+  Stream<List<Question>> questionsStream(String questionModuleId) {
+    return _questionsCollection
+        .where('questionModuleId', isEqualTo: questionModuleId)
+        .where('isActive', isEqualTo: true)
+        .orderBy('order')
+        .snapshots()
+        .map((snapshot) => snapshot.docs
+            .map((doc) => Question.fromJson(
+                {...doc.data() as Map<String, dynamic>, 'id': doc.id}))
+            .toList());
+  }
+
+  /// Stream of all questions for a module (admin operation, includes inactive)
+  Stream<List<Question>> allQuestionsStream(String questionModuleId) {
+    return _questionsCollection
+        .where('questionModuleId', isEqualTo: questionModuleId)
+        .orderBy('order')
+        .snapshots()
+        .map((snapshot) => snapshot.docs
+            .map((doc) => Question.fromJson(
+                {...doc.data() as Map<String, dynamic>, 'id': doc.id}))
+            .toList());
+  }
+
+  /// Create a new question (admin operation)
+  Future<String> createQuestion(Question question) async {
+    final docRef = await _questionsCollection.add(question.toJson());
+    return docRef.id;
+  }
+
+  /// Update an existing question (admin operation)
+  Future<void> updateQuestion(Question question) async {
+    await _questionsCollection.doc(question.id).update(question.toJson());
+  }
+
+  /// Delete a question (admin operation)
+  Future<void> deleteQuestion(String questionId) async {
+    await _questionsCollection.doc(questionId).delete();
+  }
+
+  // ========== USER ANSWER OPERATIONS ==========
+
+  /// Save or update a user's answer
+  Future<void> saveUserAnswer(UserAnswer answer) async {
+    if (answer.id.isEmpty) {
+      // Create new answer with auto-generated ID
+      final docRef = await _userAnswersCollection.add(answer.toJson());
+      // Optionally update the answer with the generated ID
+      await docRef.update({'id': docRef.id});
+    } else {
+      // Update existing answer
+      await _userAnswersCollection.doc(answer.id).set(answer.toJson());
+    }
+  }
+
+  /// Get a specific user's answer to a question
+  Future<UserAnswer?> getUserAnswer({
+    required String userId,
+    required String questionId,
+  }) async {
+    final snapshot = await _userAnswersCollection
+        .where('userId', isEqualTo: userId)
+        .where('questionId', isEqualTo: questionId)
+        .limit(1)
+        .get();
+
+    if (snapshot.docs.isEmpty) return null;
+    final doc = snapshot.docs.first;
+    return UserAnswer.fromJson(
+        {...doc.data() as Map<String, dynamic>, 'id': doc.id});
+  }
+
+  /// Get all user answers for a question module
+  Future<List<UserAnswer>> getUserAnswersByModule({
+    required String userId,
+    required String questionModuleId,
+  }) async {
+    final snapshot = await _userAnswersCollection
+        .where('userId', isEqualTo: userId)
+        .where('questionModuleId', isEqualTo: questionModuleId)
+        .get();
+
+    return snapshot.docs
+        .map((doc) =>
+            UserAnswer.fromJson({...doc.data() as Map<String, dynamic>, 'id': doc.id}))
+        .toList();
+  }
+
+  /// Stream of user's answers for a question module
+  Stream<List<UserAnswer>> userAnswersStream({
+    required String userId,
+    required String questionModuleId,
+  }) {
+    return _userAnswersCollection
+        .where('userId', isEqualTo: userId)
+        .where('questionModuleId', isEqualTo: questionModuleId)
+        .snapshots()
+        .map((snapshot) => snapshot.docs
+            .map((doc) => UserAnswer.fromJson(
+                {...doc.data() as Map<String, dynamic>, 'id': doc.id}))
+            .toList());
+  }
+
+  /// Check if a user has answered all questions in a module
+  Future<bool> isModuleCompleted({
+    required String userId,
+    required String questionModuleId,
+  }) async {
+    // Get total questions in module
+    final module = await getQuestionModule(questionModuleId);
+    if (module == null) return false;
+
+    // Get user's answers
+    final answers = await getUserAnswersByModule(
+      userId: userId,
+      questionModuleId: questionModuleId,
+    );
+
+    // Check if all questions are answered
+    return answers.length >= module.totalQuestions;
+  }
+
+  /// Get all answers for AI processing (unanswered by AI)
+  Future<List<UserAnswer>> getUnprocessedAnswers({
+    required String userId,
+    required String questionModuleId,
+  }) async {
+    final snapshot = await _userAnswersCollection
+        .where('userId', isEqualTo: userId)
+        .where('questionModuleId', isEqualTo: questionModuleId)
+        .where('processedByAI', isEqualTo: false)
+        .get();
+
+    return snapshot.docs
+        .map((doc) =>
+            UserAnswer.fromJson({...doc.data() as Map<String, dynamic>, 'id': doc.id}))
+        .toList();
+  }
+
+  /// Mark an answer as processed by AI with response
+  Future<void> markAnswerProcessed({
+    required String answerId,
+    required String aiResponse,
+  }) async {
+    await _userAnswersCollection.doc(answerId).update({
+      'processedByAI': true,
+      'aiResponse': aiResponse,
+      'updatedAt': FieldValue.serverTimestamp(),
+    });
+  }
+
+  // ========== IDENTITY SYNTHESIS OPERATIONS ==========
+
+  /// Calculate hash of user's purpose module answers for staleness detection
+  Future<String> calculateAnswersHash(String userId) async {
+    // Get all purpose modules
+    final modules = await getQuestionModulesByParent(ModuleType.purpose);
+    
+    // Collect all answers for purpose modules
+    final allAnswers = <UserAnswer>[];
+    for (final module in modules) {
+      final answers = await getUserAnswersByModule(
+        userId: userId,
+        questionModuleId: module.id,
+      );
+      allAnswers.addAll(answers);
+    }
+    
+    // Sort by ID for consistent ordering
+    allAnswers.sort((a, b) => a.id.compareTo(b.id));
+    
+    // Build hash from answer content
+    final hashContent = allAnswers.map((a) {
+      return '${a.id}:${a.answer}:${a.updatedAt.millisecondsSinceEpoch}';
+    }).join('|');
+    
+    // Generate MD5 hash
+    final bytes = utf8.encode(hashContent);
+    final digest = md5.convert(bytes);
+    
+    return digest.toString();
+  }
+
+  /// Save identity synthesis result
+  Future<String> saveIdentitySynthesisResult(
+    IdentitySynthesisResult result,
+  ) async {
+    final docRef = await _identitySynthesisResultsCollection.add(result.toJson());
+    return docRef.id;
+  }
+
+  /// Update identity synthesis result (for selection/edits)
+  Future<void> updateIdentitySynthesisResult(
+    IdentitySynthesisResult result,
+  ) async {
+    await _identitySynthesisResultsCollection
+        .doc(result.id)
+        .update(result.toJson());
+  }
+
+  /// Get the most recent identity synthesis result for a user
+  Future<IdentitySynthesisResult?> getIdentitySynthesisResult(
+    String userId,
+  ) async {
+    final snapshot = await _identitySynthesisResultsCollection
+        .where('userId', isEqualTo: userId)
+        .orderBy('createdAt', descending: true)
+        .limit(1)
+        .get();
+
+    if (snapshot.docs.isEmpty) return null;
+
+    return IdentitySynthesisResult.fromJson({
+      ...snapshot.docs.first.data() as Map<String, dynamic>,
+      'id': snapshot.docs.first.id,
+    });
+  }
+
+  /// Check if identity synthesis result is stale (answers changed)
+  Future<bool> isIdentitySynthesisStale(
+    String userId,
+    IdentitySynthesisResult result,
+  ) async {
+    final currentHash = await calculateAnswersHash(userId);
+    return currentHash != result.answersHash;
+  }
+
+  /// Promote selected purpose statement to user's purpose field
+  Future<void> promoteToUserPurpose({
+    required String userId,
+    required String purposeStatement,
+    required String resultId,
+  }) async {
+    print('=== PROMOTING PURPOSE TO USER PROFILE ===');
+    print('User ID: $userId');
+    print('Purpose Statement: $purposeStatement');
+    print('Result ID: $resultId');
+    
+    final batch = _db.batch();
+
+    // Update user's purpose
+    batch.update(_usersCollection.doc(userId), {
+      'purpose': purposeStatement,
+      'updatedAt': FieldValue.serverTimestamp(),
+    });
+
+    // Mark result as promoted
+    batch.update(_identitySynthesisResultsCollection.doc(resultId), {
+      'isPromoted': true,
+    });
+
+    await batch.commit();
+    print('✅ Purpose promoted successfully');
+  }
+
+  // ========== BATCH OPERATIONS ==========
+
+  /// Delete all user data (for account deletion)
+  Future<void> deleteUserData(String userId) async {
+    final batch = _db.batch();
+
+    // Delete user document
+    batch.delete(_usersCollection.doc(userId));
+
+    // Delete all user answers
+    final answersSnapshot =
+        await _userAnswersCollection.where('userId', isEqualTo: userId).get();
+    for (final doc in answersSnapshot.docs) {
+      batch.delete(doc.reference);
+    }
+
+    await batch.commit();
+  }
+}
