@@ -1576,10 +1576,10 @@ class _ValueCreationFlowPageState extends ConsumerState<ValueCreationFlowPage> {
           ),
         );
 
-        // Schedule navigation after current frame to avoid Navigator lock
+        // Navigate back to values page using go_router
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (mounted) {
-            Navigator.of(context).pop();
+            context.go('/values');
           }
         });
       }
