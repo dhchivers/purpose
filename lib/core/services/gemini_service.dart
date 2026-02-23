@@ -509,4 +509,647 @@ Create a comprehensive purpose synthesis that includes:
 Be authentic, inspiring, and specific to THEIR unique responses. This should feel deeply personal to them.
 ''';
   }
+
+  /// Generate clarification questions for Phase 2 of value creation
+  Future<List<Map<String, dynamic>>> generateValueClarificationQuestions({
+    required String seedValue,
+  }) async {
+    final prompt = '''
+You are a values clarification expert helping a user explore what a value truly means to them.
+
+The user has selected "$seedValue" as a value they want to develop and articulate.
+
+Generate exactly 3 multiple choice questions that will help them:
+1. Define what this value personally means to them (not just dictionary definition)
+2. Identify how this value shows up or could show up in their life
+3. Connect the value to their deeper motivations or aspirations
+
+Each question should have 4 answer options that represent different perspectives or interpretations.
+
+Questions should be:
+- Thought-provoking and insightful
+- Personal and introspective
+- Have options that feel authentic and meaningful
+- Focused on the user's unique interpretation and experience
+
+Return ONLY a JSON array of objects with this exact structure:
+[
+  {
+    "question": "Question 1 text here?",
+    "options": ["Option A", "Option B", "Option C", "Option D"]
+  },
+  {
+    "question": "Question 2 text here?",
+    "options": ["Option A", "Option B", "Option C", "Option D"]
+  },
+  {
+    "question": "Question 3 text here?",
+    "options": ["Option A", "Option B", "Option C", "Option D"]
+  }
+]
+
+No additional text or formatting, just the JSON array.
+''';
+
+    try {
+      final response = await _makeOpenAIRequest(
+        model: AIConfig.defaultModel,
+        messages: [
+          {
+            'role': 'user',
+            'content': prompt,
+          },
+        ],
+        temperature: 0.8, // Higher temperature for creative questions
+        maxTokens: 800,
+      );
+      
+      final content = _extractContent(response);
+      final questions = jsonDecode(content) as List;
+      return questions.cast<Map<String, dynamic>>();
+    } catch (e) {
+      print('Error generating clarification questions: $e');
+      // Fallback to generic questions if AI fails
+      return [
+        {
+          'question': 'What does "$seedValue" mean to you personally?',
+          'options': [
+            'Living authentically according to my principles',
+            'Achieving specific outcomes or goals',
+            'The way I treat and relate to others',
+            'How I develop and improve myself'
+          ]
+        },
+        {
+          'question': 'When is this value most important to you?',
+          'options': [
+            'When making major life decisions',
+            'In my daily interactions and routines',
+            'During challenging or stressful times',
+            'When pursuing my goals and aspirations'
+          ]
+        },
+        {
+          'question': 'How would you like this value to guide your life?',
+          'options': [
+            'As a constant compass for all decisions',
+            'As inspiration for specific goals or projects',
+            'As a foundation for my relationships',
+            'As a measure of my personal growth'
+          ]
+        },
+      ];
+    }
+  }
+
+  /// Generate scope narrowing questions and refined label for Phase 3
+  Future<Map<String, dynamic>> generateValueScopeNarrowing({
+    required String seedValue,
+    required List<String> phase2Questions,
+    required List<String> phase2Answers,
+  }) async {
+    final answersContext = StringBuffer();
+    for (int i = 0; i < phase2Questions.length; i++) {
+      answersContext.writeln('Q: ${phase2Questions[i]}');
+      answersContext.writeln('A: ${phase2Answers[i]}');
+      answersContext.writeln();
+    }
+
+    final prompt = '''
+You are a values clarification expert helping a user narrow down and refine their understanding of a value.
+
+Original Value: "$seedValue"
+
+The user has answered clarification questions:
+$answersContext
+
+Based on their responses, you need to:
+1. Generate a refined, more specific label for this value (2-4 words)
+2. Create 3 multiple choice questions that help narrow the scope further
+
+The refined label should:
+- Capture the essence of what they described
+- Be more specific than the original "$seedValue"
+- Feel personal and authentic to their responses
+- Be concise (2-4 words)
+
+The 3 questions should:
+- Help identify specific contexts where this value applies
+- Clarify boundaries or limits of this value
+- Distinguish what this value is vs. what it's not for them
+- Each question should have 4 answer options
+
+Return ONLY a JSON object in this exact format:
+{
+  "refinedLabel": "Your refined 2-4 word label here",
+  "questions": [
+    {
+      "question": "Question 1 text here?",
+      "options": ["Option A", "Option B", "Option C", "Option D"]
+    },
+    {
+      "question": "Question 2 text here?",
+      "options": ["Option A", "Option B", "Option C", "Option D"]
+    },
+    {
+      "question": "Question 3 text here?",
+      "options": ["Option A", "Option B", "Option C", "Option D"]
+    }
+  ]
+}
+
+No additional text, just the JSON object.
+''';
+
+    try {
+      final response = await _makeOpenAIRequest(
+        model: AIConfig.defaultModel,
+        messages: [
+          {
+            'role': 'user',
+            'content': prompt,
+          },
+        ],
+        temperature: 0.8,
+        maxTokens: 1000,
+      );
+      
+      final content = _extractContent(response);
+      return jsonDecode(content) as Map<String, dynamic>;
+    } catch (e) {
+      print('Error generating scope narrowing: $e');
+      // Fallback
+      return {
+        'refinedLabel': 'Personal $seedValue',
+        'questions': [
+          {
+            'question': 'In what areas of your life does this value matter most?',
+            'options': [
+              'Career and professional development',
+              'Personal relationships and family',
+              'Personal growth and learning',
+              'Community and social impact'
+            ]
+          },
+          {
+            'question': 'What are the limits or boundaries of this value for you?',
+            'options': [
+              'It applies to almost everything I do',
+              'It\'s context-specific to certain situations',
+              'It\'s balanced with other important values',
+              'It\'s aspirational, not yet fully realized'
+            ]
+          },
+          {
+            'question': 'How is your interpretation unique?',
+            'options': [
+              'I emphasize the practical application',
+              'I focus on the emotional or relational aspects',
+              'I connect it to my long-term vision',
+              'I balance it with competing priorities'
+            ]
+          }
+        ],
+      };
+    }
+  }
+
+  /// Generate friction & sacrifice questions and refined label for Phase 4
+  Future<Map<String, dynamic>> generateValueFrictionSacrifice({
+    required String seedValue,
+    required String refinedLabel,
+    required List<String> phase3Questions,
+    required List<String> phase3Answers,
+  }) async {
+    final answersContext = StringBuffer();
+    for (int i = 0; i < phase3Questions.length; i++) {
+      answersContext.writeln('Q: ${phase3Questions[i]}');
+      answersContext.writeln('A: ${phase3Answers[i]}');
+      answersContext.writeln();
+    }
+
+    final prompt = '''
+You are a values clarification expert helping a user test the strength and commitment to their value.
+
+Original Value: "$seedValue"
+Currently Refined As: "$refinedLabel"
+
+The user has answered scope narrowing questions:
+$answersContext
+
+Based on their responses, you need to:
+1. Test this value against friction and sacrifice scenarios
+2. Create 3 multiple choice questions that explore trade-offs and commitment
+3. Optionally provide a further refined label (2-4 words) if needed, or keep it the same
+
+The questions should:
+- Present realistic scenarios where this value conflicts with other priorities
+- Test willingness to sacrifice or face difficulty
+- Reveal the true depth of their commitment
+- Help distinguish this value from superficial preferences
+- Each question should have 4 answer options representing different levels of commitment
+
+Return ONLY a JSON object in this exact format:
+{
+  "refinedLabel": "Keep same or provide more refined 2-4 word label",
+  "questions": [
+    {
+      "question": "Question 1 about sacrifice or trade-off?",
+      "options": ["Option A", "Option B", "Option C", "Option D"]
+    },
+    {
+      "question": "Question 2 about commitment or difficulty?",
+      "options": ["Option A", "Option B", "Option C", "Option D"]
+    },
+    {
+      "question": "Question 3 about boundaries or limits?",
+      "options": ["Option A", "Option B", "Option C", "Option D"]
+    }
+  ]
+}
+
+No additional text, just the JSON object.
+''';
+
+    try {
+      final response = await _makeOpenAIRequest(
+        model: AIConfig.defaultModel,
+        messages: [
+          {
+            'role': 'user',
+            'content': prompt,
+          },
+        ],
+        temperature: 0.8,
+        maxTokens: 1000,
+      );
+      
+      final content = _extractContent(response);
+      return jsonDecode(content) as Map<String, dynamic>;
+    } catch (e) {
+      print('Error generating friction & sacrifice questions: $e');
+      // Fallback
+      return {
+        'refinedLabel': refinedLabel, // Keep the same
+        'questions': [
+          {
+            'question': 'What would you be willing to sacrifice to honor this value?',
+            'options': [
+              'Time and immediate comfort',
+              'Some relationships or social approval',
+              'Career opportunities or financial gain',
+              'Personal desires or preferences'
+            ]
+          },
+          {
+            'question': 'When this value conflicts with other priorities, how do you respond?',
+            'options': [
+              'I consistently choose this value over others',
+              'I seek creative solutions to honor both',
+              'I compromise based on the situation',
+              'I struggle with the tension but stay committed'
+            ]
+          },
+          {
+            'question': 'How would you continue living this value during difficult times?',
+            'options': [
+              'Through small daily actions and reminders',
+              'By connecting with others who share this value',
+              'By focusing on long-term meaning over short-term pain',
+              'By adapting how I express it while maintaining the core'
+            ]
+          }
+        ],
+      };
+    }
+  }
+
+  /// Generate Phase 5: Operationalization questions
+  /// Explores practical behaviors, boundaries, and measurement
+  Future<Map<String, dynamic>> generateValueOperationalization({
+    required String seedValue,
+    required String refinedLabel,
+    required List<String> phase4Questions,
+    required List<String> phase4Answers,
+  }) async {
+    final answersContext = StringBuffer();
+    for (int i = 0; i < phase4Questions.length; i++) {
+      answersContext.writeln('Q: ${phase4Questions[i]}');
+      answersContext.writeln('A: ${phase4Answers[i]}');
+      answersContext.writeln();
+    }
+
+    final prompt = '''
+You are helping a user operationalize their personal value: "$refinedLabel" (originally stemming from "$seedValue").
+
+They have just completed Phase 4 (Friction & Sacrifice), answering questions about their commitment:
+$answersContext
+
+Now in Phase 5, we need to make this value OPERATIONAL - translating commitment into concrete action.
+
+Generate 3 multiple choice questions that explore:
+1. BEHAVIORS: What specific actions demonstrate this value in daily life?
+2. BOUNDARIES: In what contexts does this value apply, and where are its limits?
+3. MEASUREMENT: How will they know if they're living according to this value?
+
+Each question should have 4 options that represent different levels of specificity or practical application.
+
+Return ONLY a JSON object in this exact format:
+{
+  "refinedLabel": "<refined label (may be same as input or further refined if needed)>",
+  "questions": [
+    {
+      "question": "<question 1 about behaviors>",
+      "options": ["<option 1>", "<option 2>", "<option 3>", "<option 4>"]
+    },
+    {
+      "question": "<question 2 about boundaries>",
+      "options": ["<option 1>", "<option 2>", "<option 3>", "<option 4>"]
+    },
+    {
+      "question": "<question 3 about measurement>",
+      "options": ["<option 1>", "<option 2>", "<option 3>", "<option 4>"]
+    }
+  ]
+}
+
+No additional text, just the JSON object.
+''';
+
+    try {
+      final response = await _makeOpenAIRequest(
+        model: AIConfig.defaultModel,
+        messages: [
+          {
+            'role': 'user',
+            'content': prompt,
+          },
+        ],
+        temperature: 0.8,
+        maxTokens: 1000,
+      );
+      
+      final content = _extractContent(response);
+      return jsonDecode(content) as Map<String, dynamic>;
+    } catch (e) {
+      print('Error generating operationalization questions: $e');
+      // Return fallback structure
+      return {
+        'refinedLabel': refinedLabel,
+        'questions': [
+          {
+            'question':
+                'What daily actions would best demonstrate $refinedLabel in your life?',
+            'options': [
+              'Specific morning and evening routines',
+              'Actions when making important decisions',
+              'How I interact with others regularly',
+              'Regular reflection and self-assessment'
+            ]
+          },
+          {
+            'question':
+                'When and where does this value apply most strongly?',
+            'options': [
+              'In all areas of life without exception',
+              'Primarily in relationships with close ones',
+              'Mostly in professional and public contexts',
+              'In specific situations when stakes are high'
+            ]
+          },
+          {
+            'question':
+                'How will you measure whether you\'re living according to $refinedLabel?',
+            'options': [
+              'Daily check-ins and journaling',
+              'Monthly review of specific behaviors',
+              'Feedback from people I trust',
+              'Internal sense of alignment and peace'
+            ]
+          }
+        ]
+      };
+    }
+  }
+
+  /// Generate value summary after Phase 5
+  /// Creates a comprehensive summary of the core value and how it applies to the user
+  /// This summary is used for context in later strategy development
+  Future<String> generateValueSummary({
+    required String seedValue,
+    required String refinedLabel,
+    required List<String> phase2Questions,
+    required List<String> phase2Answers,
+    required List<String> phase3Questions,
+    required List<String> phase3Answers,
+    required List<String> phase4Questions,
+    required List<String> phase4Answers,
+    required List<String> phase5Questions,
+    required List<String> phase5Answers,
+  }) async {
+    final phase2Context = StringBuffer();
+    for (int i = 0; i < phase2Questions.length; i++) {
+      phase2Context.writeln('Q: ${phase2Questions[i]}');
+      phase2Context.writeln('A: ${phase2Answers[i]}');
+    }
+
+    final phase3Context = StringBuffer();
+    for (int i = 0; i < phase3Questions.length; i++) {
+      phase3Context.writeln('Q: ${phase3Questions[i]}');
+      phase3Context.writeln('A: ${phase3Answers[i]}');
+    }
+
+    final phase4Context = StringBuffer();
+    for (int i = 0; i < phase4Questions.length; i++) {
+      phase4Context.writeln('Q: ${phase4Questions[i]}');
+      phase4Context.writeln('A: ${phase4Answers[i]}');
+    }
+
+    final phase5Context = StringBuffer();
+    for (int i = 0; i < phase5Questions.length; i++) {
+      phase5Context.writeln('Q: ${phase5Questions[i]}');
+      phase5Context.writeln('A: ${phase5Answers[i]}');
+    }
+
+    final prompt = '''
+You are summarizing a user's personal value that they've refined through a comprehensive 5-phase process.
+
+Original Value Seed: "$seedValue"
+Final Refined Label: "$refinedLabel"
+
+=== PHASE 2: CLARIFICATION ===
+$phase2Context
+
+=== PHASE 3: SCOPE NARROWING ===
+$phase3Context
+
+=== PHASE 4: FRICTION & SACRIFICE ===
+$phase4Context
+
+=== PHASE 5: OPERATIONALIZATION ===
+$phase5Context
+
+Create a comprehensive summary (3-4 paragraphs) that captures:
+
+1. CORE ESSENCE: What this value fundamentally means to the user, beyond the label itself
+2. PERSONAL APPLICATION: How this value specifically applies in their life context based on their answers
+3. BEHAVIORAL MANIFESTATION: The concrete ways this value shows up in their actions and decisions
+4. STRATEGIC RELEVANCE: How this value can guide future goal-setting, decision-making, and life planning
+
+Write in second person ("Your value of..."). Be insightful, connecting the dots between their answers to reveal deeper patterns. This summary will be used to inform future strategic planning and goal development.
+
+Return only the summary text, no JSON or additional formatting.
+''';
+
+    try {
+      final response = await _makeOpenAIRequest(
+        model: AIConfig.defaultModel,
+        messages: [
+          {
+            'role': 'user',
+            'content': prompt,
+          },
+        ],
+        temperature: 0.7,
+        maxTokens: 600,
+      );
+      
+      return _extractContent(response);
+    } catch (e) {
+      print('Error generating value summary: $e');
+      // Return fallback summary
+      return '''Your value of $refinedLabel represents a core principle that guides your decisions and actions. Through your exploration, you've identified specific ways this value manifests in your daily life and the boundaries within which it operates.
+
+Your commitment to $refinedLabel reflects a deeper understanding of what matters most to you. You've considered the trade-offs and sacrifices you're willing to make to honor this value, demonstrating genuine conviction.
+
+The concrete behaviors and measures you've identified will help you track alignment with $refinedLabel over time. This operational clarity transforms an abstract principle into actionable guidance.
+
+As you move forward with strategic planning, $refinedLabel can serve as a filter for opportunities and a compass for difficult decisions, ensuring your goals and actions remain authentic to who you are.''';
+    }
+  }
+
+  /// Generate final value statement options
+  /// Creates 3 distinct statement styles for user selection
+  Future<List<Map<String, dynamic>>> generateFinalValueStatements({
+    required String seedValue,
+    required String refinedLabel,
+    required List<String> phase2Questions,
+    required List<String> phase2Answers,
+    required List<String> phase3Questions,
+    required List<String> phase3Answers,
+    required List<String> phase4Questions,
+    required List<String> phase4Answers,
+    required List<String> phase5Questions,
+    required List<String> phase5Answers,
+  }) async {
+    final phase2Context = StringBuffer();
+    for (int i = 0; i < phase2Questions.length; i++) {
+      phase2Context.writeln('Q: ${phase2Questions[i]}');
+      phase2Context.writeln('A: ${phase2Answers[i]}');
+      phase2Context.writeln();
+    }
+
+    final phase3Context = StringBuffer();
+    for (int i = 0; i < phase3Questions.length; i++) {
+      phase3Context.writeln('Q: ${phase3Questions[i]}');
+      phase3Context.writeln('A: ${phase3Answers[i]}');
+      phase3Context.writeln();
+    }
+
+    final phase4Context = StringBuffer();
+    for (int i = 0; i < phase4Questions.length; i++) {
+      phase4Context.writeln('Q: ${phase4Questions[i]}');
+      phase4Context.writeln('A: ${phase4Answers[i]}');
+      phase4Context.writeln();
+    }
+
+    final phase5Context = StringBuffer();
+    for (int i = 0; i < phase5Questions.length; i++) {
+      phase5Context.writeln('Q: ${phase5Questions[i]}');
+      phase5Context.writeln('A: ${phase5Answers[i]}');
+      phase5Context.writeln();
+    }
+
+    final prompt = '''
+You are helping a user finalize their personal value statement.
+
+Original Value Seed: "$seedValue"
+Refined Label: "$refinedLabel"
+
+They have completed a comprehensive 5-phase value clarification process:
+
+=== PHASE 2: CLARIFICATION ===
+$phase2Context
+=== PHASE 3: SCOPE NARROWING ===
+$phase3Context
+=== PHASE 4: FRICTION & SACRIFICE ===
+$phase4Context
+=== PHASE 5: OPERATIONALIZATION ===
+$phase5Context
+Now generate 3 DISTINCT value statement options. Each should:
+- Capture the essence of "$refinedLabel"
+- Reflect their journey through all 5 phases
+- Be authentic to their answers and choices
+- Be memorable and actionable
+- Be 1-3 sentences long
+
+Create 3 different STYLES:
+1. DIRECT: Clear, straightforward statement of the value
+2. PRINCIPLE: Frame as a guiding principle or commitment
+3. MEANING: Connect to deeper purpose and life meaning
+
+Return ONLY a JSON array with this exact structure:
+[
+  {
+    "label": "Direct",
+    "statement": "<direct value statement here>"
+  },
+  {
+    "label": "Principle",
+    "statement": "<principle-based value statement here>"
+  },
+  {
+    "label": "Meaning",
+    "statement": "<meaning-integrated value statement here>"
+  }
+]
+
+No additional text, just the JSON array.
+''';
+
+    try {
+      final response = await _makeOpenAIRequest(
+        model: AIConfig.defaultModel,
+        messages: [
+          {
+            'role': 'user',
+            'content': prompt,
+          },
+        ],
+        temperature: 0.8,
+        maxTokens: 800,
+      );
+      
+      final content = _extractContent(response);
+      final data = jsonDecode(content) as List<dynamic>;
+      return data.cast<Map<String, dynamic>>();
+    } catch (e) {
+      print('Error generating final value statements: $e');
+      // Return fallback options
+      return [
+        {
+          'label': 'Direct',
+          'statement': 'I value $refinedLabel and commit to living according to it every day.'
+        },
+        {
+          'label': 'Principle',
+          'statement': 'I am guided by $refinedLabel, using it as a compass for my decisions and actions.'
+        },
+        {
+          'label': 'Meaning',
+          'statement': 'Through $refinedLabel, I find deeper meaning and purpose in my life.'
+        }
+      ];
+    }
+  }
 }

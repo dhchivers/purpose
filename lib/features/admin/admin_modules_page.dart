@@ -5,6 +5,7 @@ import 'package:purpose/core/models/question_module.dart';
 import 'package:purpose/core/models/module_type.dart';
 import 'package:purpose/core/services/firestore_provider.dart';
 import 'package:purpose/core/services/auth_provider.dart';
+import 'package:purpose/core/theme/app_theme.dart';
 
 /// Provider for streaming all question modules
 final allQuestionModulesProvider = StreamProvider<List<QuestionModule>>((ref) {
@@ -22,7 +23,8 @@ class AdminModulesPage extends ConsumerWidget {
 
     return Scaffold(
       appBar: AppBar(
-        backgroundColor: Theme.of(context).colorScheme.inversePrimary,
+        backgroundColor: AppTheme.primary,
+        foregroundColor: Colors.white,
         title: const Text('Question Modules'),
         leading: IconButton(
           icon: const Icon(Icons.arrow_back),

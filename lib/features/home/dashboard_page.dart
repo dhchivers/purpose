@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:purpose/core/services/auth_provider.dart';
+import 'package:purpose/features/values/values_page.dart';
 import 'package:intl/intl.dart';
 
 class DashboardPage extends ConsumerWidget {
@@ -258,11 +259,7 @@ class DashboardPage extends ConsumerWidget {
                       child: _QuickActionButton(
                         icon: Icons.diamond_outlined,
                         label: 'Values',
-                        onTap: () {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(content: Text('Values module coming soon!')),
-                          );
-                        },
+                        onTap: () => context.go('/values'),
                       ),
                     ),
                     const SizedBox(width: 8),
@@ -352,8 +349,31 @@ class DashboardPage extends ConsumerWidget {
                       flex: 1,
                       child: Column(
                         children: [
-                          _ValuesCard(
-                            values: const [], // Placeholder - will be populated from user data
+                          // Load and display user values
+                          Consumer(
+                            builder: (context, ref, child) {
+                              final userValuesAsync = ref.watch(userValuesProvider(user.uid));
+                              return userValuesAsync.when(
+                                data: (userValues) {
+                                  // Find the most recently updated value
+                                  DateTime? mostRecentUpdate;
+                                  if (userValues.isNotEmpty) {
+                                    for (final value in userValues) {
+                                      final valueUpdated = value.updatedAt ?? value.createdAt;
+                                      if (mostRecentUpdate == null || valueUpdated.isAfter(mostRecentUpdate)) {
+                                        mostRecentUpdate = valueUpdated;
+                                      }
+                                    }
+                                  }
+                                  return _ValuesCard(
+                                    values: userValues.map((v) => v.refinedLabel).toList(),
+                                    lastUpdated: mostRecentUpdate,
+                                  );
+                                },
+                                loading: () => const _ValuesCard(values: []),
+                                error: (_, __) => const _ValuesCard(values: []),
+                              );
+                            },
                           ),
                           const SizedBox(height: 12),
                           _GoalsCard(
@@ -453,17 +473,22 @@ class _PurposeCard extends StatelessWidget {
 
 class _ValuesCard extends StatelessWidget {
   final List<String> values;
+  final DateTime? lastUpdated;
 
   const _ValuesCard({
     required this.values,
+    this.lastUpdated,
   });
 
   @override
   Widget build(BuildContext context) {
     return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
+      child: InkWell(
+        onTap: () => context.go('/values'),
+        borderRadius: BorderRadius.circular(12),
+        child: Padding(
+          padding: const EdgeInsets.all(16.0),
+          child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Row(
@@ -537,8 +562,19 @@ class _ValuesCard extends StatelessWidget {
                       ),
                 ),
               ),
+            if (lastUpdated != null) ...[
+              const SizedBox(height: 8),
+              Text(
+                'Updated ${DateFormat('MMM d, y').format(lastUpdated!)}',
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: Colors.grey[600],
+                      fontSize: 11,
+                    ),
+              ),
+            ],
           ],
         ),
+      ),
       ),
     );
   }

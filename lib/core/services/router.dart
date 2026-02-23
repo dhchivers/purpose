@@ -9,9 +9,13 @@ import 'package:purpose/features/home/dashboard_page.dart';
 import 'package:purpose/features/admin/admin_settings_page.dart';
 import 'package:purpose/features/admin/admin_modules_page.dart';
 import 'package:purpose/features/admin/admin_module_detail_page.dart';
+import 'package:purpose/features/admin/admin_values_seeds_page.dart';
 import 'package:purpose/features/purpose/purpose_modules_page.dart';
 import 'package:purpose/features/purpose/module_questionnaire_page.dart';
 import 'package:purpose/features/purpose/identity_analysis_page.dart';
+import 'package:purpose/features/values/values_page.dart';
+import 'package:purpose/features/values/value_creation_flow_page.dart';
+import 'package:purpose/features/values/value_detail_page.dart';
 import 'package:purpose/core/constants/app_constants.dart';
 
 /// Provider for GoRouter configuration
@@ -93,6 +97,11 @@ final routerProvider = Provider<GoRouter>((ref) {
         },
       ),
       GoRoute(
+        path: '/admin/values-seeds',
+        name: 'admin-values-seeds',
+        builder: (context, state) => const AdminValuesSeedsPage(),
+      ),
+      GoRoute(
         path: '/purpose',
         name: 'purpose',
         builder: (context, state) => const PurposeModulesPage(),
@@ -109,6 +118,24 @@ final routerProvider = Provider<GoRouter>((ref) {
         path: '/purpose/analysis',
         name: 'purpose-analysis',
         builder: (context, state) => const IdentityAnalysisPage(),
+      ),
+      GoRoute(
+        path: '/values',
+        name: 'values',
+        builder: (context, state) => const ValuesPage(),
+      ),
+      GoRoute(
+        path: '/values/create',
+        name: 'values-create',
+        builder: (context, state) => const ValueCreationFlowPage(),
+      ),
+      GoRoute(
+        path: '/values/:id',
+        name: 'value-detail',
+        builder: (context, state) {
+          final valueId = state.pathParameters['id']!;
+          return ValueDetailPage(valueId: valueId);
+        },
       ),
       // TODO: Add more routes as features are developed
       // GoRoute(
