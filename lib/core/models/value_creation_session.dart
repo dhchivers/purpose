@@ -2,6 +2,23 @@ import 'package:json_annotation/json_annotation.dart';
 
 part 'value_creation_session.g.dart';
 
+/// Represents a multiple choice question with options
+@JsonSerializable()
+class MultipleChoiceQuestion {
+  final String question;
+  final List<String> options;
+
+  MultipleChoiceQuestion({
+    required this.question,
+    required this.options,
+  });
+
+  factory MultipleChoiceQuestion.fromJson(Map<String, dynamic> json) =>
+      _$MultipleChoiceQuestionFromJson(json);
+
+  Map<String, dynamic> toJson() => _$MultipleChoiceQuestionToJson(this);
+}
+
 /// Represents a session of creating a refined value through the 5-phase process
 @JsonSerializable(explicitToJson: true)
 class ValueCreationSession {
@@ -13,22 +30,22 @@ class ValueCreationSession {
   final int currentPhase; // 1-5 for phases, 6 for final selection
   
   // Phase 2: Clarification
-  final List<String>? phase2Questions;
-  final List<String>? phase2Answers;
+  final List<MultipleChoiceQuestion>? phase2Questions;
+  final List<String>? phase2Answers; // Selected options text
   
   // Phase 3: Scope Narrowing
-  final List<String>? phase3Questions;
-  final List<String>? phase3Answers;
+  final List<MultipleChoiceQuestion>? phase3Questions;
+  final List<String>? phase3Answers; // Selected options text
   final String? refinedValuePhase3;
   
   // Phase 4: Friction & Sacrifice
-  final List<String>? phase4Questions;
-  final List<String>? phase4Answers;
+  final List<MultipleChoiceQuestion>? phase4Questions;
+  final List<String>? phase4Answers; // Selected options text
   final String? refinedValuePhase4;
   
   // Phase 5: Operationalization
-  final List<String>? phase5Questions;
-  final List<String>? phase5Answers;
+  final List<MultipleChoiceQuestion>? phase5Questions;
+  final List<String>? phase5Answers; // Selected options text
   
   // Final: Value options
   final List<ValueOption>? finalValueOptions;
@@ -69,15 +86,15 @@ class ValueCreationSession {
     DateTime? startedAt,
     DateTime? completedAt,
     int? currentPhase,
-    List<String>? phase2Questions,
+    List<MultipleChoiceQuestion>? phase2Questions,
     List<String>? phase2Answers,
-    List<String>? phase3Questions,
+    List<MultipleChoiceQuestion>? phase3Questions,
     List<String>? phase3Answers,
     String? refinedValuePhase3,
-    List<String>? phase4Questions,
+    List<MultipleChoiceQuestion>? phase4Questions,
     List<String>? phase4Answers,
     String? refinedValuePhase4,
-    List<String>? phase5Questions,
+    List<MultipleChoiceQuestion>? phase5Questions,
     List<String>? phase5Answers,
     List<ValueOption>? finalValueOptions,
     int? selectedOptionIndex,

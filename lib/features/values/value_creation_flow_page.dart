@@ -25,34 +25,21 @@ class _ValueCreationFlowPageState extends ConsumerState<ValueCreationFlowPage> {
   ValueCreationSession? _session;
   bool _isLoading = false;
 
-  // Phase 2 controllers
-  final _phase2Answer1Controller = TextEditingController();
-  final _phase2Answer2Controller = TextEditingController();
-  final _phase2Answer3Controller = TextEditingController();
-  final _phase2FormKey = GlobalKey<FormState>();
+  // Phase 2 selected answers (indices of selected options)
+  String? _phase2Answer1;
+  String? _phase2Answer2;
+  String? _phase2Answer3;
 
-  // Phase 3 controllers
-  final _phase3Answer1Controller = TextEditingController();
-  final _phase3Answer2Controller = TextEditingController();
-  final _phase3Answer3Controller = TextEditingController();
-  final _phase3FormKey = GlobalKey<FormState>();
+  // Phase 3 selected answers
+  String? _phase3Answer1;
+  String? _phase3Answer2;
+  String? _phase3Answer3;
 
   @override
   void initState() {
     super.initState();
     // Initialize with Phase 1
     _initializeSession();
-  }
-
-  @override
-  void dispose() {
-    _phase2Answer1Controller.dispose();
-    _phase2Answer2Controller.dispose();
-    _phase2Answer3Controller.dispose();
-    _phase3Answer1Controller.dispose();
-    _phase3Answer2Controller.dispose();
-    _phase3Answer3Controller.dispose();
-    super.dispose();
   }
 
   void _initializeSession() {
@@ -105,9 +92,17 @@ class _ValueCreationFlowPageState extends ConsumerState<ValueCreationFlowPage> {
     try {
       // Generate Phase 2 clarification questions
       final geminiService = await ref.read(geminiServiceProvider.future);
-      final questions = await geminiService.generateValueClarificationQuestions(
+      final questionsData = await geminiService.generateValueClarificationQuestions(
         seedValue: seedValue,
       );
+
+      // Convert to MultipleChoiceQuestion objects
+      final questions = questionsData.map((q) {
+        return MultipleChoiceQuestion(
+          question: q['question'] as String,
+          options: (q['options'] as List).cast<String>(),
+        );
+      }).toList();
 
       setState(() {
         _session = _session?.copyWith(
@@ -332,117 +327,122 @@ class _ValueCreationFlowPageState extends ConsumerState<ValueCreationFlowPage> {
     final questions = _session!.phase2Questions!;
 
     return SingleChildScrollView(
-      child: Form(
-        key: _phase2FormKey,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            // Header
-            Container(
-              padding: const EdgeInsets.all(24),
-              color: AppTheme.primaryTintLight,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 12,
-                          vertical: 6,
-                        ),
-                        decoration: BoxDecoration(
-                          color: AppTheme.primary,
-                          borderRadius: BorderRadius.circular(4),
-                        ),
-                        child: const Text(
-                          'PHASE 2',
-                          style: TextStyle(
-                            color: Colors.white,
-                            fontSize: 12,
-                            fontWeight: FontWeight.bold,
-                          ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          // Header
+          Container(
+            padding: const EdgeInsets.all(24),
+            color: AppTheme.primaryTintLight,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 6,
+                      ),
+                      decoration: BoxDecoration(
+                        color: AppTheme.primary,
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                      child: const Text(
+                        'PHASE 2',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 12,
+                          fontWeight: FontWeight.bold,
                         ),
                       ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Text(
-                          'Clarify: ${_session!.seedValue}',
-                          style: const TextStyle(
-                            fontSize: 20,
-                            fontWeight: FontWeight.bold,
-                          ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Text(
+                        'Clarify: ${_session!.seedValue}',
+                        style: const TextStyle(
+                          fontSize: 20,
+                          fontWeight: FontWeight.bold,
                         ),
                       ),
-                    ],
-                  ),
-                  const SizedBox(height: 12),
-                  const Text(
-                    'Let\'s explore what this value means to you personally. '
-                    'Take your time with each question.',
-                    style: TextStyle(fontSize: 14, height: 1.5),
-                  ),
-                ],
-              ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                const Text(
+                  'Let\'s explore what this value means to you personally. '
+                  'Select the answer that resonates most with you.',
+                  style: TextStyle(fontSize: 14, height: 1.5),
+                ),
+              ],
             ),
+          ),
 
-            // Questions
-            Padding(
-              padding: const EdgeInsets.all(24),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  _buildQuestionCard(
-                    questionNumber: 1,
-                    question: questions[0],
-                    controller: _phase2Answer1Controller,
-                  ),
-                  const SizedBox(height: 24),
-                  _buildQuestionCard(
-                    questionNumber: 2,
-                    question: questions[1],
-                    controller: _phase2Answer2Controller,
-                  ),
-                  const SizedBox(height: 24),
-                  _buildQuestionCard(
-                    questionNumber: 3,
-                    question: questions[2],
-                    controller: _phase2Answer3Controller,
-                  ),
-                  const SizedBox(height: 32),
-                  
-                  // Next button
-                  ElevatedButton(
-                    onPressed: _submitPhase2Answers,
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: AppTheme.primary,
-                      foregroundColor: Colors.white,
-                      padding: const EdgeInsets.symmetric(vertical: 16),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(8),
-                      ),
+          // Questions
+          Padding(
+            padding: const EdgeInsets.all(24),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                _buildMultipleChoiceQuestion(
+                  questionNumber: 1,
+                  question: questions[0],
+                  selectedAnswer: _phase2Answer1,
+                  onChanged: (value) => setState(() => _phase2Answer1 = value),
+                ),
+                const SizedBox(height: 24),
+                _buildMultipleChoiceQuestion(
+                  questionNumber: 2,
+                  question: questions[1],
+                  selectedAnswer: _phase2Answer2,
+                  onChanged: (value) => setState(() => _phase2Answer2 = value),
+                ),
+                const SizedBox(height: 24),
+                _buildMultipleChoiceQuestion(
+                  questionNumber: 3,
+                  question: questions[2],
+                  selectedAnswer: _phase2Answer3,
+                  onChanged: (value) => setState(() => _phase2Answer3 = value),
+                ),
+                const SizedBox(height: 32),
+                
+                // Next button
+                ElevatedButton(
+                  onPressed: (_phase2Answer1 != null && 
+                             _phase2Answer2 != null && 
+                             _phase2Answer3 != null)
+                      ? _submitPhase2Answers
+                      : null,
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppTheme.primary,
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(vertical: 16),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(8),
                     ),
-                    child: const Text(
-                      'Continue to Next Phase',
-                      style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.bold,
-                      ),
+                  ),
+                  child: const Text(
+                    'Continue to Next Phase',
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
                     ),
                   ),
-                ],
-              ),
+                ),
+              ],
             ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
 
-  Widget _buildQuestionCard({
+  Widget _buildMultipleChoiceQuestion({
     required int questionNumber,
-    required String question,
-    required TextEditingController controller,
+    required MultipleChoiceQuestion question,
+    required String? selectedAnswer,
+    required ValueChanged<String?> onChanged,
   }) {
     return Card(
       elevation: 2,
@@ -478,7 +478,7 @@ class _ValueCreationFlowPageState extends ConsumerState<ValueCreationFlowPage> {
                 const SizedBox(width: 12),
                 Expanded(
                   child: Text(
-                    question,
+                    question.question,
                     style: const TextStyle(
                       fontSize: 16,
                       fontWeight: FontWeight.w500,
@@ -489,27 +489,20 @@ class _ValueCreationFlowPageState extends ConsumerState<ValueCreationFlowPage> {
               ],
             ),
             const SizedBox(height: 16),
-            TextFormField(
-              controller: controller,
-              maxLines: 5,
-              decoration: InputDecoration(
-                hintText: 'Share your thoughts...',
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(8),
+            ...question.options.map((option) {
+              return RadioListTile<String>(
+                title: Text(
+                  option,
+                  style: const TextStyle(fontSize: 14),
                 ),
-                filled: true,
-                fillColor: Colors.grey[50],
-              ),
-              validator: (value) {
-                if (value == null || value.trim().isEmpty) {
-                  return 'Please provide an answer';
-                }
-                if (value.trim().length < 10) {
-                  return 'Please provide a more detailed answer';
-                }
-                return null;
-              },
-            ),
+                value: option,
+                groupValue: selectedAnswer,
+                onChanged: onChanged,
+                activeColor: AppTheme.primary,
+                contentPadding: EdgeInsets.zero,
+                visualDensity: VisualDensity.compact,
+              );
+            }).toList(),
           ],
         ),
       ),
@@ -517,15 +510,18 @@ class _ValueCreationFlowPageState extends ConsumerState<ValueCreationFlowPage> {
   }
 
   void _submitPhase2Answers() async {
-    if (!_phase2FormKey.currentState!.validate()) {
+    // Validate all answers are selected
+    if (_phase2Answer1 == null || _phase2Answer2 == null || _phase2Answer3 == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Please answer all questions')),
+      );
       return;
     }
 
-    final answers = [
-      _phase2Answer1Controller.text.trim(),
-      _phase2Answer2Controller.text.trim(),
-      _phase2Answer3Controller.text.trim(),
-    ];
+    final answers = [_phase2Answer1!, _phase2Answer2!, _phase2Answer3!];
+
+    // Build context with questions and answers
+    final questionsText = _session!.phase2Questions!.map((q) => q.question).toList();
 
     setState(() {
       _isLoading = true;
@@ -536,12 +532,20 @@ class _ValueCreationFlowPageState extends ConsumerState<ValueCreationFlowPage> {
       final geminiService = await ref.read(geminiServiceProvider.future);
       final result = await geminiService.generateValueScopeNarrowing(
         seedValue: _session!.seedValue,
-        phase2Questions: _session!.phase2Questions!,
+        phase2Questions: questionsText,
         phase2Answers: answers,
       );
 
       final refinedLabel = result['refinedLabel'] as String;
-      final questions = (result['questions'] as List).cast<String>();
+      final questionsData = result['questions'] as List;
+
+      // Convert to MultipleChoiceQuestion objects
+      final questions = questionsData.map((q) {
+        return MultipleChoiceQuestion(
+          question: q['question'] as String,
+          options: (q['options'] as List).cast<String>(),
+        );
+      }).toList();
 
       setState(() {
         _session = _session?.copyWith(
@@ -578,124 +582,130 @@ class _ValueCreationFlowPageState extends ConsumerState<ValueCreationFlowPage> {
     final refinedLabel = _session!.refinedValuePhase3 ?? _session!.seedValue;
 
     return SingleChildScrollView(
-      child: Form(
-        key: _phase3FormKey,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            // Header
-            Container(
-              padding: const EdgeInsets.all(24),
-              color: AppTheme.primaryTintLight,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 12,
-                          vertical: 6,
-                        ),
-                        decoration: BoxDecoration(
-                          color: AppTheme.primary,
-                          borderRadius: BorderRadius.circular(4),
-                        ),
-                        child: const Text(
-                          'PHASE 3',
-                          style: TextStyle(
-                            color: Colors.white,
-                            fontSize: 12,
-                            fontWeight: FontWeight.bold,
-                          ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          // Header
+          Container(
+            padding: const EdgeInsets.all(24),
+            color: AppTheme.primaryTintLight,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 6,
+                      ),
+                      decoration: BoxDecoration(
+                        color: AppTheme.primary,
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                      child: const Text(
+                        'PHASE 3',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 12,
+                          fontWeight: FontWeight.bold,
                         ),
                       ),
-                      const SizedBox(width: 12),
-                      const Expanded(
-                        child: Text(
-                          'Narrow the Scope',
-                          style: TextStyle(
-                            fontSize: 20,
-                            fontWeight: FontWeight.bold,
-                          ),
+                    ),
+                    const SizedBox(width: 12),
+                    const Expanded(
+                      child: Text(
+                        'Narrow the Scope',
+                        style: TextStyle(
+                          fontSize: 20,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 16),
+                // Show refined label
+                Container(
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: AppTheme.primary, width: 2),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        'Refined Value:',
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w500,
+                          color: Colors.black54,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        refinedLabel,
+                        style: TextStyle(
+                          fontSize: 24,
+                          fontWeight: FontWeight.bold,
+                          color: AppTheme.primary,
                         ),
                       ),
                     ],
                   ),
-                  const SizedBox(height: 16),
-                  // Show refined label
-                  Container(
-                    padding: const EdgeInsets.all(16),
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(8),
-                      border: Border.all(color: AppTheme.primary, width: 2),
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const Text(
-                          'Refined Value:',
-                          style: TextStyle(
-                            fontSize: 12,
-                            fontWeight: FontWeight.w500,
-                            color: Colors.black54,
-                          ),
-                        ),
-                        const SizedBox(height: 4),
-                        Text(
-                          refinedLabel,
-                          style: TextStyle(
-                            fontSize: 24,
-                            fontWeight: FontWeight.bold,
-                            color: AppTheme.primary,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-                  const Text(
-                    'Let\'s narrow down the specific ways this value applies to your life.',
-                    style: TextStyle(fontSize: 14, height: 1.5),
-                  ),
-                ],
-              ),
+                ),
+                const SizedBox(height: 16),
+                const Text(
+                  'Let\'s narrow down the specific ways this value applies to your life. '
+                  'Select the answer that best describes your situation.',
+                  style: TextStyle(fontSize: 14, height: 1.5),
+                ),
+              ],
             ),
+          ),
 
-            // Questions
-            Padding(
-              padding: const EdgeInsets.all(24),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  _buildQuestionCard(
-                    questionNumber: 1,
-                    question: questions[0],
-                    controller: _phase3Answer1Controller,
-                  ),
-                  const SizedBox(height: 24),
-                  _buildQuestionCard(
-                    questionNumber: 2,
-                    question: questions[1],
-                    controller: _phase3Answer2Controller,
-                  ),
-                  const SizedBox(height: 24),
-                  _buildQuestionCard(
-                    questionNumber: 3,
-                    question: questions[2],
-                    controller: _phase3Answer3Controller,
-                  ),
-                  const SizedBox(height: 32),
-                  
-                  // Next button
-                  ElevatedButton(
-                    onPressed: _submitPhase3Answers,
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: AppTheme.primary,
-                      foregroundColor: Colors.white,
-                      padding: const EdgeInsets.symmetric(vertical: 16),
-                      shape: RoundedRectangleBorder(
+          // Questions
+          Padding(
+            padding: const EdgeInsets.all(24),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                _buildMultipleChoiceQuestion(
+                  questionNumber: 1,
+                  question: questions[0],
+                  selectedAnswer: _phase3Answer1,
+                  onChanged: (value) => setState(() => _phase3Answer1 = value),
+                ),
+                const SizedBox(height: 24),
+                _buildMultipleChoiceQuestion(
+                  questionNumber: 2,
+                  question: questions[1],
+                  selectedAnswer: _phase3Answer2,
+                  onChanged: (value) => setState(() => _phase3Answer2 = value),
+                ),
+                const SizedBox(height: 24),
+                _buildMultipleChoiceQuestion(
+                  questionNumber: 3,
+                  question: questions[2],
+                  selectedAnswer: _phase3Answer3,
+                  onChanged: (value) => setState(() => _phase3Answer3 = value),
+                ),
+                const SizedBox(height: 32),
+                
+                // Next button
+                ElevatedButton(
+                  onPressed: (_phase3Answer1 != null && 
+                             _phase3Answer2 != null && 
+                             _phase3Answer3 != null)
+                      ? _submitPhase3Answers
+                      : null,
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppTheme.primary,
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(vertical: 16),
+                    shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(8),
                       ),
                     ),
@@ -710,22 +720,21 @@ class _ValueCreationFlowPageState extends ConsumerState<ValueCreationFlowPage> {
                 ],
               ),
             ),
-          ],
-        ),
+        ],
       ),
     );
   }
 
   void _submitPhase3Answers() {
-    if (!_phase3FormKey.currentState!.validate()) {
+    // Validate all answers are selected
+    if (_phase3Answer1 == null || _phase3Answer2 == null || _phase3Answer3 == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Please answer all questions')),
+      );
       return;
     }
 
-    final answers = [
-      _phase3Answer1Controller.text.trim(),
-      _phase3Answer2Controller.text.trim(),
-      _phase3Answer3Controller.text.trim(),
-    ];
+    final answers = [_phase3Answer1!, _phase3Answer2!, _phase3Answer3!];
 
     setState(() {
       _session = _session?.copyWith(

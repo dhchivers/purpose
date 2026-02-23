@@ -511,7 +511,7 @@ Be authentic, inspiring, and specific to THEIR unique responses. This should fee
   }
 
   /// Generate clarification questions for Phase 2 of value creation
-  Future<List<String>> generateValueClarificationQuestions({
+  Future<List<Map<String, dynamic>>> generateValueClarificationQuestions({
     required String seedValue,
   }) async {
     final prompt = '''
@@ -519,19 +519,34 @@ You are a values clarification expert helping a user explore what a value truly 
 
 The user has selected "$seedValue" as a value they want to develop and articulate.
 
-Generate exactly 3 clarification questions that will help them:
+Generate exactly 3 multiple choice questions that will help them:
 1. Define what this value personally means to them (not just dictionary definition)
 2. Identify how this value shows up or could show up in their life
 3. Connect the value to their deeper motivations or aspirations
 
+Each question should have 4 answer options that represent different perspectives or interpretations.
+
 Questions should be:
-- Open-ended and thought-provoking
+- Thought-provoking and insightful
 - Personal and introspective
-- Specific enough to generate meaningful answers
+- Have options that feel authentic and meaningful
 - Focused on the user's unique interpretation and experience
 
-Return ONLY a JSON array of 3 question strings, like this:
-["Question 1 here?", "Question 2 here?", "Question 3 here?"]
+Return ONLY a JSON array of objects with this exact structure:
+[
+  {
+    "question": "Question 1 text here?",
+    "options": ["Option A", "Option B", "Option C", "Option D"]
+  },
+  {
+    "question": "Question 2 text here?",
+    "options": ["Option A", "Option B", "Option C", "Option D"]
+  },
+  {
+    "question": "Question 3 text here?",
+    "options": ["Option A", "Option B", "Option C", "Option D"]
+  }
+]
 
 No additional text or formatting, just the JSON array.
 ''';
@@ -546,19 +561,43 @@ No additional text or formatting, just the JSON array.
           },
         ],
         temperature: 0.8, // Higher temperature for creative questions
-        maxTokens: 500,
+        maxTokens: 800,
       );
       
       final content = _extractContent(response);
       final questions = jsonDecode(content) as List;
-      return questions.cast<String>();
+      return questions.cast<Map<String, dynamic>>();
     } catch (e) {
       print('Error generating clarification questions: $e');
       // Fallback to generic questions if AI fails
       return [
-        'What does "$seedValue" mean to you personally?',
-        'Can you describe a time when this value was particularly important to you?',
-        'How would your life be different if you more fully lived this value?',
+        {
+          'question': 'What does "$seedValue" mean to you personally?',
+          'options': [
+            'Living authentically according to my principles',
+            'Achieving specific outcomes or goals',
+            'The way I treat and relate to others',
+            'How I develop and improve myself'
+          ]
+        },
+        {
+          'question': 'When is this value most important to you?',
+          'options': [
+            'When making major life decisions',
+            'In my daily interactions and routines',
+            'During challenging or stressful times',
+            'When pursuing my goals and aspirations'
+          ]
+        },
+        {
+          'question': 'How would you like this value to guide your life?',
+          'options': [
+            'As a constant compass for all decisions',
+            'As inspiration for specific goals or projects',
+            'As a foundation for my relationships',
+            'As a measure of my personal growth'
+          ]
+        },
       ];
     }
   }
@@ -586,7 +625,7 @@ $answersContext
 
 Based on their responses, you need to:
 1. Generate a refined, more specific label for this value (2-4 words)
-2. Create 3 follow-up questions that help narrow the scope further
+2. Create 3 multiple choice questions that help narrow the scope further
 
 The refined label should:
 - Capture the essence of what they described
@@ -598,14 +637,24 @@ The 3 questions should:
 - Help identify specific contexts where this value applies
 - Clarify boundaries or limits of this value
 - Distinguish what this value is vs. what it's not for them
+- Each question should have 4 answer options
 
 Return ONLY a JSON object in this exact format:
 {
   "refinedLabel": "Your refined 2-4 word label here",
   "questions": [
-    "Question 1 here?",
-    "Question 2 here?",
-    "Question 3 here?"
+    {
+      "question": "Question 1 text here?",
+      "options": ["Option A", "Option B", "Option C", "Option D"]
+    },
+    {
+      "question": "Question 2 text here?",
+      "options": ["Option A", "Option B", "Option C", "Option D"]
+    },
+    {
+      "question": "Question 3 text here?",
+      "options": ["Option A", "Option B", "Option C", "Option D"]
+    }
   ]
 }
 
@@ -622,7 +671,7 @@ No additional text, just the JSON object.
           },
         ],
         temperature: 0.8,
-        maxTokens: 600,
+        maxTokens: 1000,
       );
       
       final content = _extractContent(response);
@@ -633,9 +682,33 @@ No additional text, just the JSON object.
       return {
         'refinedLabel': 'Personal $seedValue',
         'questions': [
-          'In what specific areas of your life does this value matter most?',
-          'What are some situations where this value does NOT apply for you?',
-          'How is your version of this value different from how others might define it?',
+          {
+            'question': 'In what areas of your life does this value matter most?',
+            'options': [
+              'Career and professional development',
+              'Personal relationships and family',
+              'Personal growth and learning',
+              'Community and social impact'
+            ]
+          },
+          {
+            'question': 'What are the limits or boundaries of this value for you?',
+            'options': [
+              'It applies to almost everything I do',
+              'It\'s context-specific to certain situations',
+              'It\'s balanced with other important values',
+              'It\'s aspirational, not yet fully realized'
+            ]
+          },
+          {
+            'question': 'How is your interpretation unique?',
+            'options': [
+              'I emphasize the practical application',
+              'I focus on the emotional or relational aspects',
+              'I connect it to my long-term vision',
+              'I balance it with competing priorities'
+            ]
+          }
         ],
       };
     }
