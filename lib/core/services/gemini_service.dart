@@ -1152,4 +1152,111 @@ No additional text, just the JSON array.
       ];
     }
   }
+
+  /// Generate vision statement options
+  /// Creates 3 distinct vision statements based on user's purpose, values, and vision inputs
+  Future<List<Map<String, dynamic>>> generateVisionStatements({
+    required int timeframeYears,
+    required String purposeStatement,
+    required List<String> coreValues,
+    required String meaningfulChange,
+    required String influenceScale,
+    required String roleDescription,
+  }) async {
+    final valuesContext = coreValues.join(', ');
+
+    final prompt = '''
+You are a Vision Synthesis Agent.
+
+You have received the following context:
+
+**Timeframe:** $timeframeYears years
+**Purpose Statement:** "$purposeStatement"
+**Core Values:** $valuesContext
+
+**User Responses:**
+1. Meaningful Change: "$meaningfulChange"
+2. Influence Scale: $influenceScale
+3. Role: "$roleDescription"
+
+Your task:
+1. Identify consistent patterns in desired impact
+2. Confirm alignment with core values
+3. Detect unrealistic or goal-based framing and correct it
+4. Generate exactly 3 differentiated Vision statement options
+
+Each Vision statement must:
+- Be written in present tense as if already true
+- Describe changed conditions, not tasks or goals
+- Reflect the scale ($influenceScale) and domain
+- Remain aligned with Purpose
+- Remain constrained by Values
+- Avoid listing metrics or milestones
+- Paint a picture of the world that exists because they lived their purpose
+
+Generate 3 options with these specific styles:
+
+**Option 1 — Clear & Strategic**
+Straightforward, concrete description of changed conditions. Focus on observable outcomes and tangible shifts.
+
+**Option 2 — Systems & Institutional**
+Emphasize structural changes, institutional transformation, or systemic patterns. Focus on how systems and organizations function differently.
+
+**Option 3 — Meaning & Human Impact Integrated**
+Connect changed conditions to deeper meaning and human experience. Focus on how people's lives and relationships are different.
+
+Return ONLY a JSON array with this exact structure:
+[
+  {
+    "label": "Clear & Strategic",
+    "statement": "<clear strategic vision statement here>"
+  },
+  {
+    "label": "Systems & Institutional",
+    "statement": "<systems and institutional vision statement here>"
+  },
+  {
+    "label": "Meaning & Human Impact",
+    "statement": "<meaning and human impact vision statement here>"
+  }
+]
+
+No additional text, just the JSON array.
+''';
+
+    try {
+      final response = await _makeOpenAIRequest(
+        model: AIConfig.defaultModel,
+        messages: [
+          {
+            'role': 'user',
+            'content': prompt,
+          },
+        ],
+        temperature: 0.8,
+        maxTokens: 1000,
+      );
+      
+      final content = _extractContent(response);
+      final data = jsonDecode(content) as List<dynamic>;
+      return data.cast<Map<String, dynamic>>();
+    } catch (e) {
+      print('Error generating vision statements: $e');
+      // Return fallback options
+      return [
+        {
+          'label': 'Clear & Strategic',
+          'statement': 'In $timeframeYears years, meaningful change exists in the $influenceScale level because of my commitment to $purposeStatement.'
+        },
+        {
+          'label': 'Systems & Institutional',
+          'statement': 'Systems and institutions operate differently in $timeframeYears years, reflecting the values of $valuesContext through my sustained focus on $purposeStatement.'
+        },
+        {
+          'label': 'Meaning & Human Impact',
+          'statement': 'People experience greater meaning and connection in $timeframeYears years as a result of my dedication to $purposeStatement, guided by $valuesContext.'
+        }
+      ];
+    }
+  }
 }
