@@ -7,6 +7,7 @@ import 'package:purpose/core/services/gemini_provider.dart';
 import 'package:purpose/core/models/value_creation_session.dart';
 import 'package:purpose/core/models/user_value.dart';
 import 'package:purpose/core/theme/app_theme.dart';
+import 'package:purpose/features/values/values_page.dart';
 
 /// Provider for streaming value seeds
 final valueSeedsProvider = StreamProvider<List<String>>((ref) {
@@ -1568,6 +1569,9 @@ class _ValueCreationFlowPageState extends ConsumerState<ValueCreationFlowPage> {
       await firestoreService.saveValueCreationSession(_session!);
 
       if (mounted) {
+        // Invalidate the values list to refresh it
+        ref.invalidate(userValuesProvider(user.uid));
+
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('Value "$refinedLabel" created successfully!'),
