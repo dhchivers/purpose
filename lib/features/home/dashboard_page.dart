@@ -354,11 +354,24 @@ class DashboardPage extends ConsumerWidget {
                             builder: (context, ref, child) {
                               final userValuesAsync = ref.watch(userValuesProvider(user.uid));
                               return userValuesAsync.when(
-                                data: (userValues) => _ValuesCard(
-                                  values: userValues.map((v) => v.refinedLabel).toList(),
-                                ),
-                                loading: () => _ValuesCard(values: const []),
-                                error: (_, __) => _ValuesCard(values: const []),
+                                data: (userValues) {
+                                  // Find the most recently updated value
+                                  DateTime? mostRecentUpdate;
+                                  if (userValues.isNotEmpty) {
+                                    for (final value in userValues) {
+                                      final valueUpdated = value.updatedAt ?? value.createdAt;
+                                      if (mostRecentUpdate == null || valueUpdated.isAfter(mostRecentUpdate)) {
+                                        mostRecentUpdate = valueUpdated;
+                                      }
+                                    }
+                                  }
+                                  return _ValuesCard(
+                                    values: userValues.map((v) => v.refinedLabel).toList(),
+                                    lastUpdated: mostRecentUpdate,
+                                  );
+                                },
+                                loading: () => const _ValuesCard(values: []),
+                                error: (_, __) => const _ValuesCard(values: []),
                               );
                             },
                           ),
@@ -460,9 +473,11 @@ class _PurposeCard extends StatelessWidget {
 
 class _ValuesCard extends StatelessWidget {
   final List<String> values;
+  final DateTime? lastUpdated;
 
   const _ValuesCard({
     required this.values,
+    this.lastUpdated,
   });
 
   @override
@@ -547,6 +562,16 @@ class _ValuesCard extends StatelessWidget {
                       ),
                 ),
               ),
+            if (lastUpdated != null) ...[
+              const SizedBox(height: 8),
+              Text(
+                'Updated ${DateFormat('MMM d, y').format(lastUpdated!)}',
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: Colors.grey[600],
+                      fontSize: 11,
+                    ),
+              ),
+            ],
           ],
         ),
       ),
