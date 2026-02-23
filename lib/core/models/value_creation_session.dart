@@ -46,6 +46,7 @@ class ValueCreationSession {
   // Phase 5: Operationalization
   final List<MultipleChoiceQuestion>? phase5Questions;
   final List<String>? phase5Answers; // Selected options text
+  final String? refinedValuePhase5;
   
   // Final: Value options
   final List<ValueOption>? finalValueOptions;
@@ -69,6 +70,7 @@ class ValueCreationSession {
     this.refinedValuePhase4,
     this.phase5Questions,
     this.phase5Answers,
+    this.refinedValuePhase5,
     this.finalValueOptions,
     this.selectedOptionIndex,
     this.customStatement,
@@ -96,6 +98,7 @@ class ValueCreationSession {
     String? refinedValuePhase4,
     List<MultipleChoiceQuestion>? phase5Questions,
     List<String>? phase5Answers,
+    String? refinedValuePhase5,
     List<ValueOption>? finalValueOptions,
     int? selectedOptionIndex,
     String? customStatement,
@@ -117,6 +120,7 @@ class ValueCreationSession {
       refinedValuePhase4: refinedValuePhase4 ?? this.refinedValuePhase4,
       phase5Questions: phase5Questions ?? this.phase5Questions,
       phase5Answers: phase5Answers ?? this.phase5Answers,
+      refinedValuePhase5: refinedValuePhase5 ?? this.refinedValuePhase5,
       finalValueOptions: finalValueOptions ?? this.finalValueOptions,
       selectedOptionIndex: selectedOptionIndex ?? this.selectedOptionIndex,
       customStatement: customStatement ?? this.customStatement,

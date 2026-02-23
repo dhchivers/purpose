@@ -823,4 +823,112 @@ No additional text, just the JSON object.
       };
     }
   }
+
+  /// Generate Phase 5: Operationalization questions
+  /// Explores practical behaviors, boundaries, and measurement
+  Future<Map<String, dynamic>> generateValueOperationalization({
+    required String seedValue,
+    required String refinedLabel,
+    required List<String> phase4Questions,
+    required List<String> phase4Answers,
+  }) async {
+    final answersContext = StringBuffer();
+    for (int i = 0; i < phase4Questions.length; i++) {
+      answersContext.writeln('Q: ${phase4Questions[i]}');
+      answersContext.writeln('A: ${phase4Answers[i]}');
+      answersContext.writeln();
+    }
+
+    final prompt = '''
+You are helping a user operationalize their personal value: "$refinedLabel" (originally stemming from "$seedValue").
+
+They have just completed Phase 4 (Friction & Sacrifice), answering questions about their commitment:
+$answersContext
+
+Now in Phase 5, we need to make this value OPERATIONAL - translating commitment into concrete action.
+
+Generate 3 multiple choice questions that explore:
+1. BEHAVIORS: What specific actions demonstrate this value in daily life?
+2. BOUNDARIES: In what contexts does this value apply, and where are its limits?
+3. MEASUREMENT: How will they know if they're living according to this value?
+
+Each question should have 4 options that represent different levels of specificity or practical application.
+
+Return ONLY a JSON object in this exact format:
+{
+  "refinedLabel": "<refined label (may be same as input or further refined if needed)>",
+  "questions": [
+    {
+      "question": "<question 1 about behaviors>",
+      "options": ["<option 1>", "<option 2>", "<option 3>", "<option 4>"]
+    },
+    {
+      "question": "<question 2 about boundaries>",
+      "options": ["<option 1>", "<option 2>", "<option 3>", "<option 4>"]
+    },
+    {
+      "question": "<question 3 about measurement>",
+      "options": ["<option 1>", "<option 2>", "<option 3>", "<option 4>"]
+    }
+  ]
+}
+
+No additional text, just the JSON object.
+''';
+
+    try {
+      final response = await _makeOpenAIRequest(
+        model: AIConfig.defaultModel,
+        messages: [
+          {
+            'role': 'user',
+            'content': prompt,
+          },
+        ],
+        temperature: 0.8,
+        maxTokens: 1000,
+      );
+      
+      final content = _extractContent(response);
+      return jsonDecode(content) as Map<String, dynamic>;
+    } catch (e) {
+      print('Error generating operationalization questions: $e');
+      // Return fallback structure
+      return {
+        'refinedLabel': refinedLabel,
+        'questions': [
+          {
+            'question':
+                'What daily actions would best demonstrate $refinedLabel in your life?',
+            'options': [
+              'Specific morning and evening routines',
+              'Actions when making important decisions',
+              'How I interact with others regularly',
+              'Regular reflection and self-assessment'
+            ]
+          },
+          {
+            'question':
+                'When and where does this value apply most strongly?',
+            'options': [
+              'In all areas of life without exception',
+              'Primarily in relationships with close ones',
+              'Mostly in professional and public contexts',
+              'In specific situations when stakes are high'
+            ]
+          },
+          {
+            'question':
+                'How will you measure whether you\'re living according to $refinedLabel?',
+            'options': [
+              'Daily check-ins and journaling',
+              'Monthly review of specific behaviors',
+              'Feedback from people I trust',
+              'Internal sense of alignment and peace'
+            ]
+          }
+        ]
+      };
+    }
+  }
 }

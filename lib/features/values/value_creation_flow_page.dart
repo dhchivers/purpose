@@ -40,6 +40,11 @@ class _ValueCreationFlowPageState extends ConsumerState<ValueCreationFlowPage> {
   String? _phase4Answer2;
   String? _phase4Answer3;
 
+  // Phase 5 selected answers
+  String? _phase5Answer1;
+  String? _phase5Answer2;
+  String? _phase5Answer3;
+
   @override
   void initState() {
     super.initState();
@@ -949,7 +954,7 @@ class _ValueCreationFlowPageState extends ConsumerState<ValueCreationFlowPage> {
     );
   }
 
-  void _submitPhase4Answers() {
+  Future<void> _submitPhase4Answers() async {
     // Validate all answers are selected
     if (_phase4Answer1 == null || _phase4Answer2 == null || _phase4Answer3 == null) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -960,29 +965,235 @@ class _ValueCreationFlowPageState extends ConsumerState<ValueCreationFlowPage> {
 
     final answers = [_phase4Answer1!, _phase4Answer2!, _phase4Answer3!];
 
+    // Store Phase 4 answers first
     setState(() {
       _session = _session?.copyWith(
         phase4Answers: answers,
-        currentPhase: 5, // Move to Phase 5
+      );
+    });
+
+    // Generate Phase 5 questions via AI
+    try {
+      final geminiService = ref.read(geminiServiceProvider).value;
+      if (geminiService == null) {
+        throw Exception('AI service not available');
+      }
+
+      // Convert phase4Questions to List<String>
+      final phase4QuestionStrings = _session!.phase4Questions!.map((q) => q.question).toList();
+
+      final response = await geminiService.generateValueOperationalization(
+        seedValue: _session!.seedValue,
+        refinedLabel: _session!.refinedValuePhase4!,
+        phase4Questions: phase4QuestionStrings,
+        phase4Answers: answers,
+      );
+
+      // Convert response to MultipleChoiceQuestion objects
+      final questions = (response['questions'] as List)
+          .map((q) => MultipleChoiceQuestion(
+                question: q['question'] as String,
+                options: (q['options'] as List).cast<String>(),
+              ))
+          .toList();
+
+      setState(() {
+        _session = _session?.copyWith(
+          phase5Questions: questions,
+          refinedValuePhase5: response['refinedLabel'] as String?,
+          currentPhase: 5,
+        );
+      });
+
+      // TODO: Save session to Firestore
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error generating Phase 5 questions: $e')),
+        );
+      }
+    }
+  }
+
+  /// Phase 5: Operationalization
+  Widget _buildPhase5Operationalization() {
+    if (_session!.phase5Questions?.isEmpty ?? true) {
+      return const Center(child: CircularProgressIndicator());
+    }
+
+    final refinedLabel = _session!.refinedValuePhase5 ?? _session!.refinedValuePhase4 ?? _session!.seedValue;
+    final allAnswered = _phase5Answer1 != null &&
+        _phase5Answer2 != null &&
+        _phase5Answer3 != null;
+
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(24),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Phase badge
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+            decoration: BoxDecoration(
+              color: AppTheme.primary,
+              borderRadius: BorderRadius.circular(20),
+            ),
+            child: const Text(
+              'PHASE 5',
+              style: TextStyle(
+                color: Colors.white,
+                fontSize: 12,
+                fontWeight: FontWeight.bold,
+                letterSpacing: 1.2,
+              ),
+            ),
+          ),
+          const SizedBox(height: 16),
+
+          // Title
+          const Text(
+            'Make It Operational',
+            style: TextStyle(
+              fontSize: 28,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+          const SizedBox(height: 24),
+
+          // Show refined value
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              border: Border.all(color: AppTheme.primary, width: 2),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Your Value:',
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.grey,
+                    letterSpacing: 1.2,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  refinedLabel,
+                  style: const TextStyle(
+                    fontSize: 20,
+                    fontWeight: FontWeight.bold,
+                    color: AppTheme.primary,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 24),
+
+          // Helper text
+          const Text(
+            'Now let\'s translate this commitment into concrete, measurable action. Answer these questions to operationalize your value:',
+            style: TextStyle(
+              fontSize: 16,
+              color: Colors.black87,
+              height: 1.5,
+            ),
+          ),
+          const SizedBox(height: 32),
+
+          // Questions
+          _buildMultipleChoiceQuestion(
+            questionNumber: 1,
+            question: _session!.phase5Questions![0],
+            selectedAnswer: _phase5Answer1,
+            onChanged: (value) {
+              setState(() {
+                _phase5Answer1 = value;
+              });
+            },
+          ),
+          const SizedBox(height: 32),
+
+          _buildMultipleChoiceQuestion(
+            questionNumber: 2,
+            question: _session!.phase5Questions![1],
+            selectedAnswer: _phase5Answer2,
+            onChanged: (value) {
+              setState(() {
+                _phase5Answer2 = value;
+              });
+            },
+          ),
+          const SizedBox(height: 32),
+
+          _buildMultipleChoiceQuestion(
+            questionNumber: 3,
+            question: _session!.phase5Questions![2],
+            selectedAnswer: _phase5Answer3,
+            onChanged: (value) {
+              setState(() {
+                _phase5Answer3 = value;
+              });
+            },
+          ),
+          const SizedBox(height: 48),
+
+          // Continue button
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton(
+              onPressed: allAnswered ? _submitPhase5Answers : null,
+              style: ElevatedButton.styleFrom(
+                padding: const EdgeInsets.symmetric(vertical: 16),
+                backgroundColor: AppTheme.primary,
+                disabledBackgroundColor: Colors.grey[300],
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+              ),
+              child: Text(
+                'Complete Value Creation',
+                style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                  color: allAnswered ? Colors.white : Colors.grey[500],
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(height: 24),
+        ],
+      ),
+    );
+  }
+
+  void _submitPhase5Answers() {
+    if (_phase5Answer1 == null ||
+        _phase5Answer2 == null ||
+        _phase5Answer3 == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Please answer all questions')),
+      );
+      return;
+    }
+
+    setState(() {
+      _session = _session!.copyWith(
+        phase5Answers: [_phase5Answer1!, _phase5Answer2!, _phase5Answer3!],
+        currentPhase: 6,
       );
     });
 
     // TODO: Save session to Firestore
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(
-        content: Text('Phase 4 complete! Moving to Phase 5...'),
+        content: Text('Phase 5 complete! Ready for final value generation...'),
         duration: Duration(seconds: 2),
-      ),
-    );
-  }
-
-  /// Phase 5: Operationalization (placeholder)
-  Widget _buildPhase5Operationalization() {
-    return const Center(
-      child: Text(
-        'Phase 5: Operationalization\n(Coming next)',
-        textAlign: TextAlign.center,
-        style: TextStyle(fontSize: 18),
       ),
     );
   }
