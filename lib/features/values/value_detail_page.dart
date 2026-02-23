@@ -5,6 +5,7 @@ import 'package:intl/intl.dart';
 import 'package:purpose/core/services/firestore_provider.dart';
 import 'package:purpose/core/models/user_value.dart';
 import 'package:purpose/core/theme/app_theme.dart';
+import 'package:purpose/features/values/values_page.dart';
 
 /// Page for viewing and editing a specific value
 class ValueDetailPage extends ConsumerStatefulWidget {
@@ -88,17 +89,23 @@ class _ValueDetailPageState extends ConsumerState<ValueDetailPage> {
       await firestoreService.updateUserValue(updatedValue);
 
       if (mounted) {
-        setState(() {
-          _currentValue = updatedValue;
-          _isEditing = false;
-        });
+        // Invalidate the values list to refresh it
+        ref.invalidate(userValuesProvider(updatedValue.userId));
 
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text('Value updated successfully'),
             backgroundColor: Colors.green,
+            duration: Duration(seconds: 2),
           ),
         );
+
+        // Navigate back to values page
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) {
+            context.go('/values');
+          }
+        });
       }
     } catch (e) {
       if (mounted) {

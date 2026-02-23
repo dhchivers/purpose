@@ -2,15 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:purpose/core/services/auth_provider.dart';
-import 'package:purpose/core/services/firestore_provider.dart';
-import 'package:purpose/core/models/user_value.dart';
+import 'package:purpose/features/values/values_page.dart';
 import 'package:intl/intl.dart';
-
-/// Provider for user values
-final userValuesProvider = FutureProvider.family<List<UserValue>, String>((ref, userId) async {
-  final firestoreService = ref.watch(firestoreServiceProvider);
-  return firestoreService.getUserValues(userId);
-});
 
 class DashboardPage extends ConsumerWidget {
   const DashboardPage({super.key});
