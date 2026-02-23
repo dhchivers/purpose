@@ -35,6 +35,11 @@ class _ValueCreationFlowPageState extends ConsumerState<ValueCreationFlowPage> {
   String? _phase3Answer2;
   String? _phase3Answer3;
 
+  // Phase 4 selected answers
+  String? _phase4Answer1;
+  String? _phase4Answer2;
+  String? _phase4Answer3;
+
   @override
   void initState() {
     super.initState();
@@ -725,7 +730,7 @@ class _ValueCreationFlowPageState extends ConsumerState<ValueCreationFlowPage> {
     );
   }
 
-  void _submitPhase3Answers() {
+  void _submitPhase3Answers() async {
     // Validate all answers are selected
     if (_phase3Answer1 == null || _phase3Answer2 == null || _phase3Answer3 == null) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -736,29 +741,237 @@ class _ValueCreationFlowPageState extends ConsumerState<ValueCreationFlowPage> {
 
     final answers = [_phase3Answer1!, _phase3Answer2!, _phase3Answer3!];
 
+    // Build context with questions
+    final questionsText = _session!.phase3Questions!.map((q) => q.question).toList();
+
+    setState(() {
+      _isLoading = true;
+    });
+
+    try {
+      // Generate Phase 4 questions and refined label
+      final geminiService = await ref.read(geminiServiceProvider.future);
+      final result = await geminiService.generateValueFrictionSacrifice(
+        seedValue: _session!.seedValue,
+        refinedLabel: _session!.refinedValuePhase3 ?? _session!.seedValue,
+        phase3Questions: questionsText,
+        phase3Answers: answers,
+      );
+
+      final refinedLabel = result['refinedLabel'] as String;
+      final questionsData = result['questions'] as List;
+
+      // Convert to MultipleChoiceQuestion objects
+      final questions = questionsData.map((q) {
+        return MultipleChoiceQuestion(
+          question: q['question'] as String,
+          options: (q['options'] as List).cast<String>(),
+        );
+      }).toList();
+
+      setState(() {
+        _session = _session?.copyWith(
+          phase3Answers: answers,
+          currentPhase: 4,
+          refinedValuePhase4: refinedLabel,
+          phase4Questions: questions,
+        );
+        _isLoading = false;
+      });
+    } catch (e) {
+      setState(() {
+        _isLoading = false;
+      });
+      
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error generating Phase 4: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
+  /// Phase 4: Friction & Sacrifice
+  Widget _buildPhase4FrictionSacrifice() {
+    if (_session!.phase4Questions == null || _session!.phase4Questions!.isEmpty) {
+      return const Center(child: CircularProgressIndicator());
+    }
+
+    final questions = _session!.phase4Questions!;
+    final refinedLabel = _session!.refinedValuePhase4 ?? 
+                         _session!.refinedValuePhase3 ?? 
+                         _session!.seedValue;
+
+    return SingleChildScrollView(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          // Header
+          Container(
+            padding: const EdgeInsets.all(24),
+            color: AppTheme.primaryTintLight,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 6,
+                      ),
+                      decoration: BoxDecoration(
+                        color: AppTheme.primary,
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                      child: const Text(
+                        'PHASE 4',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 12,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    const Expanded(
+                      child: Text(
+                        'Test Your Commitment',
+                        style: TextStyle(
+                          fontSize: 20,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 16),
+                // Show refined label
+                Container(
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: AppTheme.primary, width: 2),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        'Your Value:',
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w500,
+                          color: Colors.black54,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        refinedLabel,
+                        style: TextStyle(
+                          fontSize: 24,
+                          fontWeight: FontWeight.bold,
+                          color: AppTheme.primary,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 16),
+                const Text(
+                  'Let\'s test this value against real challenges. '
+                  'Select the option that best reflects your true commitment.',
+                  style: TextStyle(fontSize: 14, height: 1.5),
+                ),
+              ],
+            ),
+          ),
+
+          // Questions
+          Padding(
+            padding: const EdgeInsets.all(24),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                _buildMultipleChoiceQuestion(
+                  questionNumber: 1,
+                  question: questions[0],
+                  selectedAnswer: _phase4Answer1,
+                  onChanged: (value) => setState(() => _phase4Answer1 = value),
+                ),
+                const SizedBox(height: 24),
+                _buildMultipleChoiceQuestion(
+                  questionNumber: 2,
+                  question: questions[1],
+                  selectedAnswer: _phase4Answer2,
+                  onChanged: (value) => setState(() => _phase4Answer2 = value),
+                ),
+                const SizedBox(height: 24),
+                _buildMultipleChoiceQuestion(
+                  questionNumber: 3,
+                  question: questions[2],
+                  selectedAnswer: _phase4Answer3,
+                  onChanged: (value) => setState(() => _phase4Answer3 = value),
+                ),
+                const SizedBox(height: 32),
+                
+                // Next button
+                ElevatedButton(
+                  onPressed: (_phase4Answer1 != null && 
+                             _phase4Answer2 != null && 
+                             _phase4Answer3 != null)
+                      ? _submitPhase4Answers
+                      : null,
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppTheme.primary,
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(vertical: 16),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                  ),
+                  child: const Text(
+                    'Continue to Next Phase',
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _submitPhase4Answers() {
+    // Validate all answers are selected
+    if (_phase4Answer1 == null || _phase4Answer2 == null || _phase4Answer3 == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Please answer all questions')),
+      );
+      return;
+    }
+
+    final answers = [_phase4Answer1!, _phase4Answer2!, _phase4Answer3!];
+
     setState(() {
       _session = _session?.copyWith(
-        phase3Answers: answers,
-        currentPhase: 4, // Move to Phase 4
+        phase4Answers: answers,
+        currentPhase: 5, // Move to Phase 5
       );
     });
 
     // TODO: Save session to Firestore
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(
-        content: Text('Phase 3 complete! Moving to Phase 4...'),
+        content: Text('Phase 4 complete! Moving to Phase 5...'),
         duration: Duration(seconds: 2),
-      ),
-    );
-  }
-
-  /// Phase 4: Friction & Sacrifice (placeholder)
-  Widget _buildPhase4FrictionSacrifice() {
-    return const Center(
-      child: Text(
-        'Phase 4: Friction & Sacrifice\n(Coming next)',
-        textAlign: TextAlign.center,
-        style: TextStyle(fontSize: 18),
       ),
     );
   }

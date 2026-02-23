@@ -713,4 +713,114 @@ No additional text, just the JSON object.
       };
     }
   }
+
+  /// Generate friction & sacrifice questions and refined label for Phase 4
+  Future<Map<String, dynamic>> generateValueFrictionSacrifice({
+    required String seedValue,
+    required String refinedLabel,
+    required List<String> phase3Questions,
+    required List<String> phase3Answers,
+  }) async {
+    final answersContext = StringBuffer();
+    for (int i = 0; i < phase3Questions.length; i++) {
+      answersContext.writeln('Q: ${phase3Questions[i]}');
+      answersContext.writeln('A: ${phase3Answers[i]}');
+      answersContext.writeln();
+    }
+
+    final prompt = '''
+You are a values clarification expert helping a user test the strength and commitment to their value.
+
+Original Value: "$seedValue"
+Currently Refined As: "$refinedLabel"
+
+The user has answered scope narrowing questions:
+$answersContext
+
+Based on their responses, you need to:
+1. Test this value against friction and sacrifice scenarios
+2. Create 3 multiple choice questions that explore trade-offs and commitment
+3. Optionally provide a further refined label (2-4 words) if needed, or keep it the same
+
+The questions should:
+- Present realistic scenarios where this value conflicts with other priorities
+- Test willingness to sacrifice or face difficulty
+- Reveal the true depth of their commitment
+- Help distinguish this value from superficial preferences
+- Each question should have 4 answer options representing different levels of commitment
+
+Return ONLY a JSON object in this exact format:
+{
+  "refinedLabel": "Keep same or provide more refined 2-4 word label",
+  "questions": [
+    {
+      "question": "Question 1 about sacrifice or trade-off?",
+      "options": ["Option A", "Option B", "Option C", "Option D"]
+    },
+    {
+      "question": "Question 2 about commitment or difficulty?",
+      "options": ["Option A", "Option B", "Option C", "Option D"]
+    },
+    {
+      "question": "Question 3 about boundaries or limits?",
+      "options": ["Option A", "Option B", "Option C", "Option D"]
+    }
+  ]
+}
+
+No additional text, just the JSON object.
+''';
+
+    try {
+      final response = await _makeOpenAIRequest(
+        model: AIConfig.defaultModel,
+        messages: [
+          {
+            'role': 'user',
+            'content': prompt,
+          },
+        ],
+        temperature: 0.8,
+        maxTokens: 1000,
+      );
+      
+      final content = _extractContent(response);
+      return jsonDecode(content) as Map<String, dynamic>;
+    } catch (e) {
+      print('Error generating friction & sacrifice questions: $e');
+      // Fallback
+      return {
+        'refinedLabel': refinedLabel, // Keep the same
+        'questions': [
+          {
+            'question': 'What would you be willing to sacrifice to honor this value?',
+            'options': [
+              'Time and immediate comfort',
+              'Some relationships or social approval',
+              'Career opportunities or financial gain',
+              'Personal desires or preferences'
+            ]
+          },
+          {
+            'question': 'When this value conflicts with other priorities, how do you respond?',
+            'options': [
+              'I consistently choose this value over others',
+              'I seek creative solutions to honor both',
+              'I compromise based on the situation',
+              'I struggle with the tension but stay committed'
+            ]
+          },
+          {
+            'question': 'How would you continue living this value during difficult times?',
+            'options': [
+              'Through small daily actions and reminders',
+              'By connecting with others who share this value',
+              'By focusing on long-term meaning over short-term pain',
+              'By adapting how I express it while maintaining the core'
+            ]
+          }
+        ],
+      };
+    }
+  }
 }
