@@ -931,4 +931,129 @@ No additional text, just the JSON object.
       };
     }
   }
+
+  /// Generate final value statement options
+  /// Creates 3 distinct statement styles for user selection
+  Future<List<Map<String, dynamic>>> generateFinalValueStatements({
+    required String seedValue,
+    required String refinedLabel,
+    required List<String> phase2Questions,
+    required List<String> phase2Answers,
+    required List<String> phase3Questions,
+    required List<String> phase3Answers,
+    required List<String> phase4Questions,
+    required List<String> phase4Answers,
+    required List<String> phase5Questions,
+    required List<String> phase5Answers,
+  }) async {
+    final phase2Context = StringBuffer();
+    for (int i = 0; i < phase2Questions.length; i++) {
+      phase2Context.writeln('Q: ${phase2Questions[i]}');
+      phase2Context.writeln('A: ${phase2Answers[i]}');
+      phase2Context.writeln();
+    }
+
+    final phase3Context = StringBuffer();
+    for (int i = 0; i < phase3Questions.length; i++) {
+      phase3Context.writeln('Q: ${phase3Questions[i]}');
+      phase3Context.writeln('A: ${phase3Answers[i]}');
+      phase3Context.writeln();
+    }
+
+    final phase4Context = StringBuffer();
+    for (int i = 0; i < phase4Questions.length; i++) {
+      phase4Context.writeln('Q: ${phase4Questions[i]}');
+      phase4Context.writeln('A: ${phase4Answers[i]}');
+      phase4Context.writeln();
+    }
+
+    final phase5Context = StringBuffer();
+    for (int i = 0; i < phase5Questions.length; i++) {
+      phase5Context.writeln('Q: ${phase5Questions[i]}');
+      phase5Context.writeln('A: ${phase5Answers[i]}');
+      phase5Context.writeln();
+    }
+
+    final prompt = '''
+You are helping a user finalize their personal value statement.
+
+Original Value Seed: "$seedValue"
+Refined Label: "$refinedLabel"
+
+They have completed a comprehensive 5-phase value clarification process:
+
+=== PHASE 2: CLARIFICATION ===
+$phase2Context
+=== PHASE 3: SCOPE NARROWING ===
+$phase3Context
+=== PHASE 4: FRICTION & SACRIFICE ===
+$phase4Context
+=== PHASE 5: OPERATIONALIZATION ===
+$phase5Context
+Now generate 3 DISTINCT value statement options. Each should:
+- Capture the essence of "$refinedLabel"
+- Reflect their journey through all 5 phases
+- Be authentic to their answers and choices
+- Be memorable and actionable
+- Be 1-3 sentences long
+
+Create 3 different STYLES:
+1. DIRECT: Clear, straightforward statement of the value
+2. PRINCIPLE: Frame as a guiding principle or commitment
+3. MEANING: Connect to deeper purpose and life meaning
+
+Return ONLY a JSON array with this exact structure:
+[
+  {
+    "label": "Direct",
+    "statement": "<direct value statement here>"
+  },
+  {
+    "label": "Principle",
+    "statement": "<principle-based value statement here>"
+  },
+  {
+    "label": "Meaning",
+    "statement": "<meaning-integrated value statement here>"
+  }
+]
+
+No additional text, just the JSON array.
+''';
+
+    try {
+      final response = await _makeOpenAIRequest(
+        model: AIConfig.defaultModel,
+        messages: [
+          {
+            'role': 'user',
+            'content': prompt,
+          },
+        ],
+        temperature: 0.8,
+        maxTokens: 800,
+      );
+      
+      final content = _extractContent(response);
+      final data = jsonDecode(content) as List<dynamic>;
+      return data.cast<Map<String, dynamic>>();
+    } catch (e) {
+      print('Error generating final value statements: $e');
+      // Return fallback options
+      return [
+        {
+          'label': 'Direct',
+          'statement': 'I value $refinedLabel and commit to living according to it every day.'
+        },
+        {
+          'label': 'Principle',
+          'statement': 'I am guided by $refinedLabel, using it as a compass for my decisions and actions.'
+        },
+        {
+          'label': 'Meaning',
+          'statement': 'Through $refinedLabel, I find deeper meaning and purpose in my life.'
+        }
+      ];
+    }
+  }
 }

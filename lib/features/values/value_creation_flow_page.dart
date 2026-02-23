@@ -45,9 +45,15 @@ class _ValueCreationFlowPageState extends ConsumerState<ValueCreationFlowPage> {
   String? _phase5Answer2;
   String? _phase5Answer3;
 
+  // Final selection
+  int? _selectedOptionIndex;
+  TextEditingController? _customStatementController;
+  bool _isEditingStatement = false;
+
   @override
   void initState() {
     super.initState();
+    _customStatementController = TextEditingController();
     // Initialize with Phase 1
     _initializeSession();
   }
@@ -1172,7 +1178,7 @@ class _ValueCreationFlowPageState extends ConsumerState<ValueCreationFlowPage> {
     );
   }
 
-  void _submitPhase5Answers() {
+  Future<void> _submitPhase5Answers() async {
     if (_phase5Answer1 == null ||
         _phase5Answer2 == null ||
         _phase5Answer3 == null) {
@@ -1182,30 +1188,360 @@ class _ValueCreationFlowPageState extends ConsumerState<ValueCreationFlowPage> {
       return;
     }
 
+    final answers = [_phase5Answer1!, _phase5Answer2!, _phase5Answer3!];
+
+    // Store Phase 5 answers first
     setState(() {
       _session = _session!.copyWith(
-        phase5Answers: [_phase5Answer1!, _phase5Answer2!, _phase5Answer3!],
-        currentPhase: 6,
+        phase5Answers: answers,
       );
     });
 
-    // TODO: Save session to Firestore
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('Phase 5 complete! Ready for final value generation...'),
-        duration: Duration(seconds: 2),
+    // Generate final value statement options via AI
+    try {
+      final geminiService = ref.read(geminiServiceProvider).value;
+      if (geminiService == null) {
+        throw Exception('AI service not available');
+      }
+
+      // Convert all questions to List<String>
+      final phase2QuestionStrings = _session!.phase2Questions!.map((q) => q.question).toList();
+      final phase3QuestionStrings = _session!.phase3Questions!.map((q) => q.question).toList();
+      final phase4QuestionStrings = _session!.phase4Questions!.map((q) => q.question).toList();
+      final phase5QuestionStrings = _session!.phase5Questions!.map((q) => q.question).toList();
+
+      final response = await geminiService.generateFinalValueStatements(
+        seedValue: _session!.seedValue,
+        refinedLabel: _session!.refinedValuePhase5 ?? _session!.refinedValuePhase4 ?? _session!.seedValue,
+        phase2Questions: phase2QuestionStrings,
+        phase2Answers: _session!.phase2Answers!,
+        phase3Questions: phase3QuestionStrings,
+        phase3Answers: _session!.phase3Answers!,
+        phase4Questions: phase4QuestionStrings,
+        phase4Answers: _session!.phase4Answers!,
+        phase5Questions: phase5QuestionStrings,
+        phase5Answers: answers,
+      );
+
+      // Convert response to ValueOption objects
+      final options = response
+          .map((opt) => ValueOption(
+                label: opt['label'] as String,
+                statement: opt['statement'] as String,
+              ))
+          .toList();
+
+      setState(() {
+        _session = _session!.copyWith(
+          finalValueOptions: options,
+          currentPhase: 6,
+        );
+      });
+
+      // TODO: Save session to Firestore
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error generating value statements: $e')),
+        );
+      }
+    }
+  }
+
+  /// Final: Value Selection
+  Widget _buildFinalSelection() {
+    if (_session!.finalValueOptions?.isEmpty ?? true) {
+      return const Center(child: CircularProgressIndicator());
+    }
+
+    final refinedLabel = _session!.refinedValuePhase5 ?? _session!.refinedValuePhase4 ?? _session!.seedValue;
+    final options = _session!.finalValueOptions!;
+    final hasSelection = _selectedOptionIndex != null;
+
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(24),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Completion badge
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+            decoration: BoxDecoration(
+              color: Colors.green,
+              borderRadius: BorderRadius.circular(20),
+            ),
+            child: const Text(
+              'FINAL STEP',
+              style: TextStyle(
+                color: Colors.white,
+                fontSize: 12,
+                fontWeight: FontWeight.bold,
+                letterSpacing: 1.2,
+              ),
+            ),
+          ),
+          const SizedBox(height: 16),
+
+          // Title
+          const Text(
+            'Choose Your Value Statement',
+            style: TextStyle(
+              fontSize: 28,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+          const SizedBox(height: 24),
+
+          // Show refined value
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              border: Border.all(color: Colors.green, width: 2),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'YOUR VALUE:',
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.grey,
+                    letterSpacing: 1.2,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  refinedLabel,
+                  style: const TextStyle(
+                    fontSize: 20,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.green,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 24),
+
+          // Helper text
+          const Text(
+            'Based on your responses, here are 3 ways to express your value. Choose one or edit it to make it your own:',
+            style: TextStyle(
+              fontSize: 16,
+              color: Colors.black87,
+              height: 1.5,
+            ),
+          ),
+          const SizedBox(height: 32),
+
+          // Value statement options
+          ...options.asMap().entries.map((entry) {
+            final index = entry.key;
+            final option = entry.value;
+            final isSelected = _selectedOptionIndex == index;
+
+            return Padding(
+              padding: const EdgeInsets.only(bottom: 16),
+              child: Card(
+                elevation: isSelected ? 4 : 2,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  side: BorderSide(
+                    color: isSelected ? AppTheme.primary : Colors.grey[300]!,
+                    width: isSelected ? 3 : 1,
+                  ),
+                ),
+                child: InkWell(
+                  onTap: () {
+                    setState(() {
+                      _selectedOptionIndex = index;
+                      _isEditingStatement = false;
+                      _customStatementController?.text = option.statement;
+                    });
+                  },
+                  borderRadius: BorderRadius.circular(12),
+                  child: Padding(
+                    padding: const EdgeInsets.all(20),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Radio<int>(
+                              value: index,
+                              groupValue: _selectedOptionIndex,
+                              onChanged: (value) {
+                                setState(() {
+                                  _selectedOptionIndex = value;
+                                  _isEditingStatement = false;
+                                  _customStatementController?.text = option.statement;
+                                });
+                              },
+                              activeColor: AppTheme.primary,
+                            ),
+                            const SizedBox(width: 8),
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 12,
+                                vertical: 4,
+                              ),
+                              decoration: BoxDecoration(
+                                color: AppTheme.primary.withOpacity(0.1),
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              child: Text(
+                                option.label,
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.bold,
+                                  color: AppTheme.primary,
+                                  letterSpacing: 0.5,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 12),
+                        Padding(
+                          padding: const EdgeInsets.only(left: 16),
+                          child: Text(
+                            option.statement,
+                            style: TextStyle(
+                              fontSize: 16,
+                              height: 1.5,
+                              color: isSelected ? Colors.black87 : Colors.black54,
+                              fontWeight: isSelected ? FontWeight.w500 : FontWeight.normal,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            );
+          }).toList(),
+
+          const SizedBox(height: 24),
+
+          // Edit option
+          if (hasSelection) ...[
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                const Text(
+                  'Want to personalize it?',
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                TextButton(
+                  onPressed: () {
+                    setState(() {
+                      _isEditingStatement = !_isEditingStatement;
+                    });
+                  },
+                  child: Text(
+                    _isEditingStatement ? 'Cancel Edit' : 'Edit Statement',
+                    style: const TextStyle(fontSize: 16),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+
+            if (_isEditingStatement) ...[
+              TextField(
+                controller: _customStatementController,
+                maxLines: 3,
+                decoration: InputDecoration(
+                  hintText: 'Edit your value statement here...',
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  focusedBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: BorderSide(color: AppTheme.primary, width: 2),
+                  ),
+                ),
+                style: const TextStyle(fontSize: 16, height: 1.5),
+              ),
+              const SizedBox(height: 24),
+            ],
+          ],
+
+          // Confirm button
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton(
+              onPressed: hasSelection ? _confirmValueSelection : null,
+              style: ElevatedButton.styleFrom(
+                padding: const EdgeInsets.symmetric(vertical: 16),
+                backgroundColor: Colors.green,
+                disabledBackgroundColor: Colors.grey[300],
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+              ),
+              child: Text(
+                'Confirm My Value',
+                style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                  color: hasSelection ? Colors.white : Colors.grey[500],
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(height: 24),
+        ],
       ),
     );
   }
 
-  /// Final: Value Selection (placeholder)
-  Widget _buildFinalSelection() {
-    return const Center(
-      child: Text(
-        'Final: Select Your Value Statement\n(Coming next)',
-        textAlign: TextAlign.center,
-        style: TextStyle(fontSize: 18),
-      ),
-    );
+  Future<void> _confirmValueSelection() async {
+    if (_selectedOptionIndex == null) return;
+
+    final selectedOption = _session!.finalValueOptions![_selectedOptionIndex!];
+    final finalStatement = _isEditingStatement && _customStatementController!.text.isNotEmpty
+        ? _customStatementController!.text
+        : selectedOption.statement;
+    final refinedLabel = _session!.refinedValuePhase5 ?? _session!.refinedValuePhase4 ?? _session!.seedValue;
+
+    setState(() {
+      _session = _session!.copyWith(
+        selectedOptionIndex: _selectedOptionIndex,
+        customStatement: _isEditingStatement ? finalStatement : null,
+        completedAt: DateTime.now(),
+      );
+    });
+
+    // TODO: Save final value to Firestore (create UserValue document)
+    // TODO: Update session completedAt timestamp
+    // TODO: Navigate back to values list
+
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Value "$refinedLabel" created successfully!'),
+          backgroundColor: Colors.green,
+          duration: const Duration(seconds: 3),
+        ),
+      );
+
+      // Navigate back to values list
+      Navigator.of(context).pop();
+    }
+  }
+
+  @override
+  void dispose() {
+    _customStatementController?.dispose();
+    super.dispose();
   }
 }
