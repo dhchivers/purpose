@@ -1572,12 +1572,16 @@ class _ValueCreationFlowPageState extends ConsumerState<ValueCreationFlowPage> {
           SnackBar(
             content: Text('Value "$refinedLabel" created successfully!'),
             backgroundColor: Colors.green,
-            duration: const Duration(seconds: 3),
+            duration: const Duration(seconds: 2),
           ),
         );
 
-        // Navigate back to values list
-        Navigator.of(context).pop();
+        // Schedule navigation after current frame to avoid Navigator lock
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) {
+            Navigator.of(context).pop();
+          }
+        });
       }
     } catch (e) {
       if (mounted) {
