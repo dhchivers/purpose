@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:purpose/core/services/auth_provider.dart';
+import 'package:purpose/core/theme/app_theme.dart';
 
 class AdminSettingsPage extends ConsumerWidget {
   const AdminSettingsPage({super.key});
@@ -12,7 +13,8 @@ class AdminSettingsPage extends ConsumerWidget {
 
     return Scaffold(
       appBar: AppBar(
-        backgroundColor: Theme.of(context).colorScheme.inversePrimary,
+        backgroundColor: AppTheme.primary,
+        foregroundColor: Colors.white,
         title: const Text('Admin Settings'),
         leading: IconButton(
           icon: const Icon(Icons.arrow_back),
@@ -30,17 +32,21 @@ class AdminSettingsPage extends ConsumerWidget {
                   Icon(
                     Icons.lock_outlined,
                     size: 80,
-                    color: Colors.grey,
+                    color: AppTheme.grayMedium,
                   ),
                   SizedBox(height: 16),
                   Text(
                     'Access Denied',
-                    style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
+                    style: TextStyle(
+                      fontSize: 24,
+                      fontWeight: FontWeight.bold,
+                      color: AppTheme.graphite,
+                    ),
                   ),
                   SizedBox(height: 8),
                   Text(
                     'You do not have permission to access this page.',
-                    style: TextStyle(color: Colors.grey),
+                    style: TextStyle(color: AppTheme.grayMedium),
                   ),
                 ],
               ),
@@ -54,6 +60,11 @@ class AdminSettingsPage extends ConsumerWidget {
               children: [
                 // Admin info card
                 Card(
+                  elevation: 0,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(16),
+                    side: const BorderSide(color: AppTheme.grayLight, width: 1),
+                  ),
                   child: Padding(
                     padding: const EdgeInsets.all(24.0),
                     child: Row(
@@ -61,13 +72,13 @@ class AdminSettingsPage extends ConsumerWidget {
                         Container(
                           padding: const EdgeInsets.all(12),
                           decoration: BoxDecoration(
-                            color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.1),
+                            color: AppTheme.primaryTint,
                             borderRadius: BorderRadius.circular(12),
                           ),
-                          child: Icon(
+                          child: const Icon(
                             Icons.admin_panel_settings,
                             size: 40,
-                            color: Theme.of(context).colorScheme.primary,
+                            color: AppTheme.primary,
                           ),
                         ),
                         const SizedBox(width: 16),
@@ -80,14 +91,15 @@ class AdminSettingsPage extends ConsumerWidget {
                                 style: TextStyle(
                                   fontSize: 24,
                                   fontWeight: FontWeight.bold,
+                                  color: AppTheme.graphite,
                                 ),
                               ),
                               const SizedBox(height: 4),
                               Text(
                                 user.fullName,
-                                style: TextStyle(
+                                style: const TextStyle(
                                   fontSize: 16,
-                                  color: Colors.grey[600],
+                                  color: AppTheme.grayMedium,
                                 ),
                               ),
                             ],
@@ -105,6 +117,7 @@ class AdminSettingsPage extends ConsumerWidget {
                   style: TextStyle(
                     fontSize: 20,
                     fontWeight: FontWeight.bold,
+                    color: AppTheme.graphite,
                   ),
                 ),
                 const SizedBox(height: 16),
@@ -151,6 +164,7 @@ class AdminSettingsPage extends ConsumerWidget {
                   style: TextStyle(
                     fontSize: 20,
                     fontWeight: FontWeight.bold,
+                    color: AppTheme.graphite,
                   ),
                 ),
                 const SizedBox(height: 16),
@@ -196,9 +210,16 @@ class AdminSettingsPage extends ConsumerWidget {
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              const Icon(Icons.error_outline, size: 60, color: Colors.red),
+              const Icon(
+                Icons.error_outline,
+                size: 60,
+                color: AppTheme.error,
+              ),
               const SizedBox(height: 16),
-              Text('Error: $error'),
+              Text(
+                'Error: $error',
+                style: const TextStyle(color: AppTheme.grayMedium),
+              ),
             ],
           ),
         ),
@@ -214,24 +235,42 @@ class AdminSettingsPage extends ConsumerWidget {
     required VoidCallback onTap,
   }) {
     return Card(
+      elevation: 0,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(12),
+        side: const BorderSide(color: AppTheme.grayLight, width: 1),
+      ),
       child: ListTile(
+        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
         leading: Container(
           padding: const EdgeInsets.all(8),
           decoration: BoxDecoration(
-            color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.1),
+            color: AppTheme.primaryTint,
             borderRadius: BorderRadius.circular(8),
           ),
           child: Icon(
             icon,
-            color: Theme.of(context).colorScheme.primary,
+            color: AppTheme.primary,
+            size: 24,
           ),
         ),
         title: Text(
           title,
-          style: const TextStyle(fontWeight: FontWeight.w600),
+          style: const TextStyle(
+            fontWeight: FontWeight.w600,
+            color: AppTheme.graphite,
+          ),
         ),
-        subtitle: Text(subtitle),
-        trailing: const Icon(Icons.chevron_right),
+        subtitle: Text(
+          subtitle,
+          style: const TextStyle(
+            color: AppTheme.grayMedium,
+          ),
+        ),
+        trailing: const Icon(
+          Icons.chevron_right,
+          color: AppTheme.grayMedium,
+        ),
         onTap: onTap,
       ),
     );

@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:purpose/core/services/firestore_provider.dart';
 import 'package:purpose/core/services/auth_provider.dart';
+import 'package:purpose/core/theme/app_theme.dart';
 
 /// Provider for streaming value seeds from config collection
 final valueSeedsProvider = StreamProvider<List<String>>((ref) {
@@ -163,7 +164,8 @@ class _AdminValuesSeedsPageState extends ConsumerState<AdminValuesSeedsPage> {
 
     return Scaffold(
       appBar: AppBar(
-        backgroundColor: Theme.of(context).colorScheme.inversePrimary,
+        backgroundColor: AppTheme.primary,
+        foregroundColor: Colors.white,
         title: const Text('Values Seeds'),
         leading: IconButton(
           icon: const Icon(Icons.arrow_back),
