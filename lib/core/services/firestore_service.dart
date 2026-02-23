@@ -8,6 +8,8 @@ import 'package:purpose/core/models/user_model.dart';
 import 'package:purpose/core/models/module_type.dart';
 import 'package:purpose/core/models/module_progress.dart';
 import 'package:purpose/core/models/identity_synthesis_result.dart';
+import 'package:purpose/core/models/value_creation_session.dart';
+import 'package:purpose/core/models/user_value.dart';
 import 'package:purpose/core/constants/app_constants.dart';
 
 /// Service for managing Firestore database operations
@@ -25,6 +27,11 @@ class FirestoreService {
       _db.collection(AppConstants.userAnswersCollection);
   CollectionReference get _identitySynthesisResultsCollection =>
       _db.collection(AppConstants.identitySynthesisResultsCollection);
+  CollectionReference get _configCollection => _db.collection('config');
+  CollectionReference get _valueCreationSessionsCollection =>
+      _db.collection('value_creation_sessions');
+  CollectionReference get _userValuesCollection =>
+      _db.collection('user_values');
 
   /// Helper to convert all Timestamp objects to ISO strings to avoid Int64 issues on web
   /// Recursively processes Maps and Lists
@@ -592,9 +599,6 @@ class FirestoreService {
 
   // ========== CONFIG/SEEDS OPERATIONS ==========
 
-  /// Get reference to config collection
-  CollectionReference get _configCollection => _db.collection('config');
-
   /// Stream of value seeds from config/seeds document
   Stream<List<String>> valueSeedsStream() {
     return _configCollection.doc('seeds').snapshots().map((doc) {
@@ -661,5 +665,201 @@ class FirestoreService {
     });
 
     await batch.commit();
+  }
+
+  // ========== VALUE CREATION SESSION OPERATIONS ==========
+
+  /// Save or update a value creation session
+  Future<void> saveValueCreationSession(ValueCreationSession session) async {
+    try {
+      final data = session.toJson();
+      // Convert DateTime objects to Timestamps for Firestore
+      data['startedAt'] = Timestamp.fromDate(session.startedAt);
+      if (session.completedAt != null) {
+        data['completedAt'] = Timestamp.fromDate(session.completedAt!);
+      }
+
+      await _valueCreationSessionsCollection.doc(session.id).set(data);
+      print('✅ Saved value creation session: ${session.id}');
+    } catch (e) {
+      print('❌ Error saving value creation session: $e');
+      rethrow;
+    }
+  }
+
+  /// Get a value creation session by ID
+  Future<ValueCreationSession?> getValueCreationSession(String sessionId) async {
+    try {
+      final doc = await _valueCreationSessionsCollection.doc(sessionId).get();
+      
+      if (!doc.exists) {
+        return null;
+      }
+
+      final data = doc.data() as Map<String, dynamic>;
+      
+      // Convert Timestamps back to DateTime
+      if (data['startedAt'] is Timestamp) {
+        data['startedAt'] = (data['startedAt'] as Timestamp).toDate().toIso8601String();
+      }
+      if (data['completedAt'] is Timestamp) {
+        data['completedAt'] = (data['completedAt'] as Timestamp).toDate().toIso8601String();
+      }
+
+      return ValueCreationSession.fromJson(data);
+    } catch (e) {
+      print('❌ Error getting value creation session: $e');
+      rethrow;
+    }
+  }
+
+  /// Get all value creation sessions for a user
+  Future<List<ValueCreationSession>> getUserValueCreationSessions(String userId) async {
+    try {
+      final querySnapshot = await _valueCreationSessionsCollection
+          .where('userId', isEqualTo: userId)
+          .orderBy('startedAt', descending: true)
+          .get();
+
+      return querySnapshot.docs.map((doc) {
+        final data = doc.data() as Map<String, dynamic>;
+        
+        // Convert Timestamps back to DateTime
+        if (data['startedAt'] is Timestamp) {
+          data['startedAt'] = (data['startedAt'] as Timestamp).toDate().toIso8601String();
+        }
+        if (data['completedAt'] is Timestamp) {
+          data['completedAt'] = (data['completedAt'] as Timestamp).toDate().toIso8601String();
+        }
+
+        return ValueCreationSession.fromJson(data);
+      }).toList();
+    } catch (e) {
+      print('❌ Error getting user value creation sessions: $e');
+      rethrow;
+    }
+  }
+
+  /// Delete a value creation session
+  Future<void> deleteValueCreationSession(String sessionId) async {
+    try {
+      await _valueCreationSessionsCollection.doc(sessionId).delete();
+      print('✅ Deleted value creation session: $sessionId');
+    } catch (e) {
+      print('❌ Error deleting value creation session: $e');
+      rethrow;
+    }
+  }
+
+  // ========== USER VALUE OPERATIONS ==========
+
+  /// Save a user value (final completed value)
+  Future<void> saveUserValue(UserValue value) async {
+    try {
+      final data = value.toJson();
+      // Convert DateTime objects to Timestamps for Firestore
+      data['createdAt'] = Timestamp.fromDate(value.createdAt);
+      if (value.updatedAt != null) {
+        data['updatedAt'] = Timestamp.fromDate(value.updatedAt!);
+      }
+
+      await _userValuesCollection.doc(value.id).set(data);
+      print('✅ Saved user value: ${value.id}');
+
+      // Update user's valueCount
+      final userDoc = _usersCollection.doc(value.userId);
+      await userDoc.update({
+        'valueCount': FieldValue.increment(1),
+      });
+    } catch (e) {
+      print('❌ Error saving user value: $e');
+      rethrow;
+    }
+  }
+
+  /// Get all user values for a user
+  Future<List<UserValue>> getUserValues(String userId) async {
+    try {
+      final querySnapshot = await _userValuesCollection
+          .where('userId', isEqualTo: userId)
+          .orderBy('createdAt', descending: true)
+          .get();
+
+      return querySnapshot.docs.map((doc) {
+        final data = doc.data() as Map<String, dynamic>;
+        
+        // Convert Timestamps back to DateTime
+        if (data['createdAt'] is Timestamp) {
+          data['createdAt'] = (data['createdAt'] as Timestamp).toDate().toIso8601String();
+        }
+        if (data['updatedAt'] is Timestamp) {
+          data['updatedAt'] = (data['updatedAt'] as Timestamp).toDate().toIso8601String();
+        }
+
+        return UserValue.fromJson(data);
+      }).toList();
+    } catch (e) {
+      print('❌ Error getting user values: $e');
+      rethrow;
+    }
+  }
+
+  /// Get a single user value by ID
+  Future<UserValue?> getUserValue(String valueId) async {
+    try {
+      final doc = await _userValuesCollection.doc(valueId).get();
+      
+      if (!doc.exists) {
+        return null;
+      }
+
+      final data = doc.data() as Map<String, dynamic>;
+      
+      // Convert Timestamps back to DateTime
+      if (data['createdAt'] is Timestamp) {
+        data['createdAt'] = (data['createdAt'] as Timestamp).toDate().toIso8601String();
+      }
+      if (data['updatedAt'] is Timestamp) {
+        data['updatedAt'] = (data['updatedAt'] as Timestamp).toDate().toIso8601String();
+      }
+
+      return UserValue.fromJson(data);
+    } catch (e) {
+      print('❌ Error getting user value: $e');
+      rethrow;
+    }
+  }
+
+  /// Update a user value
+  Future<void> updateUserValue(UserValue value) async {
+    try {
+      final data = value.toJson();
+      // Convert DateTime objects to Timestamps for Firestore
+      data['createdAt'] = Timestamp.fromDate(value.createdAt);
+      data['updatedAt'] = Timestamp.fromDate(DateTime.now());
+
+      await _userValuesCollection.doc(value.id).set(data);
+      print('✅ Updated user value: ${value.id}');
+    } catch (e) {
+      print('❌ Error updating user value: $e');
+      rethrow;
+    }
+  }
+
+  /// Delete a user value
+  Future<void> deleteUserValue(String valueId, String userId) async {
+    try {
+      await _userValuesCollection.doc(valueId).delete();
+      print('✅ Deleted user value: $valueId');
+
+      // Decrement user's valueCount
+      final userDoc = _usersCollection.doc(userId);
+      await userDoc.update({
+        'valueCount': FieldValue.increment(-1),
+      });
+    } catch (e) {
+      print('❌ Error deleting user value: $e');
+      rethrow;
+    }
   }
 }

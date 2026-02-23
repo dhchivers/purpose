@@ -5,6 +5,7 @@ import 'package:purpose/core/services/auth_provider.dart';
 import 'package:purpose/core/services/firestore_provider.dart';
 import 'package:purpose/core/services/gemini_provider.dart';
 import 'package:purpose/core/models/value_creation_session.dart';
+import 'package:purpose/core/models/user_value.dart';
 import 'package:purpose/core/theme/app_theme.dart';
 
 /// Provider for streaming value seeds
@@ -128,6 +129,10 @@ class _ValueCreationFlowPageState extends ConsumerState<ValueCreationFlowPage> {
         );
         _isLoading = false;
       });
+
+      // Save session to Firestore
+      final firestoreService = ref.read(firestoreServiceProvider);
+      await firestoreService.saveValueCreationSession(_session!);
     } catch (e) {
       setState(() {
         _isLoading = false;
@@ -572,6 +577,10 @@ class _ValueCreationFlowPageState extends ConsumerState<ValueCreationFlowPage> {
         );
         _isLoading = false;
       });
+
+      // Save session to Firestore
+      final firestoreService = ref.read(firestoreServiceProvider);
+      await firestoreService.saveValueCreationSession(_session!);
     } catch (e) {
       setState(() {
         _isLoading = false;
@@ -789,6 +798,10 @@ class _ValueCreationFlowPageState extends ConsumerState<ValueCreationFlowPage> {
         );
         _isLoading = false;
       });
+
+      // Save session to Firestore
+      final firestoreService = ref.read(firestoreServiceProvider);
+      await firestoreService.saveValueCreationSession(_session!);
     } catch (e) {
       setState(() {
         _isLoading = false;
@@ -1011,7 +1024,9 @@ class _ValueCreationFlowPageState extends ConsumerState<ValueCreationFlowPage> {
         );
       });
 
-      // TODO: Save session to Firestore
+      // Save session to Firestore
+      final firestoreService = ref.read(firestoreServiceProvider);
+      await firestoreService.saveValueCreationSession(_session!);
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -1238,7 +1253,9 @@ class _ValueCreationFlowPageState extends ConsumerState<ValueCreationFlowPage> {
         );
       });
 
-      // TODO: Save session to Firestore
+      // Save session to Firestore
+      final firestoreService = ref.read(firestoreServiceProvider);
+      await firestoreService.saveValueCreationSession(_session!);
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -1521,21 +1538,57 @@ class _ValueCreationFlowPageState extends ConsumerState<ValueCreationFlowPage> {
       );
     });
 
-    // TODO: Save final value to Firestore (create UserValue document)
-    // TODO: Update session completedAt timestamp
-    // TODO: Navigate back to values list
+    try {
+      final firestoreService = ref.read(firestoreServiceProvider);
+      final user = ref.read(currentUserProvider).value;
+      
+      if (user == null) {
+        throw Exception('User not authenticated');
+      }
 
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Value "$refinedLabel" created successfully!'),
-          backgroundColor: Colors.green,
-          duration: const Duration(seconds: 3),
-        ),
+      // Create UserValue document
+      final userValue = UserValue(
+        id: 'value_${DateTime.now().millisecondsSinceEpoch}',
+        userId: user.uid,
+        seedValue: _session!.seedValue,
+        refinedLabel: refinedLabel,
+        statement: finalStatement,
+        createdAt: DateTime.now(),
+        sessionId: _session!.id,
+        creationContext: {
+          'selectedOptionLabel': selectedOption.label,
+          'wasEdited': _isEditingStatement,
+        },
       );
 
-      // Navigate back to values list
-      Navigator.of(context).pop();
+      // Save the final value
+      await firestoreService.saveUserValue(userValue);
+
+      // Update session with completion timestamp
+      await firestoreService.saveValueCreationSession(_session!);
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Value "$refinedLabel" created successfully!'),
+            backgroundColor: Colors.green,
+            duration: const Duration(seconds: 3),
+          ),
+        );
+
+        // Navigate back to values list
+        Navigator.of(context).pop();
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error saving value: $e'),
+            backgroundColor: Colors.red,
+            duration: const Duration(seconds: 3),
+          ),
+        );
+      }
     }
   }
 
