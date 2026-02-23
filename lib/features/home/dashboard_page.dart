@@ -268,9 +268,12 @@ class DashboardPage extends ConsumerWidget {
                         icon: Icons.visibility,
                         label: 'Vision',
                         onTap: () {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(content: Text('Vision module coming soon!')),
-                          );
+                          // Navigate to detail page if vision exists, otherwise to creation flow
+                          if (user.vision != null) {
+                            context.go('/vision');
+                          } else {
+                            context.go('/vision/create');
+                          }
                         },
                       ),
                     ),
@@ -331,6 +334,13 @@ class DashboardPage extends ConsumerWidget {
                             value: user.vision ?? 'Not set',
                             color: user.vision != null ? const Color(0xFF1E6BFF) : Colors.grey,
                             lastUpdated: user.vision != null ? user.updatedAt : null,
+                            onTap: () {
+                              if (user.vision != null) {
+                                context.go('/vision');
+                              } else {
+                                context.go('/vision/create');
+                              }
+                            },
                           ),
                           const SizedBox(height: 12),
                           _PurposeCard(
@@ -403,6 +413,7 @@ class _PurposeCard extends StatelessWidget {
   final String value;
   final Color color;
   final DateTime? lastUpdated;
+  final VoidCallback? onTap;
 
   const _PurposeCard({
     this.icon = Icons.flag,
@@ -410,11 +421,12 @@ class _PurposeCard extends StatelessWidget {
     required this.value,
     required this.color,
     this.lastUpdated,
+    this.onTap,
   });
 
   @override
   Widget build(BuildContext context) {
-    return Card(
+    final card = Card(
       child: Padding(
         padding: const EdgeInsets.all(16.0),
         child: IntrinsicHeight(
@@ -468,6 +480,16 @@ class _PurposeCard extends StatelessWidget {
         ),
       ),
     );
+
+    if (onTap != null) {
+      return InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(12),
+        child: card,
+      );
+    }
+
+    return card;
   }
 }
 

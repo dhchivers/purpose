@@ -16,6 +16,8 @@ import 'package:purpose/features/purpose/identity_analysis_page.dart';
 import 'package:purpose/features/values/values_page.dart';
 import 'package:purpose/features/values/value_creation_flow_page.dart';
 import 'package:purpose/features/values/value_detail_page.dart';
+import 'package:purpose/features/vision/vision_page.dart';
+import 'package:purpose/features/vision/vision_creation_flow_page.dart';
 import 'package:purpose/core/constants/app_constants.dart';
 
 /// Provider for GoRouter configuration
@@ -137,12 +139,16 @@ final routerProvider = Provider<GoRouter>((ref) {
           return ValueDetailPage(valueId: valueId);
         },
       ),
-      // TODO: Add more routes as features are developed
-      // GoRoute(
-      //   path: AppConstants.visionRoute,
-      //   name: 'vision',
-      //   builder: (context, state) => const VisionPage(),
-      // ),
+      GoRoute(
+        path: '/vision',
+        name: 'vision',
+        builder: (context, state) => const VisionPage(),
+      ),
+      GoRoute(
+        path: '/vision/create',
+        name: 'vision-create',
+        builder: (context, state) => const VisionCreationFlowPage(),
+      ),
     ],
     errorBuilder: (context, state) => Scaffold(
       body: Center(

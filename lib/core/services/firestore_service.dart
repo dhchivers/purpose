@@ -10,6 +10,8 @@ import 'package:purpose/core/models/module_progress.dart';
 import 'package:purpose/core/models/identity_synthesis_result.dart';
 import 'package:purpose/core/models/value_creation_session.dart';
 import 'package:purpose/core/models/user_value.dart';
+import 'package:purpose/core/models/vision_creation_session.dart';
+import 'package:purpose/core/models/user_vision.dart';
 import 'package:purpose/core/constants/app_constants.dart';
 
 /// Service for managing Firestore database operations
@@ -32,6 +34,10 @@ class FirestoreService {
       _db.collection('value_creation_sessions');
   CollectionReference get _userValuesCollection =>
       _db.collection('user_values');
+  CollectionReference get _visionCreationSessionsCollection =>
+      _db.collection('vision_creation_sessions');
+  CollectionReference get _userVisionsCollection =>
+      _db.collection('user_visions');
 
   /// Helper to convert all Timestamp objects to ISO strings to avoid Int64 issues on web
   /// Recursively processes Maps and Lists
@@ -859,6 +865,188 @@ class FirestoreService {
       });
     } catch (e) {
       print('❌ Error deleting user value: $e');
+      rethrow;
+    }
+  }
+
+  // ==================== VISION METHODS ====================
+
+  /// Save a vision creation session
+  Future<void> saveVisionCreationSession(VisionCreationSession session) async {
+    try {
+      final data = session.toJson();
+      
+      // Convert DateTime to Timestamp for Firestore
+      data['startedAt'] = Timestamp.fromDate(session.startedAt);
+      if (session.completedAt != null) {
+        data['completedAt'] = Timestamp.fromDate(session.completedAt!);
+      }
+
+      await _visionCreationSessionsCollection.doc(session.id).set(data);
+      print('✅ Saved vision creation session: ${session.id}');
+    } catch (e) {
+      print('❌ Error saving vision creation session: $e');
+      rethrow;
+    }
+  }
+
+  /// Get a vision creation session by ID
+  Future<VisionCreationSession?> getVisionCreationSession(String sessionId) async {
+    try {
+      final doc = await _visionCreationSessionsCollection.doc(sessionId).get();
+      
+      if (!doc.exists) {
+        return null;
+      }
+
+      final data = doc.data() as Map<String, dynamic>;
+      
+      // Convert Timestamps back to DateTime
+      if (data['startedAt'] is Timestamp) {
+        data['startedAt'] = (data['startedAt'] as Timestamp).toDate().toIso8601String();
+      }
+      if (data['completedAt'] is Timestamp) {
+        data['completedAt'] = (data['completedAt'] as Timestamp).toDate().toIso8601String();
+      }
+
+      return VisionCreationSession.fromJson(data);
+    } catch (e) {
+      print('❌ Error getting vision creation session: $e');
+      rethrow;
+    }
+  }
+
+  /// Save a user's finalized vision
+  Future<void> saveUserVision(UserVision vision) async {
+    try {
+      final data = vision.toJson();
+      
+      // Convert DateTime to Timestamp
+      data['createdAt'] = Timestamp.fromDate(vision.createdAt);
+      data['updatedAt'] = Timestamp.fromDate(vision.updatedAt);
+
+      await _userVisionsCollection.doc(vision.id).set(data);
+      print('✅ Saved user vision: ${vision.id}');
+
+      // Update user's vision field and increment visionCount
+      final userDoc = _usersCollection.doc(vision.userId);
+      await userDoc.update({
+        'vision': vision.visionStatement,
+        'visionCount': FieldValue.increment(1),
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+    } catch (e) {
+      print('❌ Error saving user vision: $e');
+      rethrow;
+    }
+  }
+
+  /// Get a user's vision
+  Future<UserVision?> getUserVision(String userId) async {
+    try {
+      final querySnapshot = await _userVisionsCollection
+          .where('userId', isEqualTo: userId)
+          .orderBy('updatedAt', descending: true)
+          .limit(1)
+          .get();
+
+      if (querySnapshot.docs.isEmpty) {
+        return null;
+      }
+
+      final doc = querySnapshot.docs.first;
+      final data = doc.data() as Map<String, dynamic>;
+      
+      // Convert Timestamps to DateTime strings
+      if (data['createdAt'] is Timestamp) {
+        data['createdAt'] = (data['createdAt'] as Timestamp).toDate().toIso8601String();
+      }
+      if (data['updatedAt'] is Timestamp) {
+        data['updatedAt'] = (data['updatedAt'] as Timestamp).toDate().toIso8601String();
+      }
+
+      return UserVision.fromJson(data);
+    } catch (e) {
+      print('❌ Error getting user vision: $e');
+      rethrow;
+    }
+  }
+
+  /// Stream user's vision for real-time updates
+  Stream<UserVision?> userVisionStream(String userId) {
+    return _userVisionsCollection
+        .where('userId', isEqualTo: userId)
+        .orderBy('updatedAt', descending: true)
+        .limit(1)
+        .snapshots()
+        .map((snapshot) {
+      if (snapshot.docs.isEmpty) {
+        return null;
+      }
+
+      final doc = snapshot.docs.first;
+      final data = _convertTimestampsToStrings(doc.data()) as Map<String, dynamic>;
+      return UserVision.fromJson(data);
+    });
+  }
+
+  /// Update a user's vision
+  Future<void> updateUserVision(UserVision vision) async {
+    try {
+      final data = vision.toJson();
+      
+      // Convert DateTime to Timestamp
+      data['createdAt'] = Timestamp.fromDate(vision.createdAt);
+      data['updatedAt'] = Timestamp.fromDate(DateTime.now());
+
+      await _userVisionsCollection.doc(vision.id).set(data);
+      print('✅ Updated user vision: ${vision.id}');
+
+      // Update user's vision field to reflect the change
+      final userDoc = _usersCollection.doc(vision.userId);
+      await userDoc.update({
+        'vision': vision.visionStatement,
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+    } catch (e) {
+      print('❌ Error updating user vision: $e');
+      rethrow;
+    }
+  }
+
+  /// Delete a user's vision
+  Future<void> deleteUserVision(String visionId, String userId) async {
+    try {
+      await _userVisionsCollection.doc(visionId).delete();
+      print('✅ Deleted user vision: $visionId');
+
+      // Get the next most recent vision to update user.vision field
+      final remainingVisions = await _userVisionsCollection
+          .where('userId', isEqualTo: userId)
+          .orderBy('updatedAt', descending: true)
+          .limit(1)
+          .get();
+
+      final userDoc = _usersCollection.doc(userId);
+      
+      if (remainingVisions.docs.isEmpty) {
+        // No more visions, clear the field and decrement count
+        await userDoc.update({
+          'vision': null,
+          'visionCount': FieldValue.increment(-1),
+          'updatedAt': FieldValue.serverTimestamp(),
+        });
+      } else {
+        // Update to the next most recent vision and decrement count
+        final nextVisionData = remainingVisions.docs.first.data() as Map<String, dynamic>;
+        await userDoc.update({
+          'vision': nextVisionData['visionStatement'],
+          'visionCount': FieldValue.increment(-1),
+          'updatedAt': FieldValue.serverTimestamp(),
+        });
+      }
+    } catch (e) {
+      print('❌ Error deleting user vision: $e');
       rethrow;
     }
   }
