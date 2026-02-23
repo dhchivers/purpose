@@ -47,6 +47,7 @@ class ValueCreationSession {
   final List<MultipleChoiceQuestion>? phase5Questions;
   final List<String>? phase5Answers; // Selected options text
   final String? refinedValuePhase5;
+  final String? valueSummary; // AI-generated summary of the value and how it applies to the user
   
   // Final: Value options
   final List<ValueOption>? finalValueOptions;
@@ -71,6 +72,7 @@ class ValueCreationSession {
     this.phase5Questions,
     this.phase5Answers,
     this.refinedValuePhase5,
+    this.valueSummary,
     this.finalValueOptions,
     this.selectedOptionIndex,
     this.customStatement,
@@ -99,6 +101,7 @@ class ValueCreationSession {
     List<MultipleChoiceQuestion>? phase5Questions,
     List<String>? phase5Answers,
     String? refinedValuePhase5,
+    String? valueSummary,
     List<ValueOption>? finalValueOptions,
     int? selectedOptionIndex,
     String? customStatement,
@@ -121,6 +124,7 @@ class ValueCreationSession {
       phase5Questions: phase5Questions ?? this.phase5Questions,
       phase5Answers: phase5Answers ?? this.phase5Answers,
       refinedValuePhase5: refinedValuePhase5 ?? this.refinedValuePhase5,
+      valueSummary: valueSummary ?? this.valueSummary,
       finalValueOptions: finalValueOptions ?? this.finalValueOptions,
       selectedOptionIndex: selectedOptionIndex ?? this.selectedOptionIndex,
       customStatement: customStatement ?? this.customStatement,

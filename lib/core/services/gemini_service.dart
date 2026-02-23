@@ -932,6 +932,102 @@ No additional text, just the JSON object.
     }
   }
 
+  /// Generate value summary after Phase 5
+  /// Creates a comprehensive summary of the core value and how it applies to the user
+  /// This summary is used for context in later strategy development
+  Future<String> generateValueSummary({
+    required String seedValue,
+    required String refinedLabel,
+    required List<String> phase2Questions,
+    required List<String> phase2Answers,
+    required List<String> phase3Questions,
+    required List<String> phase3Answers,
+    required List<String> phase4Questions,
+    required List<String> phase4Answers,
+    required List<String> phase5Questions,
+    required List<String> phase5Answers,
+  }) async {
+    final phase2Context = StringBuffer();
+    for (int i = 0; i < phase2Questions.length; i++) {
+      phase2Context.writeln('Q: ${phase2Questions[i]}');
+      phase2Context.writeln('A: ${phase2Answers[i]}');
+    }
+
+    final phase3Context = StringBuffer();
+    for (int i = 0; i < phase3Questions.length; i++) {
+      phase3Context.writeln('Q: ${phase3Questions[i]}');
+      phase3Context.writeln('A: ${phase3Answers[i]}');
+    }
+
+    final phase4Context = StringBuffer();
+    for (int i = 0; i < phase4Questions.length; i++) {
+      phase4Context.writeln('Q: ${phase4Questions[i]}');
+      phase4Context.writeln('A: ${phase4Answers[i]}');
+    }
+
+    final phase5Context = StringBuffer();
+    for (int i = 0; i < phase5Questions.length; i++) {
+      phase5Context.writeln('Q: ${phase5Questions[i]}');
+      phase5Context.writeln('A: ${phase5Answers[i]}');
+    }
+
+    final prompt = '''
+You are summarizing a user's personal value that they've refined through a comprehensive 5-phase process.
+
+Original Value Seed: "$seedValue"
+Final Refined Label: "$refinedLabel"
+
+=== PHASE 2: CLARIFICATION ===
+$phase2Context
+
+=== PHASE 3: SCOPE NARROWING ===
+$phase3Context
+
+=== PHASE 4: FRICTION & SACRIFICE ===
+$phase4Context
+
+=== PHASE 5: OPERATIONALIZATION ===
+$phase5Context
+
+Create a comprehensive summary (3-4 paragraphs) that captures:
+
+1. CORE ESSENCE: What this value fundamentally means to the user, beyond the label itself
+2. PERSONAL APPLICATION: How this value specifically applies in their life context based on their answers
+3. BEHAVIORAL MANIFESTATION: The concrete ways this value shows up in their actions and decisions
+4. STRATEGIC RELEVANCE: How this value can guide future goal-setting, decision-making, and life planning
+
+Write in second person ("Your value of..."). Be insightful, connecting the dots between their answers to reveal deeper patterns. This summary will be used to inform future strategic planning and goal development.
+
+Return only the summary text, no JSON or additional formatting.
+''';
+
+    try {
+      final response = await _makeOpenAIRequest(
+        model: AIConfig.defaultModel,
+        messages: [
+          {
+            'role': 'user',
+            'content': prompt,
+          },
+        ],
+        temperature: 0.7,
+        maxTokens: 600,
+      );
+      
+      return _extractContent(response);
+    } catch (e) {
+      print('Error generating value summary: $e');
+      // Return fallback summary
+      return '''Your value of $refinedLabel represents a core principle that guides your decisions and actions. Through your exploration, you've identified specific ways this value manifests in your daily life and the boundaries within which it operates.
+
+Your commitment to $refinedLabel reflects a deeper understanding of what matters most to you. You've considered the trade-offs and sacrifices you're willing to make to honor this value, demonstrating genuine conviction.
+
+The concrete behaviors and measures you've identified will help you track alignment with $refinedLabel over time. This operational clarity transforms an abstract principle into actionable guidance.
+
+As you move forward with strategic planning, $refinedLabel can serve as a filter for opportunities and a compass for difficult decisions, ensuring your goals and actions remain authentic to who you are.''';
+    }
+  }
+
   /// Generate final value statement options
   /// Creates 3 distinct statement styles for user selection
   Future<List<Map<String, dynamic>>> generateFinalValueStatements({

@@ -435,6 +435,57 @@ class _ValueDetailPageState extends ConsumerState<ValueDetailPage> {
                   ),
                 ),
 
+                // Value Summary Section (if available)
+                if (_session?.valueSummary != null) ...[
+                  const Divider(),
+                  Padding(
+                    padding: const EdgeInsets.all(24),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            const Icon(Icons.psychology, color: AppTheme.primary),
+                            const SizedBox(width: 8),
+                            const Text(
+                              'Value Insight',
+                              style: TextStyle(
+                                fontSize: 20,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          'AI-generated summary of your value and its personal application',
+                          style: TextStyle(
+                            fontSize: 14,
+                            color: Colors.grey[600],
+                          ),
+                        ),
+                        const SizedBox(height: 16),
+                        Container(
+                          width: double.infinity,
+                          padding: const EdgeInsets.all(16),
+                          decoration: BoxDecoration(
+                            color: AppTheme.primaryTintLight,
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(color: AppTheme.primary.withOpacity(0.2)),
+                          ),
+                          child: Text(
+                            _session!.valueSummary!,
+                            style: const TextStyle(
+                              fontSize: 15,
+                              height: 1.7,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+
                 // Refinement Journey Section (if session available)
                 if (_session != null) ...[
                   const Divider(),

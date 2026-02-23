@@ -1247,9 +1247,24 @@ class _ValueCreationFlowPageState extends ConsumerState<ValueCreationFlowPage> {
               ))
           .toList();
 
+      // Generate value summary for strategy development context
+      final summary = await geminiService.generateValueSummary(
+        seedValue: _session!.seedValue,
+        refinedLabel: _session!.refinedValuePhase5 ?? _session!.refinedValuePhase4 ?? _session!.seedValue,
+        phase2Questions: phase2QuestionStrings,
+        phase2Answers: _session!.phase2Answers!,
+        phase3Questions: phase3QuestionStrings,
+        phase3Answers: _session!.phase3Answers!,
+        phase4Questions: phase4QuestionStrings,
+        phase4Answers: _session!.phase4Answers!,
+        phase5Questions: phase5QuestionStrings,
+        phase5Answers: answers,
+      );
+
       setState(() {
         _session = _session!.copyWith(
           finalValueOptions: options,
+          valueSummary: summary,
           currentPhase: 6,
         );
       });

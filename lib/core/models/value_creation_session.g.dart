@@ -58,6 +58,7 @@ ValueCreationSession _$ValueCreationSessionFromJson(
       ?.map((e) => e as String)
       .toList(),
   refinedValuePhase5: json['refinedValuePhase5'] as String?,
+  valueSummary: json['valueSummary'] as String?,
   finalValueOptions: (json['finalValueOptions'] as List<dynamic>?)
       ?.map((e) => ValueOption.fromJson(e as Map<String, dynamic>))
       .toList(),
@@ -85,6 +86,7 @@ Map<String, dynamic> _$ValueCreationSessionToJson(
   'phase5Questions': instance.phase5Questions?.map((e) => e.toJson()).toList(),
   'phase5Answers': instance.phase5Answers,
   'refinedValuePhase5': instance.refinedValuePhase5,
+  'valueSummary': instance.valueSummary,
   'finalValueOptions': instance.finalValueOptions
       ?.map((e) => e.toJson())
       .toList(),
