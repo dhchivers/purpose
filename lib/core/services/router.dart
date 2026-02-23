@@ -15,6 +15,7 @@ import 'package:purpose/features/purpose/module_questionnaire_page.dart';
 import 'package:purpose/features/purpose/identity_analysis_page.dart';
 import 'package:purpose/features/values/values_page.dart';
 import 'package:purpose/features/values/value_creation_flow_page.dart';
+import 'package:purpose/features/values/value_detail_page.dart';
 import 'package:purpose/core/constants/app_constants.dart';
 
 /// Provider for GoRouter configuration
@@ -127,6 +128,14 @@ final routerProvider = Provider<GoRouter>((ref) {
         path: '/values/create',
         name: 'values-create',
         builder: (context, state) => const ValueCreationFlowPage(),
+      ),
+      GoRoute(
+        path: '/values/:id',
+        name: 'value-detail',
+        builder: (context, state) {
+          final valueId = state.pathParameters['id']!;
+          return ValueDetailPage(valueId: valueId);
+        },
       ),
       // TODO: Add more routes as features are developed
       // GoRoute(

@@ -223,7 +223,7 @@ class ValuesPage extends ConsumerWidget {
                         ),
                         trailing: const Icon(Icons.chevron_right),
                         onTap: () {
-                          // TODO: Navigate to value detail page
+                          context.go('/values/${value.id}');
                         },
                       ),
                     );
