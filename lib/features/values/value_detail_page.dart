@@ -21,17 +21,20 @@ class ValueDetailPage extends ConsumerStatefulWidget {
 
 class _ValueDetailPageState extends ConsumerState<ValueDetailPage> {
   bool _isEditing = false;
+  late TextEditingController _labelController;
   late TextEditingController _statementController;
   UserValue? _currentValue;
 
   @override
   void initState() {
     super.initState();
+    _labelController = TextEditingController();
     _statementController = TextEditingController();
   }
 
   @override
   void dispose() {
+    _labelController.dispose();
     _statementController.dispose();
     super.dispose();
   }
@@ -42,6 +45,7 @@ class _ValueDetailPageState extends ConsumerState<ValueDetailPage> {
     if (value != null && mounted) {
       setState(() {
         _currentValue = value;
+        _labelController.text = value.refinedLabel;
         _statementController.text = value.statement;
       });
     }
@@ -50,7 +54,19 @@ class _ValueDetailPageState extends ConsumerState<ValueDetailPage> {
   Future<void> _saveChanges() async {
     if (_currentValue == null) return;
 
+    final updatedLabel = _labelController.text.trim();
     final updatedStatement = _statementController.text.trim();
+    
+    if (updatedLabel.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Value title cannot be empty'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+    
     if (updatedStatement.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -64,6 +80,7 @@ class _ValueDetailPageState extends ConsumerState<ValueDetailPage> {
     try {
       final firestoreService = ref.read(firestoreServiceProvider);
       final updatedValue = _currentValue!.copyWith(
+        refinedLabel: updatedLabel,
         statement: updatedStatement,
         updatedAt: DateTime.now(),
       );
@@ -225,14 +242,36 @@ class _ValueDetailPageState extends ConsumerState<ValueDetailPage> {
                         color: Colors.white,
                       ),
                       const SizedBox(height: 16),
-                      Text(
-                        _currentValue!.refinedLabel,
-                        style: const TextStyle(
-                          fontSize: 32,
-                          fontWeight: FontWeight.bold,
-                          color: Colors.white,
+                      if (_isEditing)
+                        TextField(
+                          controller: _labelController,
+                          style: const TextStyle(
+                            fontSize: 32,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.white,
+                          ),
+                          decoration: InputDecoration(
+                            hintText: 'Value title...',
+                            hintStyle: TextStyle(
+                              color: Colors.white.withOpacity(0.5),
+                            ),
+                            enabledBorder: UnderlineInputBorder(
+                              borderSide: BorderSide(color: Colors.white.withOpacity(0.5)),
+                            ),
+                            focusedBorder: const UnderlineInputBorder(
+                              borderSide: BorderSide(color: Colors.white, width: 2),
+                            ),
+                          ),
+                        )
+                      else
+                        Text(
+                          _currentValue!.refinedLabel,
+                          style: const TextStyle(
+                            fontSize: 32,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.white,
+                          ),
                         ),
-                      ),
                       const SizedBox(height: 8),
                       Text(
                         'Based on: ${_currentValue!.seedValue}',
@@ -253,9 +292,9 @@ class _ValueDetailPageState extends ConsumerState<ValueDetailPage> {
                     children: [
                       Row(
                         children: [
-                          const Text(
-                            'Value Statement',
-                            style: TextStyle(
+                          Text(
+                            _isEditing ? 'Edit Value' : 'Value Statement',
+                            style: const TextStyle(
                               fontSize: 20,
                               fontWeight: FontWeight.bold,
                             ),
@@ -266,6 +305,7 @@ class _ValueDetailPageState extends ConsumerState<ValueDetailPage> {
                               onPressed: () {
                                 setState(() {
                                   _isEditing = false;
+                                  _labelController.text = _currentValue!.refinedLabel;
                                   _statementController.text = _currentValue!.statement;
                                 });
                               },
@@ -283,7 +323,16 @@ class _ValueDetailPageState extends ConsumerState<ValueDetailPage> {
                         ],
                       ),
                       const SizedBox(height: 16),
-                      if (_isEditing)
+                      if (_isEditing) ...[
+                        const Text(
+                          'Value Statement',
+                          style: TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w500,
+                            color: AppTheme.graphite,
+                          ),
+                        ),
+                        const SizedBox(height: 8),
                         TextField(
                           controller: _statementController,
                           maxLines: 5,
@@ -292,8 +341,8 @@ class _ValueDetailPageState extends ConsumerState<ValueDetailPage> {
                             border: OutlineInputBorder(),
                             filled: true,
                           ),
-                        )
-                      else
+                        ),
+                      ] else
                         Container(
                           width: double.infinity,
                           padding: const EdgeInsets.all(16),
