@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:purpose/core/services/auth_provider.dart';
 import 'package:purpose/core/theme/app_theme.dart';
+import 'package:purpose/core/constants/app_constants.dart';
 
 class AdminSettingsPage extends ConsumerWidget {
   const AdminSettingsPage({super.key});
@@ -18,7 +19,7 @@ class AdminSettingsPage extends ConsumerWidget {
         title: const Text('Admin Settings'),
         leading: IconButton(
           icon: const Icon(Icons.arrow_back),
-          onPressed: () => context.go('/dashboard'),
+          onPressed: () => context.go(AppConstants.homeRoute),
         ),
       ),
       body: currentUserAsync.when(
