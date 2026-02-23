@@ -2,7 +2,15 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:purpose/core/services/auth_provider.dart';
+import 'package:purpose/core/services/firestore_provider.dart';
+import 'package:purpose/core/models/user_value.dart';
 import 'package:intl/intl.dart';
+
+/// Provider for user values
+final userValuesProvider = FutureProvider.family<List<UserValue>, String>((ref, userId) async {
+  final firestoreService = ref.watch(firestoreServiceProvider);
+  return firestoreService.getUserValues(userId);
+});
 
 class DashboardPage extends ConsumerWidget {
   const DashboardPage({super.key});
@@ -348,8 +356,18 @@ class DashboardPage extends ConsumerWidget {
                       flex: 1,
                       child: Column(
                         children: [
-                          _ValuesCard(
-                            values: const [], // Placeholder - will be populated from user data
+                          // Load and display user values
+                          Consumer(
+                            builder: (context, ref, child) {
+                              final userValuesAsync = ref.watch(userValuesProvider(user.uid));
+                              return userValuesAsync.when(
+                                data: (userValues) => _ValuesCard(
+                                  values: userValues.map((v) => v.refinedLabel).toList(),
+                                ),
+                                loading: () => _ValuesCard(values: const []),
+                                error: (_, __) => _ValuesCard(values: const []),
+                              );
+                            },
                           ),
                           const SizedBox(height: 12),
                           _GoalsCard(
