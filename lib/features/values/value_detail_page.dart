@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 import 'package:purpose/core/services/firestore_provider.dart';
 import 'package:purpose/core/models/user_value.dart';
+import 'package:purpose/core/models/value_creation_session.dart';
 import 'package:purpose/core/theme/app_theme.dart';
 import 'package:purpose/features/values/values_page.dart';
 
@@ -25,6 +26,7 @@ class _ValueDetailPageState extends ConsumerState<ValueDetailPage> {
   late TextEditingController _labelController;
   late TextEditingController _statementController;
   UserValue? _currentValue;
+  ValueCreationSession? _session;
 
   @override
   void initState() {
@@ -49,6 +51,16 @@ class _ValueDetailPageState extends ConsumerState<ValueDetailPage> {
         _labelController.text = value.refinedLabel;
         _statementController.text = value.statement;
       });
+      
+      // Load the creation session if available
+      if (value.sessionId != null) {
+        final session = await firestoreService.getValueCreationSession(value.sessionId!);
+        if (session != null && mounted) {
+          setState(() {
+            _session = session;
+          });
+        }
+      }
     }
   }
 
@@ -422,11 +434,256 @@ class _ValueDetailPageState extends ConsumerState<ValueDetailPage> {
                     ],
                   ),
                 ),
+
+                // Refinement Journey Section (if session available)
+                if (_session != null) ...[
+                  const Divider(),
+                  Padding(
+                    padding: const EdgeInsets.all(24),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            const Icon(Icons.timeline, color: AppTheme.primary),
+                            const SizedBox(width: 8),
+                            const Text(
+                              'Refinement Journey',
+                              style: TextStyle(
+                                fontSize: 20,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          'How this value evolved through the AI-guided process',
+                          style: TextStyle(
+                            fontSize: 14,
+                            color: Colors.grey[600],
+                          ),
+                        ),
+                        const SizedBox(height: 16),
+                        _buildRefinementStep(
+                          stepNumber: 1,
+                          label: 'Starting Point',
+                          value: _session!.seedValue,
+                          icon: Icons.flag,
+                        ),
+                        if (_session!.refinedValuePhase3 != null) ...[
+                          const SizedBox(height: 12),
+                          _buildRefinementStep(
+                            stepNumber: 2,
+                            label: 'After Scope Narrowing',
+                            value: _session!.refinedValuePhase3!,
+                            icon: Icons.center_focus_strong,
+                          ),
+                        ],
+                        if (_session!.refinedValuePhase4 != null) ...[
+                          const SizedBox(height: 12),
+                          _buildRefinementStep(
+                            stepNumber: 3,
+                            label: 'After Friction & Sacrifice',
+                            value: _session!.refinedValuePhase4!,
+                            icon: Icons.balance,
+                          ),
+                        ],
+                        if (_session!.refinedValuePhase5 != null) ...[
+                          const SizedBox(height: 12),
+                          _buildRefinementStep(
+                            stepNumber: 4,
+                            label: 'After Operationalization',
+                            value: _session!.refinedValuePhase5!,
+                            icon: Icons.check_circle,
+                            isFinal: true,
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+                ],
+
+                // Alternative Statements Section (if available)
+                if (_session?.finalValueOptions != null && _session!.finalValueOptions!.length > 1) ...[
+                  const Divider(),
+                  Padding(
+                    padding: const EdgeInsets.all(24),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            const Icon(Icons.auto_awesome, color: AppTheme.primary),
+                            const SizedBox(width: 8),
+                            const Text(
+                              'Alternative Statements',
+                              style: TextStyle(
+                                fontSize: 20,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          'Other AI-generated statement options from your session',
+                          style: TextStyle(
+                            fontSize: 14,
+                            color: Colors.grey[600],
+                          ),
+                        ),
+                        const SizedBox(height: 16),
+                        ..._session!.finalValueOptions!.asMap().entries.map((entry) {
+                          final index = entry.key;
+                          final option = entry.value;
+                          final isSelected = _session!.selectedOptionIndex == index;
+                          
+                          return Padding(
+                            padding: const EdgeInsets.only(bottom: 12),
+                            child: Container(
+                              padding: const EdgeInsets.all(16),
+                              decoration: BoxDecoration(
+                                color: isSelected 
+                                    ? AppTheme.primary.withOpacity(0.1)
+                                    : Colors.grey.withOpacity(0.05),
+                                borderRadius: BorderRadius.circular(8),
+                                border: Border.all(
+                                  color: isSelected 
+                                      ? AppTheme.primary
+                                      : Colors.grey.withOpacity(0.2),
+                                  width: isSelected ? 2 : 1,
+                                ),
+                              ),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Row(
+                                    children: [
+                                      if (isSelected) ...[
+                                        const Icon(
+                                          Icons.check_circle,
+                                          color: AppTheme.primary,
+                                          size: 20,
+                                        ),
+                                        const SizedBox(width: 8),
+                                      ],
+                                      Text(
+                                        option.label,
+                                        style: TextStyle(
+                                          fontSize: 16,
+                                          fontWeight: FontWeight.bold,
+                                          color: isSelected ? AppTheme.primary : AppTheme.graphite,
+                                        ),
+                                      ),
+                                      if (isSelected) ...[
+                                        const Spacer(),
+                                        Container(
+                                          padding: const EdgeInsets.symmetric(
+                                            horizontal: 8,
+                                            vertical: 4,
+                                          ),
+                                          decoration: BoxDecoration(
+                                            color: AppTheme.primary,
+                                            borderRadius: BorderRadius.circular(4),
+                                          ),
+                                          child: const Text(
+                                            'SELECTED',
+                                            style: TextStyle(
+                                              fontSize: 10,
+                                              fontWeight: FontWeight.bold,
+                                              color: Colors.white,
+                                            ),
+                                          ),
+                                        ),
+                                      ],
+                                    ],
+                                  ),
+                                  const SizedBox(height: 8),
+                                  Text(
+                                    option.statement,
+                                    style: const TextStyle(
+                                      fontSize: 14,
+                                      height: 1.5,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          );
+                        }).toList(),
+                      ],
+                    ),
+                  ),
+                ],
               ],
             ),
           );
         },
       ),
+    );
+  }
+
+  Widget _buildRefinementStep({
+    required int stepNumber,
+    required String label,
+    required String value,
+    required IconData icon,
+    bool isFinal = false,
+  }) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Container(
+          width: 32,
+          height: 32,
+          decoration: BoxDecoration(
+            color: isFinal ? AppTheme.primary : AppTheme.primaryTintLight,
+            shape: BoxShape.circle,
+          ),
+          child: Center(
+            child: Text(
+              '$stepNumber',
+              style: TextStyle(
+                color: isFinal ? Colors.white : AppTheme.primary,
+                fontWeight: FontWeight.bold,
+                fontSize: 14,
+              ),
+            ),
+          ),
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Icon(icon, size: 16, color: AppTheme.primary),
+                  const SizedBox(width: 6),
+                  Text(
+                    label,
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: Colors.grey[600],
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 4),
+              Text(
+                value,
+                style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: isFinal ? FontWeight.bold : FontWeight.normal,
+                  color: isFinal ? AppTheme.primary : AppTheme.graphite,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
     );
   }
 
