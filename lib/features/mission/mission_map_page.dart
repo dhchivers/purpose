@@ -811,7 +811,6 @@ class _MissionMapPageState extends ConsumerState<MissionMapPage> {
 
   Widget _buildMissionMapView(UserMissionMap missionMap) {
     final currentIndex = missionMap.currentMissionIndex ?? 0;
-    final completionPercentage = missionMap.completionPercentage;
     final isComplete = missionMap.isComplete;
 
     return SingleChildScrollView(
@@ -834,43 +833,36 @@ class _MissionMapPageState extends ConsumerState<MissionMapPage> {
                         color: Color(0xFF0A0E27),
                       ),
                     ),
-                    const SizedBox(height: 8),
-                    Text(
-                      'Mission ${currentIndex + 1} of ${missionMap.missions.length}',
-                      style: TextStyle(
-                        fontSize: 16,
-                        color: const Color(0xFF0A0E27).withOpacity(0.7),
-                      ),
-                    ),
                   ],
                 ),
               ),
-              // Progress circle
-              SizedBox(
-                width: 80,
-                height: 80,
-                child: Stack(
-                  children: [
-                    CircularProgressIndicator(
-                      value: completionPercentage,
-                      strokeWidth: 8,
-                      backgroundColor: Colors.grey[200],
-                      valueColor: AlwaysStoppedAnimation<Color>(
-                        isComplete ? AppTheme.success : const Color(0xFF1E6BFF),
-                      ),
-                    ),
-                    Center(
-                      child: Text(
-                        '${(completionPercentage * 100).toInt()}%',
-                        style: const TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.bold,
-                          color: Color(0xFF0A0E27),
+              // Action buttons
+              IconButton(
+                onPressed: () {
+                  context.go('/mission/create');
+                },
+                icon: const Icon(Icons.refresh),
+                tooltip: 'Regenerate Map',
+                iconSize: 28,
+                color: const Color(0xFF1E6BFF),
+              ),
+              const SizedBox(width: 8),
+              IconButton(
+                onPressed: _isDeleting 
+                    ? null 
+                    : () => _deleteMissionMap(missionMap),
+                icon: _isDeleting
+                    ? const SizedBox(
+                        width: 24,
+                        height: 24,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
                         ),
-                      ),
-                    ),
-                  ],
-                ),
+                      )
+                    : const Icon(Icons.delete),
+                tooltip: 'Delete Map',
+                iconSize: 28,
+                color: AppTheme.error,
               ),
             ],
           ),
@@ -1055,13 +1047,25 @@ class _MissionMapPageState extends ConsumerState<MissionMapPage> {
           const SizedBox(height: 32),
 
           // All missions timeline
-          const Text(
-            'Mission Timeline',
-            style: TextStyle(
-              fontSize: 20,
-              fontWeight: FontWeight.bold,
-              color: Color(0xFF0A0E27),
-            ),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              const Text(
+                'Mission Timeline',
+                style: TextStyle(
+                  fontSize: 20,
+                  fontWeight: FontWeight.bold,
+                  color: Color(0xFF0A0E27),
+                ),
+              ),
+              IconButton(
+                onPressed: () => _showAddMissionDialog(missionMap),
+                icon: const Icon(Icons.add_circle),
+                tooltip: 'Add Mission',
+                iconSize: 28,
+                color: const Color(0xFF1E6BFF),
+              ),
+            ],
           ),
           const SizedBox(height: 16),
 
@@ -1085,60 +1089,6 @@ class _MissionMapPageState extends ConsumerState<MissionMapPage> {
                 isFuture: isFuture,
               );
             },
-          ),
-
-          const SizedBox(height: 32),
-
-          // Actions
-          Row(
-            children: [
-              Expanded(
-                child: ElevatedButton.icon(
-                  onPressed: () => _showAddMissionDialog(missionMap),
-                  icon: const Icon(Icons.add),
-                  label: const Text('Add Mission'),
-                  style: ElevatedButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(vertical: 16),
-                  ),
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: OutlinedButton.icon(
-                  onPressed: () {
-                    context.go('/mission/create');
-                  },
-                  icon: const Icon(Icons.refresh),
-                  label: const Text('Regenerate Map'),
-                  style: OutlinedButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(vertical: 16),
-                  ),
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: OutlinedButton.icon(
-                  onPressed: _isDeleting 
-                      ? null 
-                      : () => _deleteMissionMap(missionMap),
-                  icon: _isDeleting
-                      ? const SizedBox(
-                          width: 16,
-                          height: 16,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2,
-                          ),
-                        )
-                      : const Icon(Icons.delete),
-                  label: const Text('Delete Map'),
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: AppTheme.error,
-                    side: const BorderSide(color: AppTheme.error),
-                    padding: const EdgeInsets.symmetric(vertical: 16),
-                  ),
-                ),
-              ),
-            ],
           ),
         ],
       ),
