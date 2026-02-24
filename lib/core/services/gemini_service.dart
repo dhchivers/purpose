@@ -1259,4 +1259,219 @@ No additional text, just the JSON array.
       ];
     }
   }
+
+  /// Generate a strategic mission map that bridges current state to vision state
+  /// This implements the "Strategic Mission Mapping Agent"
+  Future<List<Map<String, dynamic>>> generateMissionMap({
+    // Context from user profile
+    required String purposeStatement,
+    required List<String> coreValues,
+    required String visionStatement,
+    required int visionTimeframeYears,
+    // Step 1: Current Mission State
+    required String currentBuilding,
+    required String currentScale,
+    required String currentAuthority,
+    // Step 2: Vision State
+    required String visionInfluenceScale,
+    required String visionEnvironment,
+    required String visionResponsibility,
+    required String visionMeasurableChange,
+    // Step 3: Constraints
+    required List<String> constraintValues,
+    required String nonNegotiableCommitments,
+    required String riskTolerance,
+  }) async {
+    final valuesContext = coreValues.join(', ');
+    final constraintValuesContext = constraintValues.join(', ');
+
+    final prompt = '''
+You are a **Strategic Mission Mapping Agent**.
+
+Your role is to analyze the gap between a user's current state and their vision state, then generate a sequential set of 3–5 missions that bridge this gap. These missions represent structural and capability evolution, not tactical task lists.
+
+---
+
+## CONTEXT PROVIDED
+
+**Purpose Statement:**
+"$purposeStatement"
+
+**Core Values:**
+$valuesContext
+
+**Vision Statement ($visionTimeframeYears years):**
+"$visionStatement"
+
+**Current Mission State:**
+- Currently building or leading: "$currentBuilding"
+- Current scale of operation: "$currentScale"
+- Current authority held: "$currentAuthority"
+
+**Vision End State:**
+- Desired scale of influence: "$visionInfluenceScale"
+- Desired environment: "$visionEnvironment"
+- Desired level of responsibility: "$visionResponsibility"
+- Measurable change that will exist: "$visionMeasurableChange"
+
+**Constraints:**
+- Values that cannot be violated: $constraintValuesContext
+- Non-negotiable commitments: "$nonNegotiableCommitments"
+- Risk tolerance: "$riskTolerance"
+
+---
+
+## YOUR TASKS (Complete All 10)
+
+1. **Identify structural differences** between current state and vision state
+   - What fundamental shifts in operating model, organization, or influence are required?
+
+2. **Identify capability gaps**
+   - What skills, capacities, or competencies must be developed?
+
+3. **Identify authority and scale gaps**
+   - What levels of influence, responsibility, or operational scale must be reached?
+
+4. **Define 3–5 sequential missions**
+   - Each mission is a distinct phase in the journey from current to vision
+   - Missions build on each other in logical progression
+   - Each mission represents a significant structural or capability milestone
+
+5. **Describe what becomes true in each mission**
+   - Focus on end states, not processes
+   - Describe conditions that exist when the mission is complete
+
+6. **Ensure alignment with Purpose and Values**
+   - Every mission must advance the purpose: "$purposeStatement"
+   - No mission should violate: $constraintValuesContext
+   - Respect: "$nonNegotiableCommitments"
+
+7. **Avoid generating tactical task lists**
+   - Do NOT list specific tasks or action items
+   - Focus on structural evolution and capability development
+   - Describe phases of transformation, not to-do items
+
+8. **Focus on structural and capability evolution**
+   - Each mission should represent a leap in structure or capability
+   - Describe shifts in scale, authority, influence, or organizational capacity
+
+9. **Present achievable time periods for each mission**
+   - Time horizons should be realistic given "$riskTolerance"
+   - All mission timeframes must add up to approximately $visionTimeframeYears years
+   - Use ranges like "0-2 years", "2-4 years", "4-7 years", etc.
+
+10. **Provide risk assessment for each mission**
+    - Assess risk as Low, Medium, or High
+    - Consider user's risk tolerance: "$riskTolerance"
+    - Account for constraints: "$nonNegotiableCommitments"
+
+---
+
+## OUTPUT FORMAT
+
+Return ONLY a JSON object with this exact structure (no additional text):
+
+{
+  "mission_map": [
+    {
+      "mission": "Mission 1 — [Descriptive Title]",
+      "mission_sequence": "1",
+      "focus": "[What this mission focuses on achieving]",
+      "structural_shift": "[What structural change occurs - scale, authority, influence, organization]",
+      "capability_required": "[What capabilities must be developed or demonstrated]",
+      "risk_or_value_guardrail": "[Risk assessment (Low/Medium/High) and key value constraints to maintain]",
+      "time_horizon": "[Time period, e.g., 0-2 years]"
+    },
+    {
+      "mission": "Mission 2 — [Descriptive Title]",
+      "mission_sequence": "2",
+      "focus": "[What this mission focuses on achieving]",
+      "structural_shift": "[What structural change occurs]",
+      "capability_required": "[What capabilities must be developed]",
+      "risk_or_value_guardrail": "[Risk assessment and constraints]",
+      "time_horizon": "[Time period, e.g., 2-4 years]"
+    }
+    // Continue for 3-5 missions total
+  ]
+}
+
+**Rules:**
+- Generate between 3 and 5 missions (use your judgment based on complexity and timeframe)
+- Use mission_sequence as "1", "2", "3", etc.
+- In risk_or_value_guardrail, explicitly state risk level (Low, Medium, or High)
+- Ensure time horizons are sequential and sum to approximately $visionTimeframeYears years
+- Each mission must represent a meaningful structural or capability milestone
+- No mission titles should be generic - make them specific to the user's context
+
+Generate the mission map now.
+''';
+
+    try {
+      final response = await _makeOpenAIRequest(
+        model: AIConfig.defaultModel,
+        messages: [
+          {
+            'role': 'user',
+            'content': prompt,
+          },
+        ],
+        temperature: 0.7,
+        maxTokens: 2000,
+      );
+      
+      final content = _extractContent(response);
+      final data = jsonDecode(content) as Map<String, dynamic>;
+      final missionMap = data['mission_map'] as List<dynamic>;
+      return missionMap.cast<Map<String, dynamic>>();
+    } catch (e) {
+      print('Error generating mission map: $e');
+      // Return fallback missions based on user input
+      final fallbackMissions = _generateFallbackMissions(
+        visionTimeframeYears: visionTimeframeYears,
+        currentBuilding: currentBuilding,
+        visionInfluenceScale: visionInfluenceScale,
+      );
+      return fallbackMissions;
+    }
+  }
+
+  /// Generate fallback missions if AI call fails
+  List<Map<String, dynamic>> _generateFallbackMissions({
+    required int visionTimeframeYears,
+    required String currentBuilding,
+    required String visionInfluenceScale,
+  }) {
+    // Divide timeframe into 3 missions
+    final timePerMission = (visionTimeframeYears / 3).ceil();
+    
+    return [
+      {
+        'mission': 'Mission 1 — Foundation Building',
+        'mission_sequence': '1',
+        'focus': 'Establish foundational capabilities and expand from current operations',
+        'structural_shift': 'Transition from $currentBuilding to a more scalable operational model',
+        'capability_required': 'Core competencies in execution, team building, and resource management',
+        'risk_or_value_guardrail': 'Low risk - Focus on building strong foundations without overextending',
+        'time_horizon': '0-$timePerMission years'
+      },
+      {
+        'mission': 'Mission 2 — Scale Expansion',
+        'mission_sequence': '2',
+        'focus': 'Scale operations and influence to reach broader impact',
+        'structural_shift': 'Expand scope and scale toward $visionInfluenceScale level influence',
+        'capability_required': 'Systems thinking, strategic partnerships, and resource mobilization',
+        'risk_or_value_guardrail': 'Medium risk - Balance growth with sustainability and core values',
+        'time_horizon': '$timePerMission-${timePerMission * 2} years'
+      },
+      {
+        'mission': 'Mission 3 — Vision Realization',
+        'mission_sequence': '3',
+        'focus': 'Achieve vision-level influence and impact',
+        'structural_shift': 'Operating at $visionInfluenceScale scale with established authority',
+        'capability_required': 'Strategic leadership, influence management, and legacy building',
+        'risk_or_value_guardrail': 'Medium risk - Maintain alignment with purpose while achieving vision',
+        'time_horizon': '${timePerMission * 2}-$visionTimeframeYears years'
+      }
+    ];
+  }
 }

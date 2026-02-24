@@ -12,6 +12,8 @@ import 'package:purpose/core/models/value_creation_session.dart';
 import 'package:purpose/core/models/user_value.dart';
 import 'package:purpose/core/models/vision_creation_session.dart';
 import 'package:purpose/core/models/user_vision.dart';
+import 'package:purpose/core/models/mission_creation_session.dart';
+import 'package:purpose/core/models/user_mission_map.dart';
 import 'package:purpose/core/constants/app_constants.dart';
 
 /// Service for managing Firestore database operations
@@ -38,6 +40,10 @@ class FirestoreService {
       _db.collection('vision_creation_sessions');
   CollectionReference get _userVisionsCollection =>
       _db.collection('user_visions');
+  CollectionReference get _missionCreationSessionsCollection =>
+      _db.collection('mission_creation_sessions');
+  CollectionReference get _userMissionMapsCollection =>
+      _db.collection('user_mission_maps');
 
   /// Helper to convert all Timestamp objects to ISO strings to avoid Int64 issues on web
   /// Recursively processes Maps and Lists
@@ -1047,6 +1053,230 @@ class FirestoreService {
       }
     } catch (e) {
       print('❌ Error deleting user vision: $e');
+      rethrow;
+    }
+  }
+
+  // ========== MISSION OPERATIONS ==========
+
+  /// Save a mission creation session
+  Future<void> saveMissionCreationSession(MissionCreationSession session) async {
+    try {
+      final data = session.toJson();
+      
+      // Convert DateTime to Timestamp
+      data['startedAt'] = Timestamp.fromDate(session.startedAt);
+      if (session.completedAt != null) {
+        data['completedAt'] = Timestamp.fromDate(session.completedAt!);
+      }
+
+      await _missionCreationSessionsCollection.doc(session.id).set(data);
+      print('✅ Saved mission creation session: ${session.id}');
+    } catch (e) {
+      print('❌ Error saving mission creation session: $e');
+      rethrow;
+    }
+  }
+
+  /// Get a mission creation session by ID
+  Future<MissionCreationSession?> getMissionCreationSession(String sessionId) async {
+    try {
+      final doc = await _missionCreationSessionsCollection.doc(sessionId).get();
+      
+      if (!doc.exists) {
+        return null;
+      }
+
+      final data = doc.data() as Map<String, dynamic>;
+      
+      // Convert Timestamps to DateTime strings
+      if (data['startedAt'] is Timestamp) {
+        data['startedAt'] = (data['startedAt'] as Timestamp).toDate().toIso8601String();
+      }
+      if (data['completedAt'] is Timestamp) {
+        data['completedAt'] = (data['completedAt'] as Timestamp).toDate().toIso8601String();
+      }
+
+      return MissionCreationSession.fromJson(data);
+    } catch (e) {
+      print('❌ Error getting mission creation session: $e');
+      rethrow;
+    }
+  }
+
+  /// Get the most recent mission creation session for a user
+  Future<MissionCreationSession?> getLatestMissionCreationSession(String userId) async {
+    try {
+      final querySnapshot = await _missionCreationSessionsCollection
+          .where('userId', isEqualTo: userId)
+          .orderBy('startedAt', descending: true)
+          .limit(1)
+          .get();
+
+      if (querySnapshot.docs.isEmpty) {
+        return null;
+      }
+
+      final doc = querySnapshot.docs.first;
+      final data = doc.data() as Map<String, dynamic>;
+      
+      // Convert Timestamps to DateTime strings
+      if (data['startedAt'] is Timestamp) {
+        data['startedAt'] = (data['startedAt'] as Timestamp).toDate().toIso8601String();
+      }
+      if (data['completedAt'] is Timestamp) {
+        data['completedAt'] = (data['completedAt'] as Timestamp).toDate().toIso8601String();
+      }
+
+      return MissionCreationSession.fromJson(data);
+    } catch (e) {
+      print('❌ Error getting latest mission creation session: $e');
+      rethrow;
+    }
+  }
+
+  /// Save a user's mission map
+  Future<void> saveUserMissionMap(UserMissionMap missionMap) async {
+    try {
+      final data = missionMap.toJson();
+      
+      // Convert DateTime to Timestamp
+      data['createdAt'] = Timestamp.fromDate(missionMap.createdAt);
+      data['updatedAt'] = Timestamp.fromDate(missionMap.updatedAt);
+
+      await _userMissionMapsCollection.doc(missionMap.id).set(data);
+      print('✅ Saved user mission map: ${missionMap.id}');
+
+      // Update user's missionsCompleted field (optional, for dashboard)
+      final userDoc = _usersCollection.doc(missionMap.userId);
+      await userDoc.update({
+        'hasMissionMap': true,
+        'currentMissionIndex': missionMap.currentMissionIndex,
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+    } catch (e) {
+      print('❌ Error saving user mission map: $e');
+      rethrow;
+    }
+  }
+
+  /// Get a user's mission map
+  Future<UserMissionMap?> getUserMissionMap(String userId) async {
+    try {
+      final querySnapshot = await _userMissionMapsCollection
+          .where('userId', isEqualTo: userId)
+          .orderBy('updatedAt', descending: true)
+          .limit(1)
+          .get();
+
+      if (querySnapshot.docs.isEmpty) {
+        return null;
+      }
+
+      final doc = querySnapshot.docs.first;
+      final data = doc.data() as Map<String, dynamic>;
+      
+      // Convert Timestamps to DateTime strings
+      if (data['createdAt'] is Timestamp) {
+        data['createdAt'] = (data['createdAt'] as Timestamp).toDate().toIso8601String();
+      }
+      if (data['updatedAt'] is Timestamp) {
+        data['updatedAt'] = (data['updatedAt'] as Timestamp).toDate().toIso8601String();
+      }
+
+      return UserMissionMap.fromJson(data);
+    } catch (e) {
+      print('❌ Error getting user mission map: $e');
+      rethrow;
+    }
+  }
+
+  /// Stream user's mission map for real-time updates
+  Stream<UserMissionMap?> userMissionMapStream(String userId) {
+    return _userMissionMapsCollection
+        .where('userId', isEqualTo: userId)
+        .orderBy('updatedAt', descending: true)
+        .limit(1)
+        .snapshots()
+        .map((snapshot) {
+      if (snapshot.docs.isEmpty) {
+        return null;
+      }
+
+      final doc = snapshot.docs.first;
+      final data = _convertTimestampsToStrings(doc.data()) as Map<String, dynamic>;
+      return UserMissionMap.fromJson(data);
+    });
+  }
+
+  /// Update a user's mission map (e.g., advance to next mission)
+  Future<void> updateUserMissionMap(UserMissionMap missionMap) async {
+    try {
+      final data = missionMap.toJson();
+      
+      // Convert DateTime to Timestamp
+      data['createdAt'] = Timestamp.fromDate(missionMap.createdAt);
+      data['updatedAt'] = Timestamp.fromDate(DateTime.now());
+
+      await _userMissionMapsCollection.doc(missionMap.id).set(data);
+      print('✅ Updated user mission map: ${missionMap.id}');
+
+      // Update user's current mission index
+      final userDoc = _usersCollection.doc(missionMap.userId);
+      await userDoc.update({
+        'currentMissionIndex': missionMap.currentMissionIndex,
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+    } catch (e) {
+      print('❌ Error updating user mission map: $e');
+      rethrow;
+    }
+  }
+
+  /// Delete a user's mission map
+  Future<void> deleteUserMissionMap(String missionMapId, String userId) async {
+    try {
+      await _userMissionMapsCollection.doc(missionMapId).delete();
+      print('✅ Deleted user mission map: $missionMapId');
+
+      // Update user document to reflect no mission map
+      final userDoc = _usersCollection.doc(userId);
+      await userDoc.update({
+        'hasMissionMap': false,
+        'currentMissionIndex': null,
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+    } catch (e) {
+      print('❌ Error deleting user mission map: $e');
+      rethrow;
+    }
+  }
+
+  /// Advance user to next mission
+  Future<void> advanceToNextMission(String userId) async {
+    try {
+      final missionMap = await getUserMissionMap(userId);
+      if (missionMap == null) {
+        throw Exception('No mission map found for user');
+      }
+
+      final currentIndex = missionMap.currentMissionIndex ?? 0;
+      final nextIndex = currentIndex + 1;
+
+      if (nextIndex >= missionMap.missions.length) {
+        print('⚠️ User is already on the last mission');
+        return;
+      }
+
+      final updatedMap = missionMap.copyWith(
+        currentMissionIndex: nextIndex,
+        updatedAt: DateTime.now(),
+      );
+
+      await updateUserMissionMap(updatedMap);
+      print('✅ Advanced user to mission ${nextIndex + 1}');
+    } catch (e) {
+      print('❌ Error advancing to next mission: $e');
       rethrow;
     }
   }

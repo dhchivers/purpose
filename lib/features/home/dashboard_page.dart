@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:purpose/core/services/auth_provider.dart';
 import 'package:purpose/features/values/values_page.dart';
+import 'package:purpose/features/mission/mission_map_page.dart';
 import 'package:intl/intl.dart';
 
 class DashboardPage extends ConsumerWidget {
@@ -282,11 +283,7 @@ class DashboardPage extends ConsumerWidget {
                       child: _QuickActionButton(
                         icon: Icons.track_changes,
                         label: 'Mission',
-                        onTap: () {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(content: Text('Mission module coming soon!')),
-                          );
-                        },
+                        onTap: () => context.go('/mission'),
                       ),
                     ),
                     const SizedBox(width: 8),
@@ -343,12 +340,57 @@ class DashboardPage extends ConsumerWidget {
                             },
                           ),
                           const SizedBox(height: 12),
-                          _PurposeCard(
-                            icon: Icons.track_changes,
-                            label: 'Mission',
-                            value: user.mission ?? 'Not set',
-                            color: user.mission != null ? const Color(0xFF1E6BFF) : Colors.grey,
-                            lastUpdated: user.mission != null ? user.updatedAt : null,
+                          Consumer(
+                            builder: (context, ref, child) {
+                              final missionMapAsync = ref.watch(userMissionMapProvider);
+                              return missionMapAsync.when(
+                                data: (missionMap) {
+                                  final hasMissions = missionMap != null && missionMap.missions.isNotEmpty;
+                                  final currentMission = missionMap?.currentMission;
+                                  final currentIndex = missionMap?.currentMissionIndex ?? 0;
+                                  
+                                  // Calculate timeline for current mission
+                                  String? timeline;
+                                  if (hasMissions && currentMission != null && missionMap.strategyStartDate != null) {
+                                    final startDate = _calculateMissionStartDate(missionMap, currentIndex);
+                                    final endDate = _calculateMissionEndDate(missionMap, currentIndex);
+                                    if (startDate != null && endDate != null) {
+                                      timeline = '${_formatMonthYear(startDate)} - ${_formatMonthYear(endDate)} (${currentMission.durationMonths} months)';
+                                    }
+                                  }
+                                  
+                                  return _PurposeCard(
+                                    icon: Icons.track_changes,
+                                    label: 'Mission',
+                                    value: hasMissions && currentMission != null
+                                        ? currentMission.mission
+                                        : 'Not set',
+                                    subtitle: timeline,
+                                    color: hasMissions ? const Color(0xFF1E6BFF) : Colors.grey,
+                                    lastUpdated: hasMissions ? missionMap.updatedAt : null,
+                                    onTap: () {
+                                      if (hasMissions) {
+                                        context.go('/mission');
+                                      } else {
+                                        context.go('/mission/create');
+                                      }
+                                    },
+                                  );
+                                },
+                                loading: () => const _PurposeCard(
+                                  icon: Icons.track_changes,
+                                  label: 'Mission',
+                                  value: 'Loading...',
+                                  color: Colors.grey,
+                                ),
+                                error: (_, __) => const _PurposeCard(
+                                  icon: Icons.track_changes,
+                                  label: 'Mission',
+                                  value: 'Error loading',
+                                  color: Colors.grey,
+                                ),
+                              );
+                            },
                           ),
                         ],
                       ),
@@ -411,6 +453,7 @@ class _PurposeCard extends StatelessWidget {
   final IconData icon;
   final String label;
   final String value;
+  final String? subtitle;
   final Color color;
   final DateTime? lastUpdated;
   final VoidCallback? onTap;
@@ -419,6 +462,7 @@ class _PurposeCard extends StatelessWidget {
     this.icon = Icons.flag,
     this.label = 'Purpose',
     required this.value,
+    this.subtitle,
     required this.color,
     this.lastUpdated,
     this.onTap,
@@ -461,6 +505,31 @@ class _PurposeCard extends StatelessWidget {
                               color: color,
                             ),
                       ),
+                      if (subtitle != null) ...[
+                        const SizedBox(height: 6),
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(
+                              Icons.event,
+                              size: 12,
+                              color: Colors.grey[600],
+                            ),
+                            const SizedBox(width: 4),
+                            Flexible(
+                              child: Text(
+                                subtitle!,
+                                textAlign: TextAlign.center,
+                                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                      color: Colors.grey[600],
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.w500,
+                                    ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
                       if (lastUpdated != null) ...[
                         const SizedBox(height: 4),
                         Text(
@@ -696,4 +765,32 @@ class _QuickActionButton extends StatelessWidget {
       ),
     );
   }
+}
+
+// Helper functions for mission timeline calculation
+DateTime? _calculateMissionStartDate(dynamic missionMap, int missionIndex) {
+  if (missionMap.strategyStartDate == null) return null;
+  
+  int cumulativeMonths = 0;
+  for (int i = 0; i < missionIndex; i++) {
+    cumulativeMonths += (missionMap.missions[i].durationMonths as num).toInt();
+  }
+  
+  final startDate = missionMap.strategyStartDate!;
+  return DateTime(startDate.year, startDate.month + cumulativeMonths, 1);
+}
+
+DateTime? _calculateMissionEndDate(dynamic missionMap, int missionIndex) {
+  final startDate = _calculateMissionStartDate(missionMap, missionIndex);
+  if (startDate == null) return null;
+  
+  final durationMonths = (missionMap.missions[missionIndex].durationMonths as num).toInt();
+  return DateTime(startDate.year, startDate.month + durationMonths - 1, 1);
+}
+
+String _formatMonthYear(DateTime? date) {
+  if (date == null) return 'Not set';
+  const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+                  'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  return '${months[date.month - 1]} ${date.year}';
 }
