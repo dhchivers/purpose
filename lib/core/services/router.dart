@@ -18,6 +18,8 @@ import 'package:purpose/features/values/value_creation_flow_page.dart';
 import 'package:purpose/features/values/value_detail_page.dart';
 import 'package:purpose/features/vision/vision_page.dart';
 import 'package:purpose/features/vision/vision_creation_flow_page.dart';
+import 'package:purpose/features/mission/mission_map_page.dart';
+import 'package:purpose/features/mission/mission_creation_flow_page.dart';
 import 'package:purpose/core/constants/app_constants.dart';
 
 /// Provider for GoRouter configuration
@@ -148,6 +150,16 @@ final routerProvider = Provider<GoRouter>((ref) {
         path: '/vision/create',
         name: 'vision-create',
         builder: (context, state) => const VisionCreationFlowPage(),
+      ),
+      GoRoute(
+        path: '/mission',
+        name: 'mission',
+        builder: (context, state) => const MissionMapPage(),
+      ),
+      GoRoute(
+        path: '/mission/create',
+        name: 'mission-create',
+        builder: (context, state) => const MissionCreationFlowPage(),
       ),
     ],
     errorBuilder: (context, state) => Scaffold(
