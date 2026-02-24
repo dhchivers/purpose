@@ -244,6 +244,408 @@ class _MissionMapPageState extends ConsumerState<MissionMapPage> {
     }
   }
 
+  Future<void> _deleteMission(UserMissionMap missionMap, int index) async {
+    // Prevent deleting if only one mission remains
+    if (missionMap.missions.length <= 1) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Cannot delete the last mission. At least one mission is required.'),
+          backgroundColor: AppTheme.error,
+        ),
+      );
+      return;
+    }
+
+    final mission = missionMap.missions[index];
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Delete Mission?'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text('Are you sure you want to delete this mission?'),
+            const SizedBox(height: 12),
+            Text(
+              mission.mission,
+              style: const TextStyle(
+                fontWeight: FontWeight.bold,
+                color: Color(0xFF1E6BFF),
+              ),
+            ),
+            const SizedBox(height: 12),
+            const Text(
+              'This will adjust the timeline for all remaining missions.',
+              style: TextStyle(
+                fontSize: 12,
+                color: Colors.grey,
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppTheme.error,
+            ),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true) return;
+
+    try {
+      final firestoreService = ref.read(firestoreServiceProvider);
+      final user = ref.read(currentUserProvider).value;
+      if (user == null) throw Exception('User not found');
+
+      // Remove mission from list
+      final updatedMissions = List<Mission>.from(missionMap.missions);
+      updatedMissions.removeAt(index);
+
+      // Adjust currentMissionIndex if necessary
+      int? updatedCurrentIndex = missionMap.currentMissionIndex;
+      if (updatedCurrentIndex != null) {
+        if (index < updatedCurrentIndex) {
+          // Mission deleted before current, shift index down
+          updatedCurrentIndex = updatedCurrentIndex - 1;
+        } else if (index == updatedCurrentIndex) {
+          // Current mission deleted, stay at same position (which is now the next mission)
+          // But if we deleted the last mission, move back
+          if (updatedCurrentIndex >= updatedMissions.length) {
+            updatedCurrentIndex = updatedMissions.length - 1;
+          }
+        }
+        // If deleted after current, no change needed
+      }
+
+      // Create updated mission map
+      final updatedMap = missionMap.copyWith(
+        missions: updatedMissions,
+        currentMissionIndex: updatedCurrentIndex,
+        updatedAt: DateTime.now(),
+      );
+
+      await firestoreService.updateUserMissionMap(updatedMap);
+      
+      ref.invalidate(userMissionMapProvider);
+      ref.invalidate(currentUserProvider);
+      
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Mission deleted successfully. Timeline updated.'),
+            backgroundColor: AppTheme.success,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error deleting mission: $e'),
+            backgroundColor: AppTheme.error,
+          ),
+        );
+      }
+    }
+  }
+
+  Future<void> _showAddMissionDialog(UserMissionMap missionMap) async {
+    final missionTitleController = TextEditingController();
+    final focusController = TextEditingController();
+    final structuralShiftController = TextEditingController();
+    final capabilityController = TextEditingController();
+    final riskGuardrailController = TextEditingController();
+    final durationController = TextEditingController(text: '12');
+    int selectedPosition = missionMap.missions.length; // Default: add at end (0-indexed)
+    
+    // Capture the outer context for SnackBar usage
+    final scaffoldContext = context;
+    
+    final result = await showDialog<Map<String, dynamic>>(
+      context: context,
+      builder: (dialogContext) {
+        return AlertDialog(
+          title: const Text('Add New Mission'),
+          content: SingleChildScrollView(
+            child: SizedBox(
+              width: 500,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'Insert Position',
+                    style: TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                      color: Color(0xFF1E6BFF),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  DropdownButtonFormField<int>(
+                    value: selectedPosition,
+                    decoration: const InputDecoration(
+                      border: OutlineInputBorder(),
+                      isDense: true,
+                      hintText: 'Select position',
+                    ),
+                    items: List.generate(
+                      missionMap.missions.length + 1,
+                      (index) => DropdownMenuItem(
+                        value: index,
+                        child: Text('Mission ${index + 1}'),
+                      ),
+                    ),
+                    onChanged: (value) {
+                      if (value != null) {
+                        selectedPosition = value;
+                      }
+                    },
+                  ),
+                  const SizedBox(height: 16),
+                  TextField(
+                    controller: missionTitleController,
+                    decoration: const InputDecoration(
+                      labelText: 'Mission Title *',
+                      border: OutlineInputBorder(),
+                      isDense: true,
+                    ),
+                    maxLines: 2,
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: focusController,
+                    decoration: const InputDecoration(
+                      labelText: 'Focus *',
+                      border: OutlineInputBorder(),
+                      isDense: true,
+                      hintText: 'What this mission focuses on',
+                    ),
+                    maxLines: 2,
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: structuralShiftController,
+                    decoration: const InputDecoration(
+                      labelText: 'Structural Shift *',
+                      border: OutlineInputBorder(),
+                      isDense: true,
+                      hintText: 'What structural change occurs',
+                    ),
+                    maxLines: 3,
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: capabilityController,
+                    decoration: const InputDecoration(
+                      labelText: 'Capability Required *',
+                      border: OutlineInputBorder(),
+                      isDense: true,
+                      hintText: 'What capabilities need to be developed',
+                    ),
+                    maxLines: 3,
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: riskGuardrailController,
+                    decoration: const InputDecoration(
+                      labelText: 'Risk & Value Guardrails *',
+                      border: OutlineInputBorder(),
+                      isDense: true,
+                      hintText: 'Include: low, medium, or high risk',
+                    ),
+                    maxLines: 3,
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: durationController,
+                    decoration: const InputDecoration(
+                      labelText: 'Duration (months) *',
+                      border: OutlineInputBorder(),
+                      isDense: true,
+                      hintText: 'e.g., 12',
+                    ),
+                    keyboardType: TextInputType.number,
+                  ),
+                ],
+              ),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext),
+              child: const Text('Cancel'),
+            ),
+            ElevatedButton(
+              onPressed: () {
+                if (missionTitleController.text.trim().isEmpty ||
+                    focusController.text.trim().isEmpty ||
+                    structuralShiftController.text.trim().isEmpty ||
+                    capabilityController.text.trim().isEmpty ||
+                    riskGuardrailController.text.trim().isEmpty ||
+                    durationController.text.trim().isEmpty) {
+                  ScaffoldMessenger.of(scaffoldContext).showSnackBar(
+                    const SnackBar(
+                      content: Text('All fields are required'),
+                      backgroundColor: AppTheme.error,
+                    ),
+                  );
+                  return;
+                }
+                
+                final duration = int.tryParse(durationController.text.trim());
+                if (duration == null || duration <= 0) {
+                  ScaffoldMessenger.of(scaffoldContext).showSnackBar(
+                    const SnackBar(
+                      content: Text('Duration must be a positive number'),
+                      backgroundColor: AppTheme.error,
+                    ),
+                  );
+                  return;
+                }
+                
+                Navigator.pop(dialogContext, {
+                  'position': selectedPosition,
+                  'confirmed': true,
+                });
+              },
+              child: const Text('Add Mission'),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (result == null || result['confirmed'] != true) {
+      missionTitleController.dispose();
+      focusController.dispose();
+      structuralShiftController.dispose();
+      capabilityController.dispose();
+      riskGuardrailController.dispose();
+      durationController.dispose();
+      return;
+    }
+
+    // Get the selected position from result
+    selectedPosition = result['position'] as int;
+
+    try {
+      final firestoreService = ref.read(firestoreServiceProvider);
+      final user = ref.read(currentUserProvider).value;
+      if (user == null) throw Exception('User not found');
+
+      // Parse risk level from guardrail text
+      final riskGuardrail = riskGuardrailController.text.trim();
+      RiskLevel? riskLevel;
+      if (riskGuardrail.toLowerCase().contains('low')) {
+        riskLevel = RiskLevel.low;
+      } else if (riskGuardrail.toLowerCase().contains('high')) {
+        riskLevel = RiskLevel.high;
+      } else if (riskGuardrail.toLowerCase().contains('medium')) {
+        riskLevel = RiskLevel.medium;
+      }
+
+      final duration = int.parse(durationController.text.trim());
+      
+      // Calculate time horizon based on duration (simplified)
+      String timeHorizon;
+      final years = (duration / 12).ceil();
+      if (years <= 2) {
+        timeHorizon = '0-2 years';
+      } else if (years <= 4) {
+        timeHorizon = '2-4 years';
+      } else if (years <= 6) {
+        timeHorizon = '4-6 years';
+      } else {
+        timeHorizon = '$years years';
+      }
+
+      // Create new mission
+      final newMission = Mission(
+        mission: missionTitleController.text.trim(),
+        missionSequence: '${selectedPosition + 1}',
+        focus: focusController.text.trim(),
+        structuralShift: structuralShiftController.text.trim(),
+        capabilityRequired: capabilityController.text.trim(),
+        riskOrValueGuardrail: riskGuardrail,
+        timeHorizon: timeHorizon,
+        riskLevel: riskLevel,
+        durationMonths: duration,
+      );
+
+      // Insert mission at selected position
+      final updatedMissions = List<Mission>.from(missionMap.missions);
+      updatedMissions.insert(selectedPosition, newMission);
+
+      // Update mission sequences
+      for (int i = 0; i < updatedMissions.length; i++) {
+        updatedMissions[i] = updatedMissions[i].copyWith(
+          missionSequence: '${i + 1}',
+        );
+      }
+
+      // Adjust currentMissionIndex if necessary
+      int? updatedCurrentIndex = missionMap.currentMissionIndex;
+      if (updatedCurrentIndex != null && selectedPosition <= updatedCurrentIndex) {
+        updatedCurrentIndex = updatedCurrentIndex + 1;
+      }
+
+      // Create updated mission map
+      final updatedMap = missionMap.copyWith(
+        missions: updatedMissions,
+        currentMissionIndex: updatedCurrentIndex,
+        updatedAt: DateTime.now(),
+      );
+
+      await firestoreService.updateUserMissionMap(updatedMap);
+      
+      ref.invalidate(userMissionMapProvider);
+      ref.invalidate(currentUserProvider);
+      
+      missionTitleController.dispose();
+      focusController.dispose();
+      structuralShiftController.dispose();
+      capabilityController.dispose();
+      riskGuardrailController.dispose();
+      durationController.dispose();
+      
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Mission added at position ${selectedPosition + 1}. Timeline updated.'),
+            backgroundColor: AppTheme.success,
+          ),
+        );
+      }
+    } catch (e) {
+      missionTitleController.dispose();
+      focusController.dispose();
+      structuralShiftController.dispose();
+      capabilityController.dispose();
+      riskGuardrailController.dispose();
+      durationController.dispose();
+      
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error adding mission: $e'),
+            backgroundColor: AppTheme.error,
+          ),
+        );
+      }
+    }
+  }
+
   Future<void> _deleteMissionMap(UserMissionMap missionMap) async {
     final confirmed = await showDialog<bool>(
       context: context,
@@ -592,24 +994,6 @@ class _MissionMapPageState extends ConsumerState<MissionMapPage> {
                       height: 1.5,
                     ),
                   ),
-                  const SizedBox(height: 20),
-                  Row(
-                    children: [
-                      Icon(
-                        Icons.schedule,
-                        size: 16,
-                        color: Colors.white.withOpacity(0.8),
-                      ),
-                      const SizedBox(width: 8),
-                      Text(
-                        missionMap.missions[currentIndex].timeHorizon,
-                        style: TextStyle(
-                          fontSize: 14,
-                          color: Colors.white.withOpacity(0.8),
-                        ),
-                      ),
-                    ],
-                  ),
                 ],
               ),
             ),
@@ -665,6 +1049,11 @@ class _MissionMapPageState extends ConsumerState<MissionMapPage> {
 
           const SizedBox(height: 32),
 
+          // Visual timeline bar
+          _buildVisualTimeline(missionMap),
+
+          const SizedBox(height: 32),
+
           // All missions timeline
           const Text(
             'Mission Timeline',
@@ -704,6 +1093,17 @@ class _MissionMapPageState extends ConsumerState<MissionMapPage> {
           Row(
             children: [
               Expanded(
+                child: ElevatedButton.icon(
+                  onPressed: () => _showAddMissionDialog(missionMap),
+                  icon: const Icon(Icons.add),
+                  label: const Text('Add Mission'),
+                  style: ElevatedButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(vertical: 16),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
                 child: OutlinedButton.icon(
                   onPressed: () {
                     context.go('/mission/create');
@@ -715,7 +1115,7 @@ class _MissionMapPageState extends ConsumerState<MissionMapPage> {
                   ),
                 ),
               ),
-              const SizedBox(width: 16),
+              const SizedBox(width: 12),
               Expanded(
                 child: OutlinedButton.icon(
                   onPressed: _isDeleting 
@@ -736,6 +1136,187 @@ class _MissionMapPageState extends ConsumerState<MissionMapPage> {
                     side: const BorderSide(color: AppTheme.error),
                     padding: const EdgeInsets.symmetric(vertical: 16),
                   ),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildVisualTimeline(UserMissionMap missionMap) {
+    if (missionMap.strategyStartDate == null) {
+      return const SizedBox.shrink();
+    }
+
+    // Calculate total duration and individual mission positions
+    int totalMonths = 0;
+    for (var mission in missionMap.missions) {
+      totalMonths += mission.durationMonths;
+    }
+
+    if (totalMonths == 0) return const SizedBox.shrink();
+
+    // Calculate current date position
+    final now = DateTime.now();
+    final startDate = missionMap.strategyStartDate!;
+    final monthsSinceStart = (now.year - startDate.year) * 12 + (now.month - startDate.month);
+    final currentDatePosition = monthsSinceStart / totalMonths;
+
+    return Container(
+      padding: const EdgeInsets.all(24),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: const Color(0xFFE5E7EB)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'Visual Timeline',
+            style: TextStyle(
+              fontSize: 16,
+              fontWeight: FontWeight.w600,
+              color: Color(0xFF0A0E27),
+            ),
+          ),
+          const SizedBox(height: 20),
+          LayoutBuilder(
+            builder: (context, constraints) {
+              final availableWidth = constraints.maxWidth;
+
+              return SizedBox(
+                height: 104, // Increased to accommodate Today label below
+                child: Stack(
+                  clipBehavior: Clip.none,
+                  children: [
+                    // Mission rectangles with labels
+                    Row(
+                      children: [
+                        for (int i = 0; i < missionMap.missions.length; i++) ...[
+                          Expanded(
+                            flex: missionMap.missions[i].durationMonths,
+                            child: Column(
+                              children: [
+                                // Circled number label
+                                Container(
+                                  width: 32,
+                                  height: 32,
+                                  decoration: BoxDecoration(
+                                    color: i == missionMap.currentMissionIndex
+                                        ? const Color(0xFF1E6BFF)
+                                        : i < (missionMap.currentMissionIndex ?? 0)
+                                            ? const Color(0xFF10B981)
+                                            : const Color(0xFF9CA3AF),
+                                    shape: BoxShape.circle,
+                                  ),
+                                  child: Center(
+                                    child: Text(
+                                      '${i + 1}',
+                                      style: const TextStyle(
+                                        color: Colors.white,
+                                        fontSize: 14,
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(height: 8),
+                                // Rounded rectangle for mission
+                                Expanded(
+                                  child: Container(
+                                    margin: EdgeInsets.only(
+                                      right: i < missionMap.missions.length - 1 ? 4 : 0,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color: i == missionMap.currentMissionIndex
+                                          ? const Color(0xFF1E6BFF).withOpacity(0.2)
+                                          : i < (missionMap.currentMissionIndex ?? 0)
+                                              ? const Color(0xFF10B981).withOpacity(0.2)
+                                              : const Color(0xFF9CA3AF).withOpacity(0.2),
+                                      borderRadius: BorderRadius.circular(8),
+                                      border: Border.all(
+                                        color: i == missionMap.currentMissionIndex
+                                            ? const Color(0xFF1E6BFF)
+                                            : i < (missionMap.currentMissionIndex ?? 0)
+                                                ? const Color(0xFF10B981)
+                                                : const Color(0xFF9CA3AF),
+                                        width: 2,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
+                    // Current date indicator line
+                    if (currentDatePosition >= 0 && currentDatePosition <= 1)
+                      Positioned(
+                        left: availableWidth * currentDatePosition,
+                        top: 40, // Start after circled numbers (32px height + 8px spacing)
+                        bottom: 0,
+                        child: Container(
+                          width: 2,
+                          color: const Color(0xFFEF4444),
+                        ),
+                      ),
+                    // Today label positioned under the line
+                    if (currentDatePosition >= 0 && currentDatePosition <= 1)
+                      Positioned(
+                        left: availableWidth * currentDatePosition - 30, // Center the label (60px width / 2)
+                        bottom: -24, // Position below the timeline
+                        child: Container(
+                          width: 60,
+                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFEF4444),
+                            borderRadius: BorderRadius.circular(4),
+                          ),
+                          child: Text(
+                            'Today',
+                            textAlign: TextAlign.center,
+                            style: const TextStyle(
+                              fontSize: 11,
+                              color: Colors.white,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+              );
+            },
+          ),
+          const SizedBox(height: 12),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(
+                _formatMonthYear(missionMap.strategyStartDate),
+                style: const TextStyle(
+                  fontSize: 12,
+                  color: Color(0xFF6B7280),
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+              Text(
+                _formatMonthYear(
+                  DateTime(
+                    startDate.year,
+                    startDate.month + totalMonths,
+                    1,
+                  ),
+                ),
+                style: const TextStyle(
+                  fontSize: 12,
+                  color: Color(0xFF6B7280),
+                  fontWeight: FontWeight.w500,
                 ),
               ),
             ],
@@ -882,6 +1463,13 @@ class _MissionMapPageState extends ConsumerState<MissionMapPage> {
                         tooltip: 'Edit Mission',
                         color: const Color(0xFF1E6BFF),
                       ),
+                      if (missionMap.missions.length > 1)
+                        IconButton(
+                          icon: const Icon(Icons.delete_outline, size: 18),
+                          onPressed: () => _deleteMission(missionMap, index),
+                          tooltip: 'Delete Mission',
+                          color: AppTheme.error,
+                        ),
                     ],
                   ],
                 ),
