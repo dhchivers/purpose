@@ -70,7 +70,8 @@ class Mission {
 @JsonSerializable(explicitToJson: true)
 class MissionCreationSession {
   final String id;
-  final String userId;
+  final String strategyId; // Links to parent strategy
+  final String userId; // Kept for permission checks
   final DateTime startedAt;
   final DateTime? completedAt;
 
@@ -102,6 +103,7 @@ class MissionCreationSession {
 
   MissionCreationSession({
     required this.id,
+    required this.strategyId,
     required this.userId,
     required this.startedAt,
     this.completedAt,
@@ -130,6 +132,7 @@ class MissionCreationSession {
 
   MissionCreationSession copyWith({
     String? id,
+    String? strategyId,
     String? userId,
     DateTime? startedAt,
     DateTime? completedAt,
@@ -152,6 +155,7 @@ class MissionCreationSession {
   }) {
     return MissionCreationSession(
       id: id ?? this.id,
+      strategyId: strategyId ?? this.strategyId,
       userId: userId ?? this.userId,
       startedAt: startedAt ?? this.startedAt,
       completedAt: completedAt ?? this.completedAt,

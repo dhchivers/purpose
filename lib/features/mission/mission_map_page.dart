@@ -3,18 +3,13 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:purpose/core/services/auth_provider.dart';
 import 'package:purpose/core/services/firestore_provider.dart';
+import 'package:purpose/core/services/strategy_provider.dart';
+import 'package:purpose/core/services/strategy_context_provider.dart';
 import 'package:purpose/core/models/user_mission_map.dart';
 import 'package:purpose/core/models/mission_creation_session.dart';
+import 'package:purpose/core/models/strategy_type.dart';
 import 'package:purpose/core/theme/app_theme.dart';
-
-/// Provider for user mission map
-final userMissionMapProvider = FutureProvider.autoDispose<UserMissionMap?>((ref) async {
-  final user = ref.watch(currentUserProvider).value;
-  if (user == null) return null;
-  
-  final firestoreService = ref.watch(firestoreServiceProvider);
-  return firestoreService.getUserMissionMap(user.uid);
-});
+import 'package:purpose/features/admin/admin_strategy_types_page.dart';
 
 /// Page displaying user's mission map
 class MissionMapPage extends ConsumerStatefulWidget {
@@ -118,7 +113,7 @@ class _MissionMapPageState extends ConsumerState<MissionMapPage> {
       );
       
       await firestoreService.updateUserMissionMap(updatedMap);
-      ref.invalidate(userMissionMapProvider);
+      ref.invalidate(strategyMissionMapStreamProvider(missionMap.strategyId));
       ref.invalidate(currentUserProvider);
       
       if (mounted) {
@@ -207,8 +202,7 @@ class _MissionMapPageState extends ConsumerState<MissionMapPage> {
       );
 
       await firestoreService.updateUserMissionMap(updatedMap);
-      
-      ref.invalidate(userMissionMapProvider);
+      ref.invalidate(strategyMissionMapStreamProvider(missionMap.strategyId));
       ref.invalidate(currentUserProvider);
       
       setState(() {
@@ -271,7 +265,7 @@ class _MissionMapPageState extends ConsumerState<MissionMapPage> {
               mission.mission,
               style: const TextStyle(
                 fontWeight: FontWeight.bold,
-                color: Color(0xFF1E6BFF),
+                color: AppTheme.primary,
               ),
             ),
             const SizedBox(height: 12),
@@ -336,7 +330,7 @@ class _MissionMapPageState extends ConsumerState<MissionMapPage> {
 
       await firestoreService.updateUserMissionMap(updatedMap);
       
-      ref.invalidate(userMissionMapProvider);
+      ref.invalidate(strategyMissionMapStreamProvider(missionMap.strategyId));
       ref.invalidate(currentUserProvider);
       
       if (mounted) {
@@ -388,7 +382,7 @@ class _MissionMapPageState extends ConsumerState<MissionMapPage> {
                     style: TextStyle(
                       fontSize: 14,
                       fontWeight: FontWeight.w600,
-                      color: Color(0xFF1E6BFF),
+                      color: AppTheme.primary,
                     ),
                   ),
                   const SizedBox(height: 8),
@@ -609,7 +603,7 @@ class _MissionMapPageState extends ConsumerState<MissionMapPage> {
 
       await firestoreService.updateUserMissionMap(updatedMap);
       
-      ref.invalidate(userMissionMapProvider);
+      ref.invalidate(strategyMissionMapStreamProvider(missionMap.strategyId));
       ref.invalidate(currentUserProvider);
       
       missionTitleController.dispose();
@@ -679,9 +673,9 @@ class _MissionMapPageState extends ConsumerState<MissionMapPage> {
       final user = ref.read(currentUserProvider).value;
       if (user == null) throw Exception('User not found');
 
-      await firestoreService.deleteUserMissionMap(missionMap.id, user.uid);
+      await firestoreService.deleteUserMissionMap(missionMap.id, missionMap.strategyId);
       
-      ref.invalidate(userMissionMapProvider);
+      ref.invalidate(strategyMissionMapStreamProvider(missionMap.strategyId));
       ref.invalidate(currentUserProvider);
       
       setState(() => _isDeleting = false);
@@ -705,39 +699,312 @@ class _MissionMapPageState extends ConsumerState<MissionMapPage> {
 
   @override
   Widget build(BuildContext context) {
-    final missionMapAsync = ref.watch(userMissionMapProvider);
+    final activeStrategy = ref.watch(activeStrategyProvider);
+    final strategyTypesAsync = ref.watch(strategyTypesStreamProvider);
 
-    return Scaffold(
-      appBar: AppBar(
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back),
-          onPressed: () {
-            context.go('/');
-          },
-          tooltip: 'Back to Home',
-        ),
-        title: const Text('Mission Map'),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.refresh),
-            onPressed: () {
-              ref.invalidate(userMissionMapProvider);
-            },
-            tooltip: 'Refresh',
+    if (activeStrategy == null) {
+      return Scaffold(
+        appBar: AppBar(
+          backgroundColor: AppTheme.graphite,
+          foregroundColor: Colors.white,
+          leading: IconButton(
+            icon: const Icon(Icons.arrow_back),
+            onPressed: () => context.go('/'),
+            tooltip: 'Back to Home',
           ),
-        ],
-      ),
-      body: missionMapAsync.when(
-        data: (missionMap) {
-          if (missionMap == null) {
-            return _buildEmptyState();
-          }
-          return _buildMissionMapView(missionMap);
-        },
-        loading: () => const Center(
+          title: const Text('Mission Map'),
+        ),
+        body: Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              const Icon(Icons.dashboard_outlined, size: 64, color: Colors.grey),
+              const SizedBox(height: 16),
+              const Text(
+                'No active strategy',
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 8),
+              const Text(
+                'Please create or select a strategy from the dashboard.',
+                style: TextStyle(color: Colors.grey),
+              ),
+              const SizedBox(height: 16),
+              ElevatedButton(
+                onPressed: () => context.go('/'),
+                child: const Text('Go to Dashboard'),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    final missionMapAsync = ref.watch(strategyMissionMapStreamProvider(activeStrategy.id));
+
+    return missionMapAsync.when(
+      data: (missionMap) {
+        if (missionMap == null) {
+          // Empty state with simple AppBar
+          return Scaffold(
+            appBar: AppBar(
+              backgroundColor: AppTheme.graphite,
+              foregroundColor: Colors.white,
+              leading: IconButton(
+                icon: const Icon(Icons.arrow_back),
+                onPressed: () => context.go('/'),
+                tooltip: 'Back to Home',
+              ),
+              title: Row(
+                children: [
+                  Text(activeStrategy.name),
+                  const SizedBox(width: 12),
+                  strategyTypesAsync.when(
+                    data: (types) {
+                      final strategyType = types.firstWhere(
+                        (type) => type.id == activeStrategy.strategyTypeId,
+                        orElse: () => StrategyType(
+                          id: '',
+                          name: 'Unknown',
+                          enabled: true,
+                          order: 0,
+                          color: 0xFF2196F3,
+                          createdAt: DateTime.now(),
+                          updatedAt: DateTime.now(),
+                        ),
+                      );
+                      return Chip(
+                        label: Text(
+                          strategyType.name,
+                          style: const TextStyle(
+                            fontSize: 11,
+                            color: Colors.white,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                        backgroundColor: Color(strategyType.color),
+                        padding: EdgeInsets.zero,
+                        materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                        visualDensity: VisualDensity.compact,
+                      );
+                    },
+                    loading: () => const SizedBox.shrink(),
+                    error: (_, __) => const SizedBox.shrink(),
+                  ),
+                ],
+              ),
+            ),
+            body: _buildEmptyState(),
+          );
+        }
+        
+        // Main view with action buttons in AppBar
+        return Scaffold(
+          appBar: AppBar(
+            backgroundColor: AppTheme.graphite,
+            foregroundColor: Colors.white,
+            leading: IconButton(
+              icon: const Icon(Icons.arrow_back),
+              onPressed: () => context.go('/'),
+              tooltip: 'Back to Home',
+            ),
+            title: Row(
+              children: [
+                Text(activeStrategy.name),
+                const SizedBox(width: 12),
+                strategyTypesAsync.when(
+                  data: (types) {
+                    final strategyType = types.firstWhere(
+                      (type) => type.id == activeStrategy.strategyTypeId,
+                      orElse: () => StrategyType(
+                        id: '',
+                        name: 'Unknown',
+                        enabled: true,
+                        order: 0,
+                        color: 0xFF2196F3,
+                        createdAt: DateTime.now(),
+                        updatedAt: DateTime.now(),
+                      ),
+                    );
+                    return Chip(
+                      label: Text(
+                        strategyType.name,
+                        style: const TextStyle(
+                          fontSize: 11,
+                          color: Colors.white,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                      backgroundColor: Color(strategyType.color),
+                      padding: EdgeInsets.zero,
+                      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      visualDensity: VisualDensity.compact,
+                    );
+                  },
+                  loading: () => const SizedBox.shrink(),
+                  error: (_, __) => const SizedBox.shrink(),
+                ),
+              ],
+            ),
+            actions: [
+              IconButton(
+                onPressed: () {
+                  context.go('/mission/create');
+                },
+                icon: const Icon(Icons.refresh),
+                tooltip: 'Regenerate Map',
+              ),
+              IconButton(
+                onPressed: _isDeleting 
+                    ? null 
+                    : () => _deleteMissionMap(missionMap),
+                icon: _isDeleting
+                    ? const SizedBox(
+                        width: 24,
+                        height: 24,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: Colors.white,
+                        ),
+                      )
+                    : const Icon(Icons.delete),
+                tooltip: 'Delete Map',
+              ),
+            ],
+          ),
+          body: Column(
+            children: [
+              // Header section
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(24),
+                decoration: const BoxDecoration(
+                  color: AppTheme.primary,
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Mission',
+                      style: TextStyle(
+                        fontSize: 24,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.white,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+
+              // Main content
+              Expanded(
+                child: _buildMissionMapView(missionMap),
+              ),
+            ],
+          ),
+        );
+      },
+      loading: () => Scaffold(
+        appBar: AppBar(
+          backgroundColor: AppTheme.graphite,
+          foregroundColor: Colors.white,
+          leading: IconButton(
+            icon: const Icon(Icons.arrow_back),
+            onPressed: () => context.go('/'),
+            tooltip: 'Back to Home',
+          ),
+          title: Row(
+            children: [
+              Text(activeStrategy.name),
+              const SizedBox(width: 12),
+              strategyTypesAsync.when(
+                data: (types) {
+                  final strategyType = types.firstWhere(
+                    (type) => type.id == activeStrategy.strategyTypeId,
+                    orElse: () => StrategyType(
+                      id: '',
+                      name: 'Unknown',
+                      enabled: true,
+                      order: 0,
+                      color: 0xFF2196F3,
+                      createdAt: DateTime.now(),
+                      updatedAt: DateTime.now(),
+                    ),
+                  );
+                  return Chip(
+                    label: Text(
+                      strategyType.name,
+                      style: const TextStyle(
+                        fontSize: 11,
+                        color: Colors.white,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                    backgroundColor: Color(strategyType.color),
+                    padding: EdgeInsets.zero,
+                    materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    visualDensity: VisualDensity.compact,
+                  );
+                },
+                loading: () => const SizedBox.shrink(),
+                error: (_, __) => const SizedBox.shrink(),
+              ),
+            ],
+          ),
+        ),
+        body: const Center(
           child: CircularProgressIndicator(),
         ),
-        error: (error, stack) => Center(
+      ),
+      error: (error, stack) => Scaffold(
+        appBar: AppBar(
+          backgroundColor: AppTheme.graphite,
+          foregroundColor: Colors.white,
+          leading: IconButton(
+            icon: const Icon(Icons.arrow_back),
+            onPressed: () => context.go('/'),
+            tooltip: 'Back to Home',
+          ),
+          title: Row(
+            children: [
+              Text(activeStrategy.name),
+              const SizedBox(width: 12),
+              strategyTypesAsync.when(
+                data: (types) {
+                  final strategyType = types.firstWhere(
+                    (type) => type.id == activeStrategy.strategyTypeId,
+                    orElse: () => StrategyType(
+                      id: '',
+                      name: 'Unknown',
+                      enabled: true,
+                      order: 0,
+                      color: 0xFF2196F3,
+                      createdAt: DateTime.now(),
+                      updatedAt: DateTime.now(),
+                    ),
+                  );
+                  return Chip(
+                    label: Text(
+                      strategyType.name,
+                      style: const TextStyle(
+                        fontSize: 11,
+                        color: Colors.white,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                    backgroundColor: Color(strategyType.color),
+                    padding: EdgeInsets.zero,
+                    materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    visualDensity: VisualDensity.compact,
+                  );
+                },
+                loading: () => const SizedBox.shrink(),
+                error: (_, __) => const SizedBox.shrink(),
+              ),
+            ],
+          ),
+        ),
+        body: Center(
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
@@ -777,7 +1044,7 @@ class _MissionMapPageState extends ConsumerState<MissionMapPage> {
               style: TextStyle(
                 fontSize: 24,
                 fontWeight: FontWeight.bold,
-                color: Color(0xFF0A0E27),
+                color: AppTheme.graphite,
               ),
             ),
             const SizedBox(height: 12),
@@ -786,7 +1053,7 @@ class _MissionMapPageState extends ConsumerState<MissionMapPage> {
               textAlign: TextAlign.center,
               style: TextStyle(
                 fontSize: 16,
-                color: const Color(0xFF0A0E27).withOpacity(0.7),
+                color: AppTheme.graphite.withOpacity(0.7),
               ),
             ),
             const SizedBox(height: 32),
@@ -818,69 +1085,20 @@ class _MissionMapPageState extends ConsumerState<MissionMapPage> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Header with progress
-          Row(
-            children: [
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text(
-                      'Your Strategic Mission Map',
-                      style: TextStyle(
-                        fontSize: 28,
-                        fontWeight: FontWeight.bold,
-                        color: Color(0xFF0A0E27),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              // Action buttons
-              IconButton(
-                onPressed: () {
-                  context.go('/mission/create');
-                },
-                icon: const Icon(Icons.refresh),
-                tooltip: 'Regenerate Map',
-                iconSize: 28,
-                color: const Color(0xFF1E6BFF),
-              ),
-              const SizedBox(width: 8),
-              IconButton(
-                onPressed: _isDeleting 
-                    ? null 
-                    : () => _deleteMissionMap(missionMap),
-                icon: _isDeleting
-                    ? const SizedBox(
-                        width: 24,
-                        height: 24,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2,
-                        ),
-                      )
-                    : const Icon(Icons.delete),
-                tooltip: 'Delete Map',
-                iconSize: 28,
-                color: AppTheme.error,
-              ),
-            ],
-          ),
-          const SizedBox(height: 32),
 
           // Strategy Start Date Section
           Container(
             padding: const EdgeInsets.all(20),
             decoration: BoxDecoration(
-              color: const Color(0xFFF8FAFC),
+              color: AppTheme.surface,
               borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: const Color(0xFFE5E7EB)),
+              border: Border.all(color: AppTheme.grayLight),
             ),
             child: Row(
               children: [
                 const Icon(
                   Icons.calendar_today,
-                  color: Color(0xFF1E6BFF),
+                  color: AppTheme.primary,
                   size: 20,
                 ),
                 const SizedBox(width: 12),
@@ -889,7 +1107,7 @@ class _MissionMapPageState extends ConsumerState<MissionMapPage> {
                   style: TextStyle(
                     fontSize: 16,
                     fontWeight: FontWeight.w600,
-                    color: Color(0xFF374151),
+                    color: AppTheme.graphite,
                   ),
                 ),
                 const SizedBox(width: 12),
@@ -898,7 +1116,7 @@ class _MissionMapPageState extends ConsumerState<MissionMapPage> {
                   style: const TextStyle(
                     fontSize: 16,
                     fontWeight: FontWeight.w500,
-                    color: Color(0xFF1E6BFF),
+                    color: AppTheme.primary,
                   ),
                 ),
                 const Spacer(),
@@ -919,7 +1137,7 @@ class _MissionMapPageState extends ConsumerState<MissionMapPage> {
                   icon: const Icon(Icons.edit, size: 16),
                   label: const Text('Change Date'),
                   style: TextButton.styleFrom(
-                    foregroundColor: const Color(0xFF1E6BFF),
+                    foregroundColor: AppTheme.primary,
                   ),
                 ),
               ],
@@ -933,14 +1151,14 @@ class _MissionMapPageState extends ConsumerState<MissionMapPage> {
               padding: const EdgeInsets.all(24),
               decoration: BoxDecoration(
                 gradient: const LinearGradient(
-                  colors: [Color(0xFF1E6BFF), Color(0xFF4A90FF)],
+                  colors: [AppTheme.primary, AppTheme.primaryLight],
                   begin: Alignment.topLeft,
                   end: Alignment.bottomRight,
                 ),
                 borderRadius: BorderRadius.circular(16),
                 boxShadow: [
                   BoxShadow(
-                    color: const Color(0xFF1E6BFF).withOpacity(0.3),
+                    color: AppTheme.primary.withOpacity(0.3),
                     blurRadius: 20,
                     offset: const Offset(0, 10),
                   ),
@@ -1055,7 +1273,7 @@ class _MissionMapPageState extends ConsumerState<MissionMapPage> {
                 style: TextStyle(
                   fontSize: 20,
                   fontWeight: FontWeight.bold,
-                  color: Color(0xFF0A0E27),
+                  color: AppTheme.graphite,
                 ),
               ),
               IconButton(
@@ -1063,7 +1281,7 @@ class _MissionMapPageState extends ConsumerState<MissionMapPage> {
                 icon: const Icon(Icons.add_circle),
                 tooltip: 'Add Mission',
                 iconSize: 28,
-                color: const Color(0xFF1E6BFF),
+                color: AppTheme.primary,
               ),
             ],
           ),
@@ -1119,20 +1337,11 @@ class _MissionMapPageState extends ConsumerState<MissionMapPage> {
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: const Color(0xFFE5E7EB)),
+        border: Border.all(color: AppTheme.grayLight),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text(
-            'Visual Timeline',
-            style: TextStyle(
-              fontSize: 16,
-              fontWeight: FontWeight.w600,
-              color: Color(0xFF0A0E27),
-            ),
-          ),
-          const SizedBox(height: 20),
           LayoutBuilder(
             builder: (context, constraints) {
               final availableWidth = constraints.maxWidth;
@@ -1156,10 +1365,10 @@ class _MissionMapPageState extends ConsumerState<MissionMapPage> {
                                   height: 32,
                                   decoration: BoxDecoration(
                                     color: i == missionMap.currentMissionIndex
-                                        ? const Color(0xFF1E6BFF)
+                                        ? AppTheme.primary
                                         : i < (missionMap.currentMissionIndex ?? 0)
-                                            ? const Color(0xFF10B981)
-                                            : const Color(0xFF9CA3AF),
+                                            ? AppTheme.success
+                                            : AppTheme.grayMedium,
                                     shape: BoxShape.circle,
                                   ),
                                   child: Center(
@@ -1182,17 +1391,17 @@ class _MissionMapPageState extends ConsumerState<MissionMapPage> {
                                     ),
                                     decoration: BoxDecoration(
                                       color: i == missionMap.currentMissionIndex
-                                          ? const Color(0xFF1E6BFF).withOpacity(0.2)
+                                          ? AppTheme.primary.withOpacity(0.2)
                                           : i < (missionMap.currentMissionIndex ?? 0)
-                                              ? const Color(0xFF10B981).withOpacity(0.2)
-                                              : const Color(0xFF9CA3AF).withOpacity(0.2),
+                                              ? AppTheme.success.withOpacity(0.2)
+                                              : AppTheme.grayMedium.withOpacity(0.2),
                                       borderRadius: BorderRadius.circular(8),
                                       border: Border.all(
                                         color: i == missionMap.currentMissionIndex
-                                            ? const Color(0xFF1E6BFF)
+                                            ? AppTheme.primary
                                             : i < (missionMap.currentMissionIndex ?? 0)
-                                                ? const Color(0xFF10B981)
-                                                : const Color(0xFF9CA3AF),
+                                                ? AppTheme.success
+                                                : AppTheme.grayMedium,
                                         width: 2,
                                       ),
                                     ),
@@ -1212,7 +1421,7 @@ class _MissionMapPageState extends ConsumerState<MissionMapPage> {
                         bottom: 0,
                         child: Container(
                           width: 2,
-                          color: const Color(0xFFEF4444),
+                          color: AppTheme.error,
                         ),
                       ),
                     // Today label positioned under the line
@@ -1224,7 +1433,7 @@ class _MissionMapPageState extends ConsumerState<MissionMapPage> {
                           width: 60,
                           padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                           decoration: BoxDecoration(
-                            color: const Color(0xFFEF4444),
+                            color: AppTheme.error,
                             borderRadius: BorderRadius.circular(4),
                           ),
                           child: Text(
@@ -1251,7 +1460,7 @@ class _MissionMapPageState extends ConsumerState<MissionMapPage> {
                 _formatMonthYear(missionMap.strategyStartDate),
                 style: const TextStyle(
                   fontSize: 12,
-                  color: Color(0xFF6B7280),
+                  color: AppTheme.grayMedium,
                   fontWeight: FontWeight.w500,
                 ),
               ),
@@ -1265,7 +1474,7 @@ class _MissionMapPageState extends ConsumerState<MissionMapPage> {
                 ),
                 style: const TextStyle(
                   fontSize: 12,
-                  color: Color(0xFF6B7280),
+                  color: AppTheme.grayMedium,
                   fontWeight: FontWeight.w500,
                 ),
               ),
@@ -1282,7 +1491,7 @@ class _MissionMapPageState extends ConsumerState<MissionMapPage> {
       child: Container(
         width: 2,
         height: 24,
-        color: const Color(0xFFE5E7EB),
+        color: AppTheme.grayLight,
       ),
     );
   }
@@ -1306,13 +1515,13 @@ class _MissionMapPageState extends ConsumerState<MissionMapPage> {
       backgroundColor = AppTheme.success.withOpacity(0.05);
       borderColor = AppTheme.success.withOpacity(0.3);
     } else if (isCurrent) {
-      statusColor = const Color(0xFF1E6BFF);
-      backgroundColor = const Color(0xFF1E6BFF).withOpacity(0.05);
-      borderColor = const Color(0xFF1E6BFF);
+      statusColor = AppTheme.primary;
+      backgroundColor = AppTheme.primary.withOpacity(0.05);
+      borderColor = AppTheme.primary;
     } else {
-      statusColor = const Color(0xFF9CA3AF);
+      statusColor = AppTheme.grayMedium;
       backgroundColor = Colors.white;
-      borderColor = const Color(0xFFE5E7EB);
+      borderColor = AppTheme.grayLight;
     }
 
     return Row(
@@ -1377,7 +1586,7 @@ class _MissionMapPageState extends ConsumerState<MissionMapPage> {
                               style: const TextStyle(
                                 fontSize: 18,
                                 fontWeight: FontWeight.bold,
-                                color: Color(0xFF0A0E27),
+                                color: AppTheme.graphite,
                               ),
                               decoration: const InputDecoration(
                                 labelText: 'Mission Title',
@@ -1391,8 +1600,8 @@ class _MissionMapPageState extends ConsumerState<MissionMapPage> {
                                 fontSize: 18,
                                 fontWeight: FontWeight.bold,
                                 color: isFuture 
-                                    ? const Color(0xFF0A0E27).withOpacity(0.5)
-                                    : const Color(0xFF0A0E27),
+                                    ? AppTheme.graphite.withOpacity(0.5)
+                                    : AppTheme.graphite,
                               ),
                             ),
                     ),
@@ -1405,13 +1614,13 @@ class _MissionMapPageState extends ConsumerState<MissionMapPage> {
                         ),
                         onPressed: () => _toggleMissionExpansion(index),
                         tooltip: isExpanded ? 'Collapse' : 'Expand',
-                        color: const Color(0xFF1E6BFF),
+                        color: AppTheme.primary,
                       ),
                       IconButton(
                         icon: const Icon(Icons.edit, size: 18),
                         onPressed: () => _startEditingMission(mission, index),
                         tooltip: 'Edit Mission',
-                        color: const Color(0xFF1E6BFF),
+                        color: AppTheme.primary,
                       ),
                       if (missionMap.missions.length > 1)
                         IconButton(
@@ -1459,8 +1668,8 @@ class _MissionMapPageState extends ConsumerState<MissionMapPage> {
                   style: TextStyle(
                     fontSize: 14,
                     color: isFuture 
-                        ? const Color(0xFF374151).withOpacity(0.5)
-                        : const Color(0xFF374151),
+                        ? AppTheme.graphite.withOpacity(0.5)
+                        : AppTheme.graphite,
                     height: 1.5,
                   ),
                 ),
@@ -1588,7 +1797,7 @@ class _MissionMapPageState extends ConsumerState<MissionMapPage> {
             Icon(
               icon,
               size: 14,
-              color: const Color(0xFF1E6BFF),
+              color: AppTheme.primary,
             ),
             const SizedBox(width: 6),
             Text(
@@ -1596,7 +1805,7 @@ class _MissionMapPageState extends ConsumerState<MissionMapPage> {
               style: const TextStyle(
                 fontSize: 13,
                 fontWeight: FontWeight.w600,
-                color: Color(0xFF1E6BFF),
+                color: AppTheme.primary,
               ),
             ),
           ],
@@ -1606,7 +1815,7 @@ class _MissionMapPageState extends ConsumerState<MissionMapPage> {
           content,
           style: const TextStyle(
             fontSize: 13,
-            color: Color(0xFF374151),
+            color: AppTheme.graphite,
             height: 1.4,
           ),
         ),
@@ -1627,7 +1836,7 @@ class _MissionMapPageState extends ConsumerState<MissionMapPage> {
             Icon(
               icon,
               size: 14,
-              color: const Color(0xFF1E6BFF),
+              color: AppTheme.primary,
             ),
             const SizedBox(width: 6),
             Text(
@@ -1635,7 +1844,7 @@ class _MissionMapPageState extends ConsumerState<MissionMapPage> {
               style: const TextStyle(
                 fontSize: 13,
                 fontWeight: FontWeight.w600,
-                color: Color(0xFF1E6BFF),
+                color: AppTheme.primary,
               ),
             ),
           ],
@@ -1646,7 +1855,7 @@ class _MissionMapPageState extends ConsumerState<MissionMapPage> {
           maxLines: 3,
           style: const TextStyle(
             fontSize: 13,
-            color: Color(0xFF374151),
+            color: AppTheme.graphite,
             height: 1.4,
           ),
           decoration: const InputDecoration(
@@ -1667,7 +1876,7 @@ class _MissionMapPageState extends ConsumerState<MissionMapPage> {
             const Icon(
               Icons.timelapse,
               size: 14,
-              color: Color(0xFF1E6BFF),
+              color: AppTheme.primary,
             ),
             const SizedBox(width: 6),
             const Text(
@@ -1675,7 +1884,7 @@ class _MissionMapPageState extends ConsumerState<MissionMapPage> {
               style: TextStyle(
                 fontSize: 13,
                 fontWeight: FontWeight.w600,
-                color: Color(0xFF1E6BFF),
+                color: AppTheme.primary,
               ),
             ),
           ],
@@ -1687,7 +1896,7 @@ class _MissionMapPageState extends ConsumerState<MissionMapPage> {
           maxLines: 1,
           style: const TextStyle(
             fontSize: 13,
-            color: Color(0xFF374151),
+            color: AppTheme.graphite,
             height: 1.4,
           ),
           decoration: const InputDecoration(

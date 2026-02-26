@@ -40,6 +40,7 @@ MissionCreationSession _$MissionCreationSessionFromJson(
   Map<String, dynamic> json,
 ) => MissionCreationSession(
   id: json['id'] as String,
+  strategyId: json['strategyId'] as String,
   userId: json['userId'] as String,
   startedAt: DateTime.parse(json['startedAt'] as String),
   completedAt: json['completedAt'] == null
@@ -73,6 +74,7 @@ Map<String, dynamic> _$MissionCreationSessionToJson(
   MissionCreationSession instance,
 ) => <String, dynamic>{
   'id': instance.id,
+  'strategyId': instance.strategyId,
   'userId': instance.userId,
   'startedAt': instance.startedAt.toIso8601String(),
   'completedAt': instance.completedAt?.toIso8601String(),

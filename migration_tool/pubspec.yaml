@@ -1,0 +1,12 @@
+name: migration_tool
+description: Data migration tool for Purpose app (multi-strategy architecture)
+version: 1.0.0
+publish_to: 'none'
+
+environment:
+  sdk: ^3.10.7
+
+dependencies:
+  # Pure Dart Firebase client (no Flutter dependencies)
+  firedart: ^0.9.8
+  args: ^2.6.0

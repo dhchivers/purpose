@@ -24,6 +24,7 @@ ValueCreationSession _$ValueCreationSessionFromJson(
   Map<String, dynamic> json,
 ) => ValueCreationSession(
   id: json['id'] as String,
+  strategyId: json['strategyId'] as String,
   userId: json['userId'] as String,
   seedValue: json['seedValue'] as String,
   startedAt: DateTime.parse(json['startedAt'] as String),
@@ -70,6 +71,7 @@ Map<String, dynamic> _$ValueCreationSessionToJson(
   ValueCreationSession instance,
 ) => <String, dynamic>{
   'id': instance.id,
+  'strategyId': instance.strategyId,
   'userId': instance.userId,
   'seedValue': instance.seedValue,
   'startedAt': instance.startedAt.toIso8601String(),

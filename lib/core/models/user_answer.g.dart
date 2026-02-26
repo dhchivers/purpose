@@ -9,6 +9,7 @@ part of 'user_answer.dart';
 UserAnswer _$UserAnswerFromJson(Map<String, dynamic> json) => UserAnswer(
   id: json['id'] as String,
   userId: json['userId'] as String,
+  strategyId: json['strategyId'] as String?,
   questionId: json['questionId'] as String,
   questionModuleId: json['questionModuleId'] as String,
   textAnswer: json['textAnswer'] as String?,
@@ -26,6 +27,7 @@ Map<String, dynamic> _$UserAnswerToJson(UserAnswer instance) =>
     <String, dynamic>{
       'id': instance.id,
       'userId': instance.userId,
+      'strategyId': instance.strategyId,
       'questionId': instance.questionId,
       'questionModuleId': instance.questionModuleId,
       'textAnswer': instance.textAnswer,

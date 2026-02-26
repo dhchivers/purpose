@@ -9,7 +9,8 @@ part of 'user_mission_map.dart';
 UserMissionMap _$UserMissionMapFromJson(Map<String, dynamic> json) =>
     UserMissionMap(
       id: json['id'] as String,
-      userId: json['userId'] as String,
+      strategyId: json['strategyId'] as String,
+      userId: json['userId'] as String?,
       missions: (json['missions'] as List<dynamic>)
           .map((e) => Mission.fromJson(e as Map<String, dynamic>))
           .toList(),
@@ -25,6 +26,7 @@ UserMissionMap _$UserMissionMapFromJson(Map<String, dynamic> json) =>
 Map<String, dynamic> _$UserMissionMapToJson(UserMissionMap instance) =>
     <String, dynamic>{
       'id': instance.id,
+      'strategyId': instance.strategyId,
       'userId': instance.userId,
       'missions': instance.missions.map((e) => e.toJson()).toList(),
       'sessionId': instance.sessionId,

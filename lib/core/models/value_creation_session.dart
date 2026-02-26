@@ -23,7 +23,8 @@ class MultipleChoiceQuestion {
 @JsonSerializable(explicitToJson: true)
 class ValueCreationSession {
   final String id;
-  final String userId;
+  final String strategyId; // Links to parent strategy
+  final String userId; // Kept for permission checks
   final String seedValue;
   final DateTime startedAt;
   final DateTime? completedAt;
@@ -56,6 +57,7 @@ class ValueCreationSession {
 
   ValueCreationSession({
     required this.id,
+    required this.strategyId,
     required this.userId,
     required this.seedValue,
     required this.startedAt,
@@ -85,6 +87,7 @@ class ValueCreationSession {
 
   ValueCreationSession copyWith({
     String? id,
+    String? strategyId,
     String? userId,
     String? seedValue,
     DateTime? startedAt,
@@ -108,6 +111,7 @@ class ValueCreationSession {
   }) {
     return ValueCreationSession(
       id: id ?? this.id,
+      strategyId: strategyId ?? this.strategyId,
       userId: userId ?? this.userId,
       seedValue: seedValue ?? this.seedValue,
       startedAt: startedAt ?? this.startedAt,

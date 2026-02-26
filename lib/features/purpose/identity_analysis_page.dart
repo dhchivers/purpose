@@ -5,6 +5,7 @@ import 'package:purpose/core/models/identity_synthesis_result.dart';
 import 'package:purpose/core/models/tier_analysis.dart';
 import 'package:purpose/core/services/auth_provider.dart';
 import 'package:purpose/core/services/identity_synthesis_provider.dart';
+import 'package:purpose/core/services/strategy_context_provider.dart';
 import 'package:purpose/core/theme/app_theme.dart';
 
 /// Provider for identity synthesis result
@@ -13,14 +14,18 @@ final identitySynthesisResultProvider = FutureProvider.autoDispose<IdentitySynth
   final user = ref.watch(currentUserProvider).value;
   if (user == null) return null;
   
+  final activeStrategy = ref.watch(activeStrategyProvider);
+  if (activeStrategy == null) return null;
+  
   print('=== IDENTITY SYNTHESIS PROVIDER TRIGGERED ===');
   print('User ID: ${user.uid}');
+  print('Strategy ID: ${activeStrategy.id}');
   print('Timestamp: ${DateTime.now().toIso8601String()}');
   
   final synthesisService = await ref.watch(identitySynthesisServiceProvider.future);
-  final result = await synthesisService.getOrSynthesize(user.uid);
+  final result = await synthesisService.getOrSynthesize(user.uid, activeStrategy.id);
   
-  print('Provider result ID: ${result?.id ?? "error"}');
+  print('Provider result ID: ${result.id}');
   return result;
 });
 
@@ -85,8 +90,11 @@ class _IdentityAnalysisPageState extends ConsumerState<IdentityAnalysisPage> {
       final user = ref.read(currentUserProvider).value;
       if (user == null) throw Exception('User not logged in');
       
+      final activeStrategy = ref.read(activeStrategyProvider);
+      if (activeStrategy == null) throw Exception('No active strategy');
+      
       final synthesisService = await ref.read(identitySynthesisServiceProvider.future);
-      await synthesisService.synthesizeAndSave(user.uid);
+      await synthesisService.synthesizeAndSave(user.uid, activeStrategy.id);
       
       // Refresh the provider
       ref.invalidate(identitySynthesisResultProvider);
@@ -161,6 +169,9 @@ class _IdentityAnalysisPageState extends ConsumerState<IdentityAnalysisPage> {
       final user = ref.read(currentUserProvider).value;
       if (user == null) throw Exception('User not logged in');
       
+      final activeStrategy = ref.read(activeStrategyProvider);
+      if (activeStrategy == null) throw Exception('No active strategy');
+      
       // Create updated result with local selection/edit
       final updatedResult = result.copyWith(
         selectedOptionIndex: _selectedOptionIndex,
@@ -170,6 +181,7 @@ class _IdentityAnalysisPageState extends ConsumerState<IdentityAnalysisPage> {
       final synthesisService = await ref.read(identitySynthesisServiceProvider.future);
       await synthesisService.promotePurposeToProfile(
         userId: user.uid,
+        strategyId: activeStrategy.id,
         result: updatedResult,
       );
       

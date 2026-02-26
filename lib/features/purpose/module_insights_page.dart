@@ -5,6 +5,7 @@ import 'package:purpose/core/models/question_module.dart';
 import 'package:purpose/core/services/ai_processor_provider.dart';
 import 'package:purpose/core/services/firestore_provider.dart';
 import 'package:purpose/core/services/auth_provider.dart';
+import 'package:purpose/core/services/strategy_context_provider.dart';
 import 'package:purpose/core/theme/app_theme.dart';
 
 /// Page to display AI-generated insights for a completed module
@@ -43,6 +44,11 @@ class _ModuleInsightsPageState extends ConsumerState<ModuleInsightsPage> {
     try {
       final aiProcessor = await ref.read(aiProcessorServiceProvider.future);
       final firestoreService = ref.read(firestoreServiceProvider);
+      final activeStrategy = ref.read(activeStrategyProvider);
+      
+      if (activeStrategy == null) {
+        throw Exception('No active strategy');
+      }
       
       // Get the module first
       final module = await firestoreService.getQuestionModule(widget.moduleId);
@@ -54,6 +60,7 @@ class _ModuleInsightsPageState extends ConsumerState<ModuleInsightsPage> {
       // Generate module analysis
       final insights = await aiProcessor.generateModuleAnalysis(
         userId: user.uid,
+        strategyId: activeStrategy.id,
         module: module,
       );
 

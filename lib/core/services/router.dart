@@ -10,6 +10,7 @@ import 'package:purpose/features/admin/admin_settings_page.dart';
 import 'package:purpose/features/admin/admin_modules_page.dart';
 import 'package:purpose/features/admin/admin_module_detail_page.dart';
 import 'package:purpose/features/admin/admin_values_seeds_page.dart';
+import 'package:purpose/features/admin/admin_strategy_types_page.dart';
 import 'package:purpose/features/purpose/purpose_modules_page.dart';
 import 'package:purpose/features/purpose/module_questionnaire_page.dart';
 import 'package:purpose/features/purpose/identity_analysis_page.dart';
@@ -104,6 +105,11 @@ final routerProvider = Provider<GoRouter>((ref) {
         path: '/admin/values-seeds',
         name: 'admin-values-seeds',
         builder: (context, state) => const AdminValuesSeedsPage(),
+      ),
+      GoRoute(
+        path: '/admin/strategy-types',
+        name: 'admin-strategy-types',
+        builder: (context, state) => const AdminStrategyTypesPage(),
       ),
       GoRoute(
         path: '/purpose',

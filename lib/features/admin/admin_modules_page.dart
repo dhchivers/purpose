@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:purpose/core/models/question_module.dart';
 import 'package:purpose/core/models/module_type.dart';
+import 'package:purpose/core/models/strategy_type.dart';
 import 'package:purpose/core/services/firestore_provider.dart';
 import 'package:purpose/core/services/auth_provider.dart';
 import 'package:purpose/core/theme/app_theme.dart';
@@ -13,6 +14,12 @@ final allQuestionModulesProvider = StreamProvider<List<QuestionModule>>((ref) {
   return firestoreService.allQuestionModulesStream();
 });
 
+/// Provider for streaming all strategy types
+final strategyTypesStreamProvider = StreamProvider<List<StrategyType>>((ref) {
+  final firestoreService = ref.watch(firestoreServiceProvider);
+  return firestoreService.strategyTypesStream();
+});
+
 class AdminModulesPage extends ConsumerWidget {
   const AdminModulesPage({super.key});
 
@@ -20,12 +27,13 @@ class AdminModulesPage extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final currentUserAsync = ref.watch(currentUserProvider);
     final modulesAsync = ref.watch(allQuestionModulesProvider);
+    final strategyTypesAsync = ref.watch(strategyTypesStreamProvider);
 
     return Scaffold(
       appBar: AppBar(
         backgroundColor: AppTheme.primary,
         foregroundColor: Colors.white,
-        title: const Text('Question Modules'),
+        title: const Text('Purpose Question Modules'),
         leading: IconButton(
           icon: const Icon(Icons.arrow_back),
           onPressed: () => context.go('/admin'),
@@ -41,41 +49,47 @@ class AdminModulesPage extends ConsumerWidget {
 
           return modulesAsync.when(
             data: (modules) {
-              if (modules.isEmpty) {
-                return Center(
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      const Icon(
-                        Icons.question_answer_outlined,
-                        size: 80,
-                        color: Colors.grey,
+              return strategyTypesAsync.when(
+                data: (strategyTypes) {
+                  if (modules.isEmpty) {
+                    return Center(
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          const Icon(
+                            Icons.question_answer_outlined,
+                            size: 80,
+                            color: Colors.grey,
+                          ),
+                          const SizedBox(height: 16),
+                          const Text(
+                            'No Question Modules',
+                            style: TextStyle(
+                              fontSize: 24,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          const Text(
+                            'Create your first question module to get started',
+                            style: TextStyle(color: Colors.grey),
+                          ),
+                          const SizedBox(height: 24),
+                          ElevatedButton.icon(
+                            onPressed: () => _showCreateModuleDialog(context, ref, strategyTypes),
+                            icon: const Icon(Icons.add),
+                            label: const Text('Create Module'),
+                          ),
+                        ],
                       ),
-                      const SizedBox(height: 16),
-                      const Text(
-                        'No Question Modules',
-                        style: TextStyle(
-                          fontSize: 24,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      const Text(
-                        'Create your first question module to get started',
-                        style: TextStyle(color: Colors.grey),
-                      ),
-                      const SizedBox(height: 24),
-                      ElevatedButton.icon(
-                        onPressed: () => _showCreateModuleDialog(context, ref),
-                        icon: const Icon(Icons.add),
-                        label: const Text('Create Module'),
-                      ),
-                    ],
-                  ),
-                );
-              }
+                    );
+                  }
 
-              return _buildExpandableModuleList(context, ref, modules);
+                  return _buildExpandableModuleList(context, ref, modules, strategyTypes);
+                },
+                loading: () => const Center(child: CircularProgressIndicator()),
+                error: (error, stack) => Center(child: Text('Error loading strategy types: $error')),
+              );
             },
             loading: () => const Center(child: CircularProgressIndicator()),
             error: (error, stack) {
@@ -107,13 +121,19 @@ class AdminModulesPage extends ConsumerWidget {
         },
       ),
       floatingActionButton: currentUserAsync.maybeWhen(
-        data: (user) => user?.isAdmin == true
-            ? FloatingActionButton.extended(
-                onPressed: () => _showCreateModuleDialog(context, ref),
+        data: (user) {
+          if (user?.isAdmin == true) {
+            return strategyTypesAsync.maybeWhen(
+              data: (strategyTypes) => FloatingActionButton.extended(
+                onPressed: () => _showCreateModuleDialog(context, ref, strategyTypes),
                 icon: const Icon(Icons.add),
                 label: const Text('New Module'),
-              )
-            : null,
+              ),
+              orElse: () => null,
+            );
+          }
+          return null;
+        },
         orElse: () => null,
       ),
     );
@@ -123,12 +143,15 @@ class AdminModulesPage extends ConsumerWidget {
     BuildContext context,
     WidgetRef ref,
     List<QuestionModule> modules,
+    List<StrategyType> strategyTypes,
   ) {
-    // Group modules by parent module type
-    final groupedModules = <ModuleType, List<QuestionModule>>{};
+    // Group modules by strategy type
+    final groupedModules = <String, List<QuestionModule>>{};
     
+    // Add modules to their strategy type groups
     for (final module in modules) {
-      groupedModules.putIfAbsent(module.parentModule, () => []).add(module);
+      final typeId = module.strategyTypeId ?? 'unassigned';
+      groupedModules.putIfAbsent(typeId, () => []).add(module);
     }
     
     // Sort modules within each group by order
@@ -136,29 +159,41 @@ class AdminModulesPage extends ConsumerWidget {
       moduleList.sort((a, b) => a.order.compareTo(b.order));
     }
     
-    // Define the order of module areas
-    final moduleOrder = [
-      ModuleType.purpose,
-      ModuleType.vision,
-      ModuleType.mission,
-      ModuleType.goals,
-    ];
+    // Sort strategy types by order
+    final sortedTypes = List<StrategyType>.from(strategyTypes)
+      ..sort((a, b) => a.order.compareTo(b.order));
     
     return ListView(
       padding: const EdgeInsets.all(16),
       children: [
-        for (final moduleType in moduleOrder)
-          if (groupedModules.containsKey(moduleType))
-            _buildModuleSection(context, ref, moduleType, groupedModules[moduleType]!),
+        // Show strategy type sections
+        for (final strategyType in sortedTypes)
+          if (groupedModules.containsKey(strategyType.id))
+            _buildStrategyTypeSection(
+              context, 
+              ref, 
+              strategyType, 
+              groupedModules[strategyType.id]!,
+              strategyTypes,
+            ),
+        // Show unassigned modules if any
+        if (groupedModules.containsKey('unassigned'))
+          _buildUnassignedSection(
+            context,
+            ref,
+            groupedModules['unassigned']!,
+            strategyTypes,
+          ),
       ],
     );
   }
 
-  Widget _buildModuleSection(
+  Widget _buildStrategyTypeSection(
     BuildContext context,
     WidgetRef ref,
-    ModuleType moduleType,
+    StrategyType strategyType,
     List<QuestionModule> modules,
+    List<StrategyType> allStrategyTypes,
   ) {
     final totalQuestions = modules.fold<int>(0, (sum, m) => sum + m.totalQuestions);
     final activeModules = modules.where((m) => m.isActive).length;
@@ -169,19 +204,22 @@ class AdminModulesPage extends ConsumerWidget {
         tilePadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
         childrenPadding: const EdgeInsets.only(bottom: 8),
         leading: Container(
-          padding: const EdgeInsets.all(12),
+          width: 48,
+          height: 48,
           decoration: BoxDecoration(
-            color: _getModuleColor(moduleType).withValues(alpha: 0.1),
+            color: Color(strategyType.color).withValues(alpha: 0.1),
             borderRadius: BorderRadius.circular(8),
           ),
-          child: Icon(
-            _getModuleIcon(moduleType),
-            color: _getModuleColor(moduleType),
-            size: 28,
+          child: Center(
+            child: Icon(
+              Icons.category,
+              color: Color(strategyType.color),
+              size: 28,
+            ),
           ),
         ),
         title: Text(
-          moduleType.displayName,
+          strategyType.name,
           style: const TextStyle(
             fontSize: 18,
             fontWeight: FontWeight.bold,
@@ -195,7 +233,56 @@ class AdminModulesPage extends ConsumerWidget {
           ),
         ),
         initiallyExpanded: true,
-        children: modules.map((module) => _buildModuleListItem(context, ref, module)).toList(),
+        children: modules.map((module) => _buildModuleListItem(context, ref, module, allStrategyTypes)).toList(),
+      ),
+    );
+  }
+
+  Widget _buildUnassignedSection(
+    BuildContext context,
+    WidgetRef ref,
+    List<QuestionModule> modules,
+    List<StrategyType> strategyTypes,
+  ) {
+    final totalQuestions = modules.fold<int>(0, (sum, m) => sum + m.totalQuestions);
+    final activeModules = modules.where((m) => m.isActive).length;
+    
+    return Card(
+      margin: const EdgeInsets.only(bottom: 16),
+      child: ExpansionTile(
+        tilePadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        childrenPadding: const EdgeInsets.only(bottom: 8),
+        leading: Container(
+          width: 48,
+          height: 48,
+          decoration: BoxDecoration(
+            color: Colors.grey.withValues(alpha: 0.1),
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: const Center(
+            child: Icon(
+              Icons.help_outline,
+              color: Colors.grey,
+              size: 28,
+            ),
+          ),
+        ),
+        title: const Text(
+          'Unassigned',
+          style: TextStyle(
+            fontSize: 18,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+        subtitle: Text(
+          '$activeModules module${activeModules != 1 ? 's' : ''} • $totalQuestions questions',
+          style: TextStyle(
+            fontSize: 13,
+            color: Colors.grey[600],
+          ),
+        ),
+        initiallyExpanded: false,
+        children: modules.map((module) => _buildModuleListItem(context, ref, module, strategyTypes)).toList(),
       ),
     );
   }
@@ -204,6 +291,7 @@ class AdminModulesPage extends ConsumerWidget {
     BuildContext context,
     WidgetRef ref,
     QuestionModule module,
+    List<StrategyType> strategyTypes,
   ) {
     return ListTile(
       contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
@@ -274,7 +362,7 @@ class AdminModulesPage extends ConsumerWidget {
         children: [
           IconButton(
             icon: const Icon(Icons.edit_outlined, size: 20),
-            onPressed: () => _showEditModuleDialog(context, ref, module),
+            onPressed: () => _showEditModuleDialog(context, ref, module, strategyTypes),
             tooltip: 'Edit module',
           ),
           IconButton(
@@ -292,41 +380,10 @@ class AdminModulesPage extends ConsumerWidget {
       onTap: () => context.go('/admin/modules/${module.id}'),
     );
   }
-
-  Color _getModuleColor(ModuleType type) {
-    switch (type) {
-      case ModuleType.purpose:
-        return Colors.purple;
-      case ModuleType.vision:
-        return Colors.blue;
-      case ModuleType.mission:
-        return Colors.green;
-      case ModuleType.goals:
-        return Colors.orange;
-      case ModuleType.objectives:
-        return Colors.red;
-    }
-  }
-
-  IconData _getModuleIcon(ModuleType type) {
-    switch (type) {
-      case ModuleType.purpose:
-        return Icons.star;
-      case ModuleType.vision:
-        return Icons.visibility;
-      case ModuleType.mission:
-        return Icons.flag;
-      case ModuleType.goals:
-        return Icons.track_changes;
-      case ModuleType.objectives:
-        return Icons.checklist;
-    }
-  }
-
-  void _showCreateModuleDialog(BuildContext context, WidgetRef ref) {
+  void _showCreateModuleDialog(BuildContext context, WidgetRef ref, List<StrategyType> strategyTypes) {
     showDialog(
       context: context,
-      builder: (context) => _CreateModuleDialog(ref: ref),
+      builder: (context) => _CreateModuleDialog(ref: ref, strategyTypes: strategyTypes),
     );
   }
 
@@ -334,10 +391,15 @@ class AdminModulesPage extends ConsumerWidget {
     BuildContext context,
     WidgetRef ref,
     QuestionModule module,
+    List<StrategyType> strategyTypes,
   ) {
     showDialog(
       context: context,
-      builder: (context) => _EditModuleDialog(ref: ref, module: module),
+      builder: (context) => _EditModuleDialog(
+        ref: ref,
+        module: module,
+        strategyTypes: strategyTypes,
+      ),
     );
   }
 
@@ -415,8 +477,12 @@ class AdminModulesPage extends ConsumerWidget {
 
 class _CreateModuleDialog extends StatefulWidget {
   final WidgetRef ref;
+  final List<StrategyType> strategyTypes;
 
-  const _CreateModuleDialog({required this.ref});
+  const _CreateModuleDialog({
+    required this.ref,
+    required this.strategyTypes,
+  });
 
   @override
   State<_CreateModuleDialog> createState() => _CreateModuleDialogState();
@@ -427,22 +493,26 @@ class _CreateModuleDialogState extends State<_CreateModuleDialog> {
   final _nameController = TextEditingController();
   final _descriptionController = TextEditingController();
   final _orderController = TextEditingController(text: '1');
-  final _measureNameController = TextEditingController();
-  final _measureDescriptionController = TextEditingController();
-  final _maxMeasureValueController = TextEditingController();
   final _agentPromptController = TextEditingController();
   ModuleType _selectedModuleType = ModuleType.purpose;
+  StrategyType? _selectedStrategyType;
   bool _isActive = true;
   bool _isLoading = false;
+
+  @override
+  void initState() {
+    super.initState();
+    // Default to first strategy type (should be Personal)
+    if (widget.strategyTypes.isNotEmpty) {
+      _selectedStrategyType = widget.strategyTypes.first;
+    }
+  }
 
   @override
   void dispose() {
     _nameController.dispose();
     _descriptionController.dispose();
     _orderController.dispose();
-    _measureNameController.dispose();
-    _measureDescriptionController.dispose();
-    _maxMeasureValueController.dispose();
     _agentPromptController.dispose();
     super.dispose();
   }
@@ -489,6 +559,44 @@ class _CreateModuleDialogState extends State<_CreateModuleDialog> {
                 },
               ),
               const SizedBox(height: 16),
+              DropdownButtonFormField<StrategyType>(
+                value: _selectedStrategyType,
+                decoration: const InputDecoration(
+                  labelText: 'Strategy Type',
+                  border: OutlineInputBorder(),
+                ),
+                items: widget.strategyTypes.map((type) {
+                  return DropdownMenuItem(
+                    value: type,
+                    child: Row(
+                      children: [
+                        Container(
+                          width: 16,
+                          height: 16,
+                          decoration: BoxDecoration(
+                            color: Color(type.color),
+                            shape: BoxShape.circle,
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Text(type.name),
+                      ],
+                    ),
+                  );
+                }).toList(),
+                onChanged: (value) {
+                  if (value != null) {
+                    setState(() => _selectedStrategyType = value);
+                  }
+                },
+                validator: (value) {
+                  if (value == null) {
+                    return 'Please select a strategy type';
+                  }
+                  return null;
+                },
+              ),
+              const SizedBox(height: 16),
               DropdownButtonFormField<ModuleType>(
                 value: _selectedModuleType,
                 decoration: const InputDecoration(
@@ -525,34 +633,6 @@ class _CreateModuleDialogState extends State<_CreateModuleDialog> {
                   }
                   return null;
                 },
-              ),
-              const SizedBox(height: 16),
-              TextFormField(
-                controller: _measureNameController,
-                decoration: const InputDecoration(
-                  labelText: 'Measure Name (Optional)',
-                  hintText: 'e.g., Passion Level, Goal Clarity',
-                  border: OutlineInputBorder(),
-                ),
-              ),
-              const SizedBox(height: 16),
-              TextFormField(
-                controller: _measureDescriptionController,
-                decoration: const InputDecoration(
-                  labelText: 'Measure Description (Optional)',
-                  hintText: 'How the measure should be calculated...',
-                  border: OutlineInputBorder(),
-                ),
-                maxLines: 2,
-              ),
-              const SizedBox(height: 16),
-              TextFormField(
-                controller: _maxMeasureValueController,
-                decoration: const InputDecoration(
-                  labelText: 'Max Measure Value (Optional)',
-                  hintText: 'e.g., 10, 100%, 5',
-                  border: OutlineInputBorder(),
-                ),
               ),
               const SizedBox(height: 16),
               TextFormField(
@@ -613,15 +693,7 @@ class _CreateModuleDialogState extends State<_CreateModuleDialog> {
         order: int.parse(_orderController.text),
         totalQuestions: 0, // Will be updated as questions are added
         isActive: _isActive,
-        measureName: _measureNameController.text.trim().isEmpty
-            ? null
-            : _measureNameController.text.trim(),
-        measureDescription: _measureDescriptionController.text.trim().isEmpty
-            ? null
-            : _measureDescriptionController.text.trim(),
-        maxMeasureValue: _maxMeasureValueController.text.trim().isEmpty
-            ? null
-            : _maxMeasureValueController.text.trim(),
+        strategyTypeId: _selectedStrategyType?.id,
         agentPrompt: _agentPromptController.text.trim().isEmpty
             ? null
             : _agentPromptController.text.trim(),
@@ -654,10 +726,12 @@ class _CreateModuleDialogState extends State<_CreateModuleDialog> {
 class _EditModuleDialog extends StatefulWidget {
   final WidgetRef ref;
   final QuestionModule module;
+  final List<StrategyType> strategyTypes;
 
   const _EditModuleDialog({
     required this.ref,
     required this.module,
+    required this.strategyTypes,
   });
 
   @override
@@ -669,11 +743,9 @@ class _EditModuleDialogState extends State<_EditModuleDialog> {
   late final TextEditingController _nameController;
   late final TextEditingController _descriptionController;
   late final TextEditingController _orderController;
-  late final TextEditingController _measureNameController;
-  late final TextEditingController _measureDescriptionController;
-  late final TextEditingController _maxMeasureValueController;
   late final TextEditingController _agentPromptController;
   late ModuleType _selectedModuleType;
+  StrategyType? _selectedStrategyType;
   late bool _isActive;
   bool _isLoading = false;
 
@@ -684,12 +756,19 @@ class _EditModuleDialogState extends State<_EditModuleDialog> {
     _nameController = TextEditingController(text: widget.module.name);
     _descriptionController = TextEditingController(text: widget.module.description);
     _orderController = TextEditingController(text: widget.module.order.toString());
-    _measureNameController = TextEditingController(text: widget.module.measureName ?? '');
-    _measureDescriptionController = TextEditingController(text: widget.module.measureDescription ?? '');
-    _maxMeasureValueController = TextEditingController(text: widget.module.maxMeasureValue ?? '');
     _agentPromptController = TextEditingController(text: widget.module.agentPrompt ?? '');
     _selectedModuleType = widget.module.parentModule;
     _isActive = widget.module.isActive;
+    
+    // Initialize strategy type - find current or default to first
+    if (widget.module.strategyTypeId != null) {
+      _selectedStrategyType = widget.strategyTypes.firstWhere(
+        (type) => type.id == widget.module.strategyTypeId,
+        orElse: () => widget.strategyTypes.first,
+      );
+    } else {
+      _selectedStrategyType = widget.strategyTypes.first;
+    }
   }
 
   @override
@@ -697,9 +776,6 @@ class _EditModuleDialogState extends State<_EditModuleDialog> {
     _nameController.dispose();
     _descriptionController.dispose();
     _orderController.dispose();
-    _measureNameController.dispose();
-    _measureDescriptionController.dispose();
-    _maxMeasureValueController.dispose();
     _agentPromptController.dispose();
     super.dispose();
   }
@@ -746,6 +822,44 @@ class _EditModuleDialogState extends State<_EditModuleDialog> {
                 },
               ),
               const SizedBox(height: 16),
+              DropdownButtonFormField<StrategyType>(
+                value: _selectedStrategyType,
+                decoration: const InputDecoration(
+                  labelText: 'Strategy Type',
+                  border: OutlineInputBorder(),
+                ),
+                items: widget.strategyTypes.map((type) {
+                  return DropdownMenuItem(
+                    value: type,
+                    child: Row(
+                      children: [
+                        Container(
+                          width: 16,
+                          height: 16,
+                          decoration: BoxDecoration(
+                            color: Color(type.color),
+                            shape: BoxShape.circle,
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Text(type.name),
+                      ],
+                    ),
+                  );
+                }).toList(),
+                onChanged: (value) {
+                  if (value != null) {
+                    setState(() => _selectedStrategyType = value);
+                  }
+                },
+                validator: (value) {
+                  if (value == null) {
+                    return 'Please select a strategy type';
+                  }
+                  return null;
+                },
+              ),
+              const SizedBox(height: 16),
               DropdownButtonFormField<ModuleType>(
                 value: _selectedModuleType,
                 decoration: const InputDecoration(
@@ -782,34 +896,6 @@ class _EditModuleDialogState extends State<_EditModuleDialog> {
                   }
                   return null;
                 },
-              ),
-              const SizedBox(height: 16),
-              TextFormField(
-                controller: _measureNameController,
-                decoration: const InputDecoration(
-                  labelText: 'Measure Name (Optional)',
-                  hintText: 'e.g., Passion Level, Goal Clarity',
-                  border: OutlineInputBorder(),
-                ),
-              ),
-              const SizedBox(height: 16),
-              TextFormField(
-                controller: _measureDescriptionController,
-                decoration: const InputDecoration(
-                  labelText: 'Measure Description (Optional)',
-                  hintText: 'How the measure should be calculated...',
-                  border: OutlineInputBorder(),
-                ),
-                maxLines: 2,
-              ),
-              const SizedBox(height: 16),
-              TextFormField(
-                controller: _maxMeasureValueController,
-                decoration: const InputDecoration(
-                  labelText: 'Max Measure Value (Optional)',
-                  hintText: 'e.g., 10, 100%, 5',
-                  border: OutlineInputBorder(),
-                ),
               ),
               const SizedBox(height: 16),
               TextFormField(
@@ -867,15 +953,7 @@ class _EditModuleDialogState extends State<_EditModuleDialog> {
         description: _descriptionController.text.trim(),
         order: int.parse(_orderController.text),
         isActive: _isActive,
-        measureName: _measureNameController.text.trim().isEmpty
-            ? null
-            : _measureNameController.text.trim(),
-        measureDescription: _measureDescriptionController.text.trim().isEmpty
-            ? null
-            : _measureDescriptionController.text.trim(),
-        maxMeasureValue: _maxMeasureValueController.text.trim().isEmpty
-            ? null
-            : _maxMeasureValueController.text.trim(),
+        strategyTypeId: _selectedStrategyType?.id,
         agentPrompt: _agentPromptController.text.trim().isEmpty
             ? null
             : _agentPromptController.text.trim(),

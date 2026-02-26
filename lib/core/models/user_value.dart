@@ -6,7 +6,9 @@ part 'user_value.g.dart';
 @JsonSerializable()
 class UserValue {
   final String id;
-  final String userId;
+  final String strategyId; // Links to parent strategy
+  @Deprecated('Use strategyId instead. Kept for backward compatibility during migration.')
+  final String? userId; // Deprecated: Use strategyId
   final String seedValue; // The original seed value
   final String refinedLabel; // The final refined label
   final String statement; // The final value statement
@@ -19,7 +21,8 @@ class UserValue {
 
   UserValue({
     required this.id,
-    required this.userId,
+    required this.strategyId,
+    @Deprecated('Use strategyId instead') this.userId,
     required this.seedValue,
     required this.refinedLabel,
     required this.statement,
@@ -36,6 +39,7 @@ class UserValue {
 
   UserValue copyWith({
     String? id,
+    String? strategyId,
     String? userId,
     String? seedValue,
     String? refinedLabel,
@@ -47,6 +51,7 @@ class UserValue {
   }) {
     return UserValue(
       id: id ?? this.id,
+      strategyId: strategyId ?? this.strategyId,
       userId: userId ?? this.userId,
       seedValue: seedValue ?? this.seedValue,
       refinedLabel: refinedLabel ?? this.refinedLabel,

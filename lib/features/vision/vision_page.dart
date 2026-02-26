@@ -4,10 +4,14 @@ import 'package:go_router/go_router.dart';
 import 'package:purpose/core/services/auth_provider.dart';
 import 'package:purpose/core/services/firestore_provider.dart';
 import 'package:purpose/core/services/gemini_provider.dart';
+import 'package:purpose/core/services/strategy_provider.dart';
+import 'package:purpose/core/services/strategy_context_provider.dart';
 import 'package:purpose/core/models/user_vision.dart';
 import 'package:purpose/core/models/vision_creation_session.dart';
+import 'package:purpose/core/models/strategy_type.dart';
 import 'package:purpose/core/theme/app_theme.dart';
 import 'package:purpose/core/constants/app_constants.dart';
+import 'package:purpose/features/admin/admin_strategy_types_page.dart';
 
 /// Provider for user vision
 final userVisionProvider = FutureProvider.autoDispose<UserVision?>((ref) async {
@@ -53,16 +57,20 @@ class _VisionPageState extends ConsumerState<VisionPage> {
     try {
       final firestoreService = ref.read(firestoreServiceProvider);
       final session = await firestoreService.getVisionCreationSession(sessionId);
-      setState(() {
-        _session = session;
-        if (session != null) {
-          _meaningfulChangeController.text = session.meaningfulChange ?? '';
-          _roleController.text = session.roleDescription ?? '';
-          _editTimeframe = session.timeframeYears;
-          _editInfluenceScale = session.influenceScale;
-        }
-      });
-    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _session = session;
+          if (session != null) {
+            _meaningfulChangeController.text = session.meaningfulChange ?? '';
+            _roleController.text = session.roleDescription ?? '';
+            _editTimeframe = session.timeframeYears;
+            _editInfluenceScale = session.influenceScale;
+          }
+        });
+      }
+    } catch (e, stackTrace) {
+      print('❌ Error loading vision session: $e');
+      print('Stack trace: $stackTrace');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -89,15 +97,15 @@ class _VisionPageState extends ConsumerState<VisionPage> {
       await firestoreService.updateUserVision(updatedVision);
       
       // Invalidate caches
-      ref.invalidate(userVisionProvider);
+      ref.invalidate(strategyVisionStreamProvider(updatedVision.strategyId));
       ref.invalidate(currentUserProvider);
       
-      setState(() {
-        _isEditingVision = false;
-        _isSaving = false;
-      });
-      
       if (mounted) {
+        setState(() {
+          _isEditingVision = false;
+          _isSaving = false;
+        });
+        
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text('Vision updated successfully!'),
@@ -105,12 +113,14 @@ class _VisionPageState extends ConsumerState<VisionPage> {
           ),
         );
       }
-    } catch (e) {
-      setState(() {
-        _isSaving = false;
-      });
-      
+    } catch (e, stackTrace) {
+      print('❌ Error saving vision: $e');
+      print('Stack trace: $stackTrace');
       if (mounted) {
+        setState(() {
+          _isSaving = false;
+        });
+        
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('Error saving vision: $e'),
@@ -161,22 +171,24 @@ class _VisionPageState extends ConsumerState<VisionPage> {
       
       await firestoreService.saveVisionCreationSession(updatedSession);
       
-      setState(() {
-        _session = updatedSession;
-        _isRegenerating = false;
-        _isEditingQuestions = false;
-      });
-
-      // Show dialog to select new vision
       if (mounted) {
+        setState(() {
+          _session = updatedSession;
+          _isRegenerating = false;
+          _isEditingQuestions = false;
+        });
+
+        // Show dialog to select new vision
         _showVisionSelectionDialog(vision, options);
       }
-    } catch (e) {
-      setState(() {
-        _isRegenerating = false;
-      });
-      
+    } catch (e, stackTrace) {
+      print('❌ Error regenerating vision: $e');
+      print('Stack trace: $stackTrace');
       if (mounted) {
+        setState(() {
+          _isRegenerating = false;
+        });
+        
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('Error regenerating vision: $e'),
@@ -297,7 +309,9 @@ class _VisionPageState extends ConsumerState<VisionPage> {
           ),
         );
       }
-    } catch (e) {
+    } catch (e, stackTrace) {
+      print('❌ Error applying vision: $e');
+      print('Stack trace: $stackTrace');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -348,7 +362,9 @@ class _VisionPageState extends ConsumerState<VisionPage> {
         if (mounted) {
           context.go(AppConstants.homeRoute);
         }
-      } catch (e) {
+      } catch (e, stackTrace) {
+        print('❌ Error deleting vision: $e');
+        print('Stack trace: $stackTrace');
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
@@ -376,13 +392,90 @@ class _VisionPageState extends ConsumerState<VisionPage> {
 
   @override
   Widget build(BuildContext context) {
-    final visionAsync = ref.watch(userVisionProvider);
+    final activeStrategy = ref.watch(activeStrategyProvider);
+    final strategyTypesAsync = ref.watch(strategyTypesStreamProvider);
+
+    if (activeStrategy == null) {
+      return Scaffold(
+        appBar: AppBar(
+          backgroundColor: AppTheme.graphite,
+          foregroundColor: Colors.white,
+          title: const Text('Vision'),
+          leading: IconButton(
+            icon: const Icon(Icons.arrow_back),
+            onPressed: () => context.go(AppConstants.homeRoute),
+          ),
+        ),
+        body: Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              const Icon(Icons.dashboard_outlined, size: 64, color: Colors.grey),
+              const SizedBox(height: 16),
+              const Text(
+                'No active strategy',
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 8),
+              const Text(
+                'Please create or select a strategy from the dashboard.',
+                style: TextStyle(color: Colors.grey),
+              ),
+              const SizedBox(height: 16),
+              ElevatedButton(
+                onPressed: () => context.go('/'),
+                child: const Text('Go to Dashboard'),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    final visionAsync = ref.watch(strategyVisionStreamProvider(activeStrategy.id));
 
     return Scaffold(
       appBar: AppBar(
-        backgroundColor: AppTheme.primary,
+        backgroundColor: AppTheme.graphite,
         foregroundColor: Colors.white,
-        title: const Text('My Vision'),
+        title: Row(
+          children: [
+            Text(activeStrategy.name),
+            const SizedBox(width: 12),
+            strategyTypesAsync.when(
+              data: (types) {
+                final strategyType = types.firstWhere(
+                  (type) => type.id == activeStrategy.strategyTypeId,
+                  orElse: () => StrategyType(
+                    id: '',
+                    name: 'Unknown',
+                    enabled: true,
+                    order: 0,
+                    color: 0xFF2196F3,
+                    createdAt: DateTime.now(),
+                    updatedAt: DateTime.now(),
+                  ),
+                );
+                return Chip(
+                  label: Text(
+                    strategyType.name,
+                    style: const TextStyle(
+                      fontSize: 11,
+                      color: Colors.white,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                  backgroundColor: Color(strategyType.color),
+                  padding: EdgeInsets.zero,
+                  materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  visualDensity: VisualDensity.compact,
+                );
+              },
+              loading: () => const SizedBox.shrink(),
+              error: (_, __) => const SizedBox.shrink(),
+            ),
+          ],
+        ),
         leading: IconButton(
           icon: const Icon(Icons.arrow_back),
           onPressed: () => context.go(AppConstants.homeRoute),
@@ -395,11 +488,37 @@ class _VisionPageState extends ConsumerState<VisionPage> {
           ),
         ],
       ),
-      body: visionAsync.when(
-        data: (vision) {
-          if (vision == null) {
-            return Center(
-              child: Column(
+      body: Column(
+        children: [
+          // Header section
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(24),
+            decoration: const BoxDecoration(
+              color: AppTheme.primary,
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Vision',
+                  style: TextStyle(
+                    fontSize: 24,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.white,
+                  ),
+                ),
+              ],
+            ),
+          ),
+
+          // Main content
+          Expanded(
+            child: visionAsync.when(
+              data: (vision) {
+                if (vision == null) {
+                  return Center(
+                    child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
                   const Icon(
@@ -477,10 +596,10 @@ class _VisionPageState extends ConsumerState<VisionPage> {
                               size: 28,
                             ),
                             const SizedBox(width: 12),
-                            const Expanded(
+                            Expanded(
                               child: Text(
-                                'Your Vision',
-                                style: TextStyle(
+                                '${activeStrategy.name} - Vision',
+                                style: const TextStyle(
                                   fontSize: 20,
                                   fontWeight: FontWeight.bold,
                                   color: AppTheme.primary,
@@ -846,21 +965,28 @@ class _VisionPageState extends ConsumerState<VisionPage> {
           );
         },
         loading: () => const Center(child: CircularProgressIndicator()),
-        error: (error, stack) => Center(
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              const Icon(Icons.error_outline, size: 48, color: AppTheme.error),
-              const SizedBox(height: 16),
-              Text('Error loading vision: $error'),
-              const SizedBox(height: 16),
-              ElevatedButton(
-                onPressed: () => ref.invalidate(userVisionProvider),
-                child: const Text('Retry'),
-              ),
-            ],
-          ),
-        ),
+        error: (error, stack) {
+          print('❌ Error loading vision (AsyncValue): $error');
+          print('Stack trace: $stack');
+          return Center(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                const Icon(Icons.error_outline, size: 48, color: AppTheme.error),
+                const SizedBox(height: 16),
+                Text('Error loading vision: $error'),
+                const SizedBox(height: 16),
+                ElevatedButton(
+                  onPressed: () => ref.invalidate(userVisionProvider),
+                  child: const Text('Retry'),
+                ),
+              ],
+            ),
+          );
+        },
+      ),
+    ),
+        ],
       ),
     );
   }

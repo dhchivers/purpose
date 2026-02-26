@@ -14,6 +14,8 @@ import 'package:purpose/core/models/vision_creation_session.dart';
 import 'package:purpose/core/models/user_vision.dart';
 import 'package:purpose/core/models/mission_creation_session.dart';
 import 'package:purpose/core/models/user_mission_map.dart';
+import 'package:purpose/core/models/user_strategy.dart';
+import 'package:purpose/core/models/strategy_type.dart';
 import 'package:purpose/core/constants/app_constants.dart';
 
 /// Service for managing Firestore database operations
@@ -32,6 +34,10 @@ class FirestoreService {
   CollectionReference get _identitySynthesisResultsCollection =>
       _db.collection(AppConstants.identitySynthesisResultsCollection);
   CollectionReference get _configCollection => _db.collection('config');
+  CollectionReference get _userStrategiesCollection =>
+      _db.collection('user_strategies');
+  CollectionReference get _strategyTypesCollection =>
+      _db.collection('strategy_types');
   CollectionReference get _valueCreationSessionsCollection =>
       _db.collection('value_creation_sessions');
   CollectionReference get _userValuesCollection =>
@@ -46,10 +52,18 @@ class FirestoreService {
       _db.collection('user_mission_maps');
 
   /// Helper to convert all Timestamp objects to ISO strings to avoid Int64 issues on web
+  /// Also converts integer milliseconds (from migration scripts) to ISO strings
   /// Recursively processes Maps and Lists
   static dynamic _convertTimestampsToStrings(dynamic data) {
     if (data is Timestamp) {
       return data.toDate().toIso8601String();
+    } else if (data is int) {
+      // Check if this int is likely a timestamp (milliseconds since epoch)
+      // Range: Jan 1, 2000 (946684800000) to Jan 1, 2100 (4102444800000)
+      if (data > 946684800000 && data < 4102444800000) {
+        return DateTime.fromMillisecondsSinceEpoch(data, isUtc: true).toIso8601String();
+      }
+      return data;
     } else if (data is Map) {
       // Convert to standard Map<String, dynamic> to avoid LinkedMap issues on web
       return Map<String, dynamic>.from(
@@ -187,6 +201,530 @@ class FirestoreService {
     if (mission != null) updates['mission'] = mission;
 
     await _usersCollection.doc(userId).update(updates);
+  }
+
+  // ========== STRATEGY OPERATIONS ==========
+
+  /// Create a new strategy for a user
+  Future<UserStrategy> createStrategy({
+    required String userId,
+    required String name,
+    required String strategyTypeId,
+    String? description,
+    bool isDefault = false,
+  }) async {
+    try {
+      final strategyId = _userStrategiesCollection.doc().id;
+      
+      // Get the max displayOrder for this user
+      final existingStrategies = await getUserStrategies(userId);
+      final maxOrder = existingStrategies.isEmpty 
+          ? 0 
+          : existingStrategies.map((s) => s.displayOrder).reduce((a, b) => a > b ? a : b);
+      
+      final strategy = UserStrategy(
+        id: strategyId,
+        userId: userId,
+        name: name,
+        strategyTypeId: strategyTypeId,
+        description: description,
+        status: StrategyStatus.draft,
+        isDefault: isDefault,
+        valueCount: 0,
+        displayOrder: maxOrder + 1,
+        createdAt: DateTime.now(),
+        updatedAt: DateTime.now(),
+      );
+
+      final data = strategy.toJson();
+      data['createdAt'] = Timestamp.fromDate(strategy.createdAt);
+      data['updatedAt'] = Timestamp.fromDate(strategy.updatedAt);
+
+      await _userStrategiesCollection.doc(strategyId).set(data);
+      print('✅ Created strategy: $strategyId for user: $userId');
+
+      // Update user document
+      final updates = <String, dynamic>{
+        'strategyCount': FieldValue.increment(1),
+        'updatedAt': FieldValue.serverTimestamp(),
+      };
+      
+      if (isDefault) {
+        updates['defaultStrategyId'] = strategyId;
+      }
+
+      await _usersCollection.doc(userId).update(updates);
+      print('✅ Updated user strategyCount and defaultStrategyId');
+
+      return strategy;
+    } catch (e) {
+      print('❌ Error creating strategy: $e');
+      rethrow;
+    }
+  }
+
+  /// Get a strategy by ID
+  Future<UserStrategy?> getStrategy(String strategyId) async {
+    try {
+      final doc = await _userStrategiesCollection.doc(strategyId).get();
+      
+      if (!doc.exists) return null;
+
+      final data = _convertTimestampsToStrings(doc.data()) as Map<String, dynamic>;
+      return UserStrategy.fromJson(data);
+    } catch (e, stackTrace) {
+      print('❌ Error getting strategy $strategyId: $e');
+      print('Stack trace: $stackTrace');
+      rethrow;
+    }
+  }
+
+  /// Get all strategies for a user
+  Future<List<UserStrategy>> getUserStrategies(String userId) async {
+    try {
+      final querySnapshot = await _userStrategiesCollection
+          .where('userId', isEqualTo: userId)
+          .orderBy('displayOrder')
+          .get();
+
+      return querySnapshot.docs
+          .map((doc) {
+            final data = _convertTimestampsToStrings(doc.data()) as Map<String, dynamic>;
+            return UserStrategy.fromJson(data);
+          })
+          .toList();
+    } catch (e, stackTrace) {
+      print('❌ Error getting user strategies for userId=$userId: $e');
+      print('Stack trace: $stackTrace');
+      rethrow;
+    }
+  }
+
+  /// Get user's default strategy
+  Future<UserStrategy?> getDefaultStrategy(String userId) async {
+    try {
+      final querySnapshot = await _userStrategiesCollection
+          .where('userId', isEqualTo: userId)
+          .where('isDefault', isEqualTo: true)
+          .limit(1)
+          .get();
+
+      if (querySnapshot.docs.isEmpty) return null;
+
+      final data = _convertTimestampsToStrings(querySnapshot.docs.first.data()) 
+          as Map<String, dynamic>;
+      return UserStrategy.fromJson(data);
+    } catch (e, stackTrace) {
+      print('❌ Error getting default strategy for userId=$userId: $e');
+      print('Stack trace: $stackTrace');
+      rethrow;
+    }
+  }
+
+  /// Stream of a specific strategy
+  Stream<UserStrategy?> strategyStream(String strategyId) {
+    return _userStrategiesCollection.doc(strategyId).snapshots()
+        .map((doc) {
+          if (!doc.exists) return null;
+          final data = _convertTimestampsToStrings(doc.data()) as Map<String, dynamic>;
+          return UserStrategy.fromJson(data);
+        })
+        .handleError((error, stackTrace) {
+          print('❌ Error in strategyStream for strategyId=$strategyId: $error');
+          print('Stack trace: $stackTrace');
+        });
+  }
+
+  /// Stream of all user strategies
+  Stream<List<UserStrategy>> userStrategiesStream(String userId) {
+    return _userStrategiesCollection
+        .where('userId', isEqualTo: userId)
+        .orderBy('displayOrder')
+        .snapshots()
+        .map((snapshot) => snapshot.docs
+            .map((doc) {
+              final data = _convertTimestampsToStrings(doc.data()) as Map<String, dynamic>;
+              return UserStrategy.fromJson(data);
+            })
+            .toList())
+        .handleError((error, stackTrace) {
+          print('❌ Error in userStrategiesStream for userId=$userId: $error');
+          print('Stack trace: $stackTrace');
+        });
+  }
+
+  /// Stream of user's default strategy
+  Stream<UserStrategy?> defaultStrategyStream(String userId) {
+    return _userStrategiesCollection
+        .where('userId', isEqualTo: userId)
+        .where('isDefault', isEqualTo: true)
+        .limit(1)
+        .snapshots()
+        .map((snapshot) {
+          if (snapshot.docs.isEmpty) return null;
+          final data = _convertTimestampsToStrings(snapshot.docs.first.data()) 
+              as Map<String, dynamic>;
+          return UserStrategy.fromJson(data);
+        })
+        .handleError((error, stackTrace) {
+          print('❌ Error in defaultStrategyStream for userId=$userId: $error');
+          print('Stack trace: $stackTrace');
+        });
+  }
+
+  /// Update a strategy
+  Future<void> updateStrategy(UserStrategy strategy) async {
+    try {
+      final data = strategy.toJson();
+      data['updatedAt'] = Timestamp.fromDate(DateTime.now());
+      data['createdAt'] = Timestamp.fromDate(strategy.createdAt);
+      if (strategy.archivedAt != null) {
+        data['archivedAt'] = Timestamp.fromDate(strategy.archivedAt!);
+      }
+
+      await _userStrategiesCollection.doc(strategy.id).update(data);
+      print('✅ Updated strategy: ${strategy.id}');
+    } catch (e) {
+      print('❌ Error updating strategy: $e');
+      rethrow;
+    }
+  }
+
+  /// Update display order for multiple strategies
+  Future<void> updateStrategyDisplayOrders(Map<String, int> strategyOrders) async {
+    try {
+      final batch = _db.batch();
+      
+      for (final entry in strategyOrders.entries) {
+        batch.update(
+          _userStrategiesCollection.doc(entry.key),
+          {
+            'displayOrder': entry.value,
+            'updatedAt': FieldValue.serverTimestamp(),
+          },
+        );
+      }
+      
+      await batch.commit();
+      print('✅ Updated display order for ${strategyOrders.length} strategies');
+    } catch (e) {
+      print('❌ Error updating strategy display orders: $e');
+      rethrow;
+    }
+  }
+
+  /// Set a strategy as the default for a user
+  Future<void> setDefaultStrategy(String userId, String strategyId) async {
+    try {
+      // Remove default from all other strategies
+      final userStrategies = await getUserStrategies(userId);
+      final batch = _db.batch();
+
+      for (final strategy in userStrategies) {
+        if (strategy.id == strategyId) {
+          batch.update(
+            _userStrategiesCollection.doc(strategy.id),
+            {
+              'isDefault': true,
+              'updatedAt': FieldValue.serverTimestamp(),
+            },
+          );
+        } else if (strategy.isDefault) {
+          batch.update(
+            _userStrategiesCollection.doc(strategy.id),
+            {
+              'isDefault': false,
+              'updatedAt': FieldValue.serverTimestamp(),
+            },
+          );
+        }
+      }
+
+      // Update user's defaultStrategyId
+      batch.update(
+        _usersCollection.doc(userId),
+        {
+          'defaultStrategyId': strategyId,
+          'updatedAt': FieldValue.serverTimestamp(),
+        },
+      );
+
+      await batch.commit();
+      print('✅ Set default strategy: $strategyId for user: $userId');
+    } catch (e) {
+      print('❌ Error setting default strategy: $e');
+      rethrow;
+    }
+  }
+
+  /// Archive a strategy
+  Future<void> archiveStrategy(String strategyId) async {
+    try {
+      await _userStrategiesCollection.doc(strategyId).update({
+        'status': 'archived',
+        'archivedAt': FieldValue.serverTimestamp(),
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+      print('✅ Archived strategy: $strategyId');
+    } catch (e) {
+      print('❌ Error archiving strategy: $e');
+      rethrow;
+    }
+  }
+
+  /// Delete a strategy and all related data
+  Future<void> deleteStrategy(String strategyId, String userId) async {
+    try {
+      final batch = _db.batch();
+
+      // Delete all user_values for this strategy
+      final valuesQuery = await _userValuesCollection
+          .where('strategyId', isEqualTo: strategyId)
+          .get();
+      for (final doc in valuesQuery.docs) {
+        batch.delete(doc.reference);
+      }
+      print('🗑️ Deleting ${valuesQuery.docs.length} values for strategy: $strategyId');
+
+      // Delete all user_visions for this strategy
+      final visionsQuery = await _userVisionsCollection
+          .where('strategyId', isEqualTo: strategyId)
+          .get();
+      for (final doc in visionsQuery.docs) {
+        batch.delete(doc.reference);
+      }
+      print('🗑️ Deleting ${visionsQuery.docs.length} visions for strategy: $strategyId');
+
+      // Delete all user_mission_maps for this strategy
+      final mapsQuery = await _userMissionMapsCollection
+          .where('strategyId', isEqualTo: strategyId)
+          .get();
+      for (final doc in mapsQuery.docs) {
+        batch.delete(doc.reference);
+      }
+      print('🗑️ Deleting ${mapsQuery.docs.length} mission maps for strategy: $strategyId');
+
+      // Delete all value_creation_sessions for this strategy
+      final valueSessionsQuery = await _valueCreationSessionsCollection
+          .where('strategyId', isEqualTo: strategyId)
+          .get();
+      for (final doc in valueSessionsQuery.docs) {
+        batch.delete(doc.reference);
+      }
+      print('🗑️ Deleting ${valueSessionsQuery.docs.length} value sessions for strategy: $strategyId');
+
+      // Delete all vision_creation_sessions for this strategy
+      final visionSessionsQuery = await _visionCreationSessionsCollection
+          .where('strategyId', isEqualTo: strategyId)
+          .get();
+      for (final doc in visionSessionsQuery.docs) {
+        batch.delete(doc.reference);
+      }
+      print('🗑️ Deleting ${visionSessionsQuery.docs.length} vision sessions for strategy: $strategyId');
+
+      // Delete all mission_creation_sessions for this strategy
+      final missionSessionsQuery = await _missionCreationSessionsCollection
+          .where('strategyId', isEqualTo: strategyId)
+          .get();
+      for (final doc in missionSessionsQuery.docs) {
+        batch.delete(doc.reference);
+      }
+      print('🗑️ Deleting ${missionSessionsQuery.docs.length} mission sessions for strategy: $strategyId');
+
+      // Delete the strategy itself
+      batch.delete(_userStrategiesCollection.doc(strategyId));
+
+      // Update user document
+      batch.update(
+        _usersCollection.doc(userId),
+        {
+          'strategyCount': FieldValue.increment(-1),
+          'updatedAt': FieldValue.serverTimestamp(),
+        },
+      );
+
+      await batch.commit();
+      print('✅ Deleted strategy and all related data: $strategyId');
+    } catch (e) {
+      print('❌ Error deleting strategy: $e');
+      rethrow;
+    }
+  }
+
+  // ========== STRATEGY TYPE OPERATIONS ==========
+
+  /// Get a strategy type by ID
+  Future<StrategyType?> getStrategyType(String id) async {
+    try {
+      final doc = await _strategyTypesCollection.doc(id).get();
+      if (!doc.exists) return null;
+      
+      final data = _convertTimestampsToStrings(doc.data()) as Map<String, dynamic>;
+      data['id'] = doc.id;
+      return StrategyType.fromJson(data);
+    } catch (e, stackTrace) {
+      print('❌ Error getting strategy type $id: $e');
+      print('Stack trace: $stackTrace');
+      rethrow;
+    }
+  }
+
+  /// Get all strategy types ordered by order field
+  Future<List<StrategyType>> getAllStrategyTypes() async {
+    try {
+      final snapshot = await _strategyTypesCollection
+          .orderBy('order')
+          .get();
+      
+      return snapshot.docs.map((doc) {
+        final data = _convertTimestampsToStrings(doc.data()) as Map<String, dynamic>;
+        data['id'] = doc.id;
+        return StrategyType.fromJson(data);
+      }).toList();
+    } catch (e, stackTrace) {
+      print('❌ Error getting all strategy types: $e');
+      print('Stack trace: $stackTrace');
+      rethrow;
+    }
+  }
+
+  /// Get only enabled strategy types
+  Future<List<StrategyType>> getEnabledStrategyTypes() async {
+    try {
+      final snapshot = await _strategyTypesCollection
+          .where('enabled', isEqualTo: true)
+          .orderBy('order')
+          .get();
+      
+      return snapshot.docs.map((doc) {
+        final data = _convertTimestampsToStrings(doc.data()) as Map<String, dynamic>;
+        data['id'] = doc.id;
+        return StrategyType.fromJson(data);
+      }).toList();
+    } catch (e, stackTrace) {
+      print('❌ Error getting enabled strategy types: $e');
+      print('Stack trace: $stackTrace');
+      rethrow;
+    }
+  }
+
+  /// Stream of all strategy types
+  Stream<List<StrategyType>> strategyTypesStream() {
+    return _strategyTypesCollection
+        .orderBy('order')
+        .snapshots()
+        .map((snapshot) => snapshot.docs.map((doc) {
+              final data = _convertTimestampsToStrings(doc.data()) as Map<String, dynamic>;
+              data['id'] = doc.id;
+              return StrategyType.fromJson(data);
+            }).toList())
+        .handleError((error, stackTrace) {
+          print('❌ Error in strategyTypesStream: $error');
+          print('Stack trace: $stackTrace');
+        });
+  }
+
+  /// Create a new strategy type
+  Future<String> createStrategyType(StrategyType type) async {
+    try {
+      final data = type.toJson();
+      data['createdAt'] = Timestamp.fromDate(type.createdAt);
+      data['updatedAt'] = Timestamp.fromDate(type.updatedAt);
+      
+      final docRef = await _strategyTypesCollection.add(data);
+      print('✅ Created strategy type: ${docRef.id} (${type.name})');
+      return docRef.id;
+    } catch (e, stackTrace) {
+      print('❌ Error creating strategy type: $e');
+      print('Stack trace: $stackTrace');
+      rethrow;
+    }
+  }
+
+  /// Update an existing strategy type
+  Future<void> updateStrategyType(StrategyType type) async {
+    try {
+      // Prevent disabling default type (Personal)
+      if (type.isDefault && !type.enabled) {
+        throw Exception('Cannot disable the default strategy type (Personal)');
+      }
+
+      // If disabling, check for active strategies
+      if (!type.enabled) {
+        final canDisable = await canDisableStrategyType(type.id);
+        if (!canDisable) {
+          throw Exception('Cannot disable strategy type with active strategies');
+        }
+      }
+
+      final data = type.toJson();
+      data['updatedAt'] = Timestamp.fromDate(DateTime.now());
+      data['createdAt'] = Timestamp.fromDate(type.createdAt);
+      
+      await _strategyTypesCollection.doc(type.id).update(data);
+      print('✅ Updated strategy type: ${type.id} (${type.name})');
+    } catch (e, stackTrace) {
+      print('❌ Error updating strategy type: $e');
+      print('Stack trace: $stackTrace');
+      rethrow;
+    }
+  }
+
+  /// Delete a strategy type
+  Future<void> deleteStrategyType(String id) async {
+    try {
+      // Check if it's the default type
+      final type = await getStrategyType(id);
+      if (type == null) {
+        throw Exception('Strategy type not found');
+      }
+      
+      if (type.isDefault) {
+        throw Exception('Cannot delete the default strategy type (Personal)');
+      }
+
+      // Check for active strategies
+      final canDelete = await canDisableStrategyType(id);
+      if (!canDelete) {
+        throw Exception('Cannot delete strategy type with active strategies');
+      }
+
+      await _strategyTypesCollection.doc(id).delete();
+      print('✅ Deleted strategy type: $id');
+    } catch (e, stackTrace) {
+      print('❌ Error deleting strategy type: $e');
+      print('Stack trace: $stackTrace');
+      rethrow;
+    }
+  }
+
+  /// Check if a strategy type can be disabled (no active strategies reference it)
+  Future<bool> canDisableStrategyType(String typeId) async {
+    try {
+      final count = await countStrategiesByType(typeId);
+      return count == 0;
+    } catch (e, stackTrace) {
+      print('❌ Error checking if strategy type can be disabled: $e');
+      print('Stack trace: $stackTrace');
+      return false;
+    }
+  }
+
+  /// Count active strategies using a specific type
+  Future<int> countStrategiesByType(String typeId) async {
+    try {
+      final snapshot = await _userStrategiesCollection
+          .where('strategyTypeId', isEqualTo: typeId)
+          .where('status', whereIn: ['draft', 'active'])
+          .get();
+      
+      print('📊 Found ${snapshot.docs.length} active strategies for type: $typeId');
+      return snapshot.docs.length;
+    } catch (e, stackTrace) {
+      print('❌ Error counting strategies by type: $e');
+      print('Stack trace: $stackTrace');
+      return 0;
+    }
   }
 
   // ========== QUESTION MODULE OPERATIONS ==========
@@ -369,10 +907,12 @@ class FirestoreService {
   /// Get a specific user's answer to a question
   Future<UserAnswer?> getUserAnswer({
     required String userId,
+    required String strategyId,
     required String questionId,
   }) async {
     final snapshot = await _userAnswersCollection
         .where('userId', isEqualTo: userId)
+        .where('strategyId', isEqualTo: strategyId)
         .where('questionId', isEqualTo: questionId)
         .limit(1)
         .get();
@@ -385,14 +925,22 @@ class FirestoreService {
   }
 
   /// Get all user answers for a question module
+  /// If strategyId is provided, filters by it; otherwise loads all answers for the module
   Future<List<UserAnswer>> getUserAnswersByModule({
     required String userId,
+    String? strategyId,
     required String questionModuleId,
   }) async {
-    final snapshot = await _userAnswersCollection
+    Query query = _userAnswersCollection
         .where('userId', isEqualTo: userId)
-        .where('questionModuleId', isEqualTo: questionModuleId)
-        .get();
+        .where('questionModuleId', isEqualTo: questionModuleId);
+    
+    // Only filter by strategyId if provided
+    if (strategyId != null) {
+      query = query.where('strategyId', isEqualTo: strategyId);
+    }
+    
+    final snapshot = await query.get();
 
     return snapshot.docs.map((doc) {
       final docData = Map<String, dynamic>.from(doc.data() as Map);
@@ -403,13 +951,22 @@ class FirestoreService {
   }
 
   /// Stream of user's answers for a question module
+  /// If strategyId is provided, filters by it; otherwise loads all answers for the module
   Stream<List<UserAnswer>> userAnswersStream({
     required String userId,
+    String? strategyId,
     required String questionModuleId,
   }) {
-    return _userAnswersCollection
+    Query query = _userAnswersCollection
         .where('userId', isEqualTo: userId)
-        .where('questionModuleId', isEqualTo: questionModuleId)
+        .where('questionModuleId', isEqualTo: questionModuleId);
+    
+    // Only filter by strategyId if provided
+    if (strategyId != null) {
+      query = query.where('strategyId', isEqualTo: strategyId);
+    }
+    
+    return query
         .snapshots()
         .map((snapshot) => snapshot.docs.map((doc) {
               final docData = Map<String, dynamic>.from(doc.data() as Map);
@@ -422,32 +979,47 @@ class FirestoreService {
   /// Check if a user has answered all questions in a module
   Future<bool> isModuleCompleted({
     required String userId,
+    required String strategyId,
     required String questionModuleId,
   }) async {
     // Get total questions in module
     final module = await getQuestionModule(questionModuleId);
     if (module == null) return false;
 
-    // Get user's answers
-    final answers = await getUserAnswersByModule(
+    // Get user's answers (without strategyId filter to include legacy answers)
+    final allAnswers = await getUserAnswersByModule(
       userId: userId,
+      strategyId: null, // Load all to include legacy answers
       questionModuleId: questionModuleId,
     );
+    
+    // Filter to current strategy or null (legacy answers)
+    final answers = allAnswers.where((answer) => 
+      answer.strategyId == strategyId || answer.strategyId == null
+    ).toList();
 
     // Check if all questions are answered
     return answers.length >= module.totalQuestions;
   }
 
   /// Get all answers for AI processing (unanswered by AI)
+  /// If strategyId is provided, filters by it; otherwise loads all answers for the module
   Future<List<UserAnswer>> getUnprocessedAnswers({
     required String userId,
+    String? strategyId,
     required String questionModuleId,
   }) async {
-    final snapshot = await _userAnswersCollection
+    Query query = _userAnswersCollection
         .where('userId', isEqualTo: userId)
         .where('questionModuleId', isEqualTo: questionModuleId)
-        .where('processedByAI', isEqualTo: false)
-        .get();
+        .where('processedByAI', isEqualTo: false);
+    
+    // Only filter by strategyId if provided
+    if (strategyId != null) {
+      query = query.where('strategyId', isEqualTo: strategyId);
+    }
+    
+    final snapshot = await query.get();
 
     return snapshot.docs
         .map((doc) {
@@ -473,7 +1045,7 @@ class FirestoreService {
   // ========== IDENTITY SYNTHESIS OPERATIONS ==========
 
   /// Calculate hash of user's purpose module answers for staleness detection
-  Future<String> calculateAnswersHash(String userId) async {
+  Future<String> calculateAnswersHash(String userId, String strategyId) async {
     // Get all purpose modules
     final modules = await getQuestionModulesByParent(ModuleType.purpose);
     
@@ -482,6 +1054,7 @@ class FirestoreService {
     for (final module in modules) {
       final answers = await getUserAnswersByModule(
         userId: userId,
+        strategyId: strategyId,
         questionModuleId: module.id,
       );
       allAnswers.addAll(answers);
@@ -527,12 +1100,14 @@ class FirestoreService {
         .update(result.toJson());
   }
 
-  /// Get the most recent identity synthesis result for a user
+  /// Get the most recent identity synthesis result for a user and strategy
   Future<IdentitySynthesisResult?> getIdentitySynthesisResult(
     String userId,
+    String strategyId,
   ) async {
     final snapshot = await _identitySynthesisResultsCollection
         .where('userId', isEqualTo: userId)
+        .where('strategyId', isEqualTo: strategyId)
         .orderBy('createdAt', descending: true)
         .limit(1)
         .get();
@@ -552,9 +1127,10 @@ class FirestoreService {
   /// Check if identity synthesis result is stale (answers changed)
   Future<bool> isIdentitySynthesisStale(
     String userId,
+    String strategyId,
     IdentitySynthesisResult result,
   ) async {
-    final currentHash = await calculateAnswersHash(userId);
+    final currentHash = await calculateAnswersHash(userId, strategyId);
     print('=== STALENESS CHECK ===');
     print('Current hash: $currentHash');
     print('Stored hash: ${result.answersHash}');
@@ -562,21 +1138,23 @@ class FirestoreService {
     return currentHash != result.answersHash;
   }
 
-  /// Promote selected purpose statement to user's purpose field
+  /// Promote selected purpose statement to strategy's purpose field
   Future<void> promoteToUserPurpose({
     required String userId,
+    required String strategyId,
     required String purposeStatement,
     required String resultId,
   }) async {
-    print('=== PROMOTING PURPOSE TO USER PROFILE ===');
+    print('=== PROMOTING PURPOSE TO STRATEGY ===');
     print('User ID: $userId');
+    print('Strategy ID: $strategyId');
     print('Purpose Statement: $purposeStatement');
     print('Result ID: $resultId');
     
     final batch = _db.batch();
 
-    // Update user's purpose
-    batch.update(_usersCollection.doc(userId), {
+    // Update strategy's purpose
+    batch.update(_userStrategiesCollection.doc(strategyId), {
       'purpose': purposeStatement,
       'updatedAt': FieldValue.serverTimestamp(),
     });
@@ -587,7 +1165,7 @@ class FirestoreService {
     });
 
     await batch.commit();
-    print('✅ Purpose promoted successfully');
+    print('✅ Purpose promoted to strategy successfully');
   }
 
   // ========== BATCH OPERATIONS ==========
@@ -778,22 +1356,31 @@ class FirestoreService {
       await _userValuesCollection.doc(value.id).set(data);
       print('✅ Saved user value: ${value.id}');
 
-      // Update user's valueCount
-      final userDoc = _usersCollection.doc(value.userId);
-      await userDoc.update({
+      // Update strategy's valueCount
+      await _userStrategiesCollection.doc(value.strategyId).update({
         'valueCount': FieldValue.increment(1),
+        'updatedAt': FieldValue.serverTimestamp(),
       });
+      print('✅ Updated strategy valueCount for: ${value.strategyId}');
+
+      // Backward compatibility: Update user's valueCount if userId exists
+      if (value.userId != null) {
+        final userDoc = _usersCollection.doc(value.userId);
+        await userDoc.update({
+          'valueCount': FieldValue.increment(1),
+        });
+      }
     } catch (e) {
       print('❌ Error saving user value: $e');
       rethrow;
     }
   }
 
-  /// Get all user values for a user
-  Future<List<UserValue>> getUserValues(String userId) async {
+  /// Get all values for a strategy
+  Future<List<UserValue>> getUserValues(String strategyId) async {
     try {
       final querySnapshot = await _userValuesCollection
-          .where('userId', isEqualTo: userId)
+          .where('strategyId', isEqualTo: strategyId)
           .orderBy('createdAt', descending: true)
           .get();
 
@@ -812,6 +1399,33 @@ class FirestoreService {
       }).toList();
     } catch (e) {
       print('❌ Error getting user values: $e');
+      rethrow;
+    }
+  }
+
+  /// Get all values for a user (backward compatibility - uses userId)
+  @Deprecated('Use getUserValues(strategyId) instead')
+  Future<List<UserValue>> getUserValuesByUserId(String userId) async {
+    try {
+      final querySnapshot = await _userValuesCollection
+          .where('userId', isEqualTo: userId)
+          .orderBy('createdAt', descending: true)
+          .get();
+
+      return querySnapshot.docs.map((doc) {
+        final data = doc.data() as Map<String, dynamic>;
+        
+        if (data['createdAt'] is Timestamp) {
+          data['createdAt'] = (data['createdAt'] as Timestamp).toDate().toIso8601String();
+        }
+        if (data['updatedAt'] is Timestamp) {
+          data['updatedAt'] = (data['updatedAt'] as Timestamp).toDate().toIso8601String();
+        }
+
+        return UserValue.fromJson(data);
+      }).toList();
+    } catch (e) {
+      print('❌ Error getting user values by userId: $e');
       rethrow;
     }
   }
@@ -859,15 +1473,15 @@ class FirestoreService {
   }
 
   /// Delete a user value
-  Future<void> deleteUserValue(String valueId, String userId) async {
+  Future<void> deleteUserValue(String valueId, String strategyId) async {
     try {
       await _userValuesCollection.doc(valueId).delete();
       print('✅ Deleted user value: $valueId');
 
-      // Decrement user's valueCount
-      final userDoc = _usersCollection.doc(userId);
-      await userDoc.update({
+      // Decrement strategy's valueCount
+      await _userStrategiesCollection.doc(strategyId).update({
         'valueCount': FieldValue.increment(-1),
+        'updatedAt': FieldValue.serverTimestamp(),
       });
     } catch (e) {
       print('❌ Error deleting user value: $e');
@@ -934,24 +1548,34 @@ class FirestoreService {
       await _userVisionsCollection.doc(vision.id).set(data);
       print('✅ Saved user vision: ${vision.id}');
 
-      // Update user's vision field and increment visionCount
-      final userDoc = _usersCollection.doc(vision.userId);
-      await userDoc.update({
-        'vision': vision.visionStatement,
+      // Update strategy's currentVision field and increment visionCount
+      await _userStrategiesCollection.doc(vision.strategyId).update({
+        'currentVision': vision.visionStatement,
         'visionCount': FieldValue.increment(1),
         'updatedAt': FieldValue.serverTimestamp(),
       });
+      print('✅ Updated strategy currentVision for: ${vision.strategyId}');
+
+      // Backward compatibility: Update user's vision field if userId exists
+      if (vision.userId != null) {
+        final userDoc = _usersCollection.doc(vision.userId);
+        await userDoc.update({
+          'vision': vision.visionStatement,
+          'visionCount': FieldValue.increment(1),
+          'updatedAt': FieldValue.serverTimestamp(),
+        });
+      }
     } catch (e) {
       print('❌ Error saving user vision: $e');
       rethrow;
     }
   }
 
-  /// Get a user's vision
-  Future<UserVision?> getUserVision(String userId) async {
+  /// Get a user's vision by strategyId
+  Future<UserVision?> getUserVision(String strategyId) async {
     try {
       final querySnapshot = await _userVisionsCollection
-          .where('userId', isEqualTo: userId)
+          .where('strategyId', isEqualTo: strategyId)
           .orderBy('updatedAt', descending: true)
           .limit(1)
           .get();
@@ -978,8 +1602,59 @@ class FirestoreService {
     }
   }
 
-  /// Stream user's vision for real-time updates
-  Stream<UserVision?> userVisionStream(String userId) {
+  /// Get a user's vision by userId (backward compatibility)
+  @Deprecated('Use getUserVision(strategyId) instead')
+  Future<UserVision?> getUserVisionByUserId(String userId) async {
+    try {
+      final querySnapshot = await _userVisionsCollection
+          .where('userId', isEqualTo: userId)
+          .orderBy('updatedAt', descending: true)
+          .limit(1)
+          .get();
+
+      if (querySnapshot.docs.isEmpty) {
+        return null;
+      }
+
+      final doc = querySnapshot.docs.first;
+      final data = doc.data() as Map<String, dynamic>;
+      
+      // Convert Timestamps to DateTime strings
+      if (data['createdAt'] is Timestamp) {
+        data['createdAt'] = (data['createdAt'] as Timestamp).toDate().toIso8601String();
+      }
+      if (data['updatedAt'] is Timestamp) {
+        data['updatedAt'] = (data['updatedAt'] as Timestamp).toDate().toIso8601String();
+      }
+
+      return UserVision.fromJson(data);
+    } catch (e) {
+      print('❌ Error getting user vision by userId: $e');
+      rethrow;
+    }
+  }
+
+  /// Stream user's vision for real-time updates (by strategyId)
+  Stream<UserVision?> userVisionStream(String strategyId) {
+    return _userVisionsCollection
+        .where('strategyId', isEqualTo: strategyId)
+        .orderBy('updatedAt', descending: true)
+        .limit(1)
+        .snapshots()
+        .map((snapshot) {
+      if (snapshot.docs.isEmpty) {
+        return null;
+      }
+
+      final doc = snapshot.docs.first;
+      final data = _convertTimestampsToStrings(doc.data()) as Map<String, dynamic>;
+      return UserVision.fromJson(data);
+    });
+  }
+
+  /// Stream user's vision for real-time updates (by userId - backward compatibility)
+  @Deprecated('Use userVisionStream(strategyId) instead')
+  Stream<UserVision?> userVisionStreamByUserId(String userId) {
     return _userVisionsCollection
         .where('userId', isEqualTo: userId)
         .orderBy('updatedAt', descending: true)
@@ -1008,12 +1683,20 @@ class FirestoreService {
       await _userVisionsCollection.doc(vision.id).set(data);
       print('✅ Updated user vision: ${vision.id}');
 
-      // Update user's vision field to reflect the change
-      final userDoc = _usersCollection.doc(vision.userId);
-      await userDoc.update({
-        'vision': vision.visionStatement,
+      // Update strategy's currentVision field to reflect the change
+      await _userStrategiesCollection.doc(vision.strategyId).update({
+        'currentVision': vision.visionStatement,
         'updatedAt': FieldValue.serverTimestamp(),
       });
+
+      // Backward compatibility: Update user's vision field if userId exists
+      if (vision.userId != null) {
+        final userDoc = _usersCollection.doc(vision.userId);
+        await userDoc.update({
+          'vision': vision.visionStatement,
+          'updatedAt': FieldValue.serverTimestamp(),
+        });
+      }
     } catch (e) {
       print('❌ Error updating user vision: $e');
       rethrow;
@@ -1021,32 +1704,32 @@ class FirestoreService {
   }
 
   /// Delete a user's vision
-  Future<void> deleteUserVision(String visionId, String userId) async {
+  Future<void> deleteUserVision(String visionId, String strategyId) async {
     try {
       await _userVisionsCollection.doc(visionId).delete();
       print('✅ Deleted user vision: $visionId');
 
-      // Get the next most recent vision to update user.vision field
+      // Get the next most recent vision to update strategy.currentVision field
       final remainingVisions = await _userVisionsCollection
-          .where('userId', isEqualTo: userId)
+          .where('strategyId', isEqualTo: strategyId)
           .orderBy('updatedAt', descending: true)
           .limit(1)
           .get();
 
-      final userDoc = _usersCollection.doc(userId);
+      final strategyDoc = _userStrategiesCollection.doc(strategyId);
       
       if (remainingVisions.docs.isEmpty) {
         // No more visions, clear the field and decrement count
-        await userDoc.update({
-          'vision': null,
+        await strategyDoc.update({
+          'currentVision': null,
           'visionCount': FieldValue.increment(-1),
           'updatedAt': FieldValue.serverTimestamp(),
         });
       } else {
         // Update to the next most recent vision and decrement count
         final nextVisionData = remainingVisions.docs.first.data() as Map<String, dynamic>;
-        await userDoc.update({
-          'vision': nextVisionData['visionStatement'],
+        await strategyDoc.update({
+          'currentVision': nextVisionData['visionStatement'],
           'visionCount': FieldValue.increment(-1),
           'updatedAt': FieldValue.serverTimestamp(),
         });
@@ -1147,24 +1830,39 @@ class FirestoreService {
       await _userMissionMapsCollection.doc(missionMap.id).set(data);
       print('✅ Saved user mission map: ${missionMap.id}');
 
-      // Update user's missionsCompleted field (optional, for dashboard)
-      final userDoc = _usersCollection.doc(missionMap.userId);
-      await userDoc.update({
+      // Update strategy's currentMission field
+      final currentMission = missionMap.currentMissionIndex != null && 
+                             missionMap.currentMissionIndex! < missionMap.missions.length
+          ? missionMap.missions[missionMap.currentMissionIndex!].mission
+          : null;
+      
+      await _userStrategiesCollection.doc(missionMap.strategyId).update({
+        'currentMission': currentMission,
         'hasMissionMap': true,
-        'currentMissionIndex': missionMap.currentMissionIndex,
         'updatedAt': FieldValue.serverTimestamp(),
       });
+      print('✅ Updated strategy currentMission for: ${missionMap.strategyId}');
+
+      // Backward compatibility: Update user's mission fields if userId exists
+      if (missionMap.userId != null) {
+        final userDoc = _usersCollection.doc(missionMap.userId);
+        await userDoc.update({
+          'hasMissionMap': true,
+          'currentMissionIndex': missionMap.currentMissionIndex,
+          'updatedAt': FieldValue.serverTimestamp(),
+        });
+      }
     } catch (e) {
       print('❌ Error saving user mission map: $e');
       rethrow;
     }
   }
 
-  /// Get a user's mission map
-  Future<UserMissionMap?> getUserMissionMap(String userId) async {
+  /// Get a user's mission map by strategyId
+  Future<UserMissionMap?> getUserMissionMap(String strategyId) async {
     try {
       final querySnapshot = await _userMissionMapsCollection
-          .where('userId', isEqualTo: userId)
+          .where('strategyId', isEqualTo: strategyId)
           .orderBy('updatedAt', descending: true)
           .limit(1)
           .get();
@@ -1191,8 +1889,63 @@ class FirestoreService {
     }
   }
 
-  /// Stream user's mission map for real-time updates
-  Stream<UserMissionMap?> userMissionMapStream(String userId) {
+  /// Get a user's mission map by userId (backward compatibility)
+  @Deprecated('Use getUserMissionMap(strategyId) instead')
+  Future<UserMissionMap?> getUserMissionMapByUserId(String userId) async {
+    try {
+      final querySnapshot = await _userMissionMapsCollection
+          .where('userId', isEqualTo: userId)
+          .orderBy('updatedAt', descending: true)
+          .limit(1)
+          .get();
+
+      if (querySnapshot.docs.isEmpty) {
+        return null;
+      }
+
+      final doc = querySnapshot.docs.first;
+      final data = doc.data() as Map<String, dynamic>;
+      
+      // Convert Timestamps to DateTime strings
+      if (data['createdAt'] is Timestamp) {
+        data['createdAt'] = (data['createdAt'] as Timestamp).toDate().toIso8601String();
+      }
+      if (data['updatedAt'] is Timestamp) {
+        data['updatedAt'] = (data['updatedAt'] as Timestamp).toDate().toIso8601String();
+      }
+
+      return UserMissionMap.fromJson(data);
+    } catch (e) {
+      print('❌ Error getting user mission map by userId: $e');
+      rethrow;
+    }
+  }
+
+  /// Stream user's mission map for real-time updates (by strategyId)
+  Stream<UserMissionMap?> userMissionMapStream(String strategyId) {
+    return _userMissionMapsCollection
+        .where('strategyId', isEqualTo: strategyId)
+        .orderBy('updatedAt', descending: true)
+        .limit(1)
+        .snapshots()
+        .map((snapshot) {
+      if (snapshot.docs.isEmpty) {
+        return null;
+      }
+
+      final doc = snapshot.docs.first;
+      final data = _convertTimestampsToStrings(doc.data()) as Map<String, dynamic>;
+      return UserMissionMap.fromJson(data);
+    })
+        .handleError((error, stackTrace) {
+          print('❌ Error in userMissionMapStream for strategyId=$strategyId: $error');
+          print('Stack trace: $stackTrace');
+        });
+  }
+
+  /// Stream user's mission map for real-time updates (by userId - backward compatibility)
+  @Deprecated('Use userMissionMapStream(strategyId) instead')
+  Stream<UserMissionMap?> userMissionMapStreamByUserId(String userId) {
     return _userMissionMapsCollection
         .where('userId', isEqualTo: userId)
         .orderBy('updatedAt', descending: true)
@@ -1206,7 +1959,11 @@ class FirestoreService {
       final doc = snapshot.docs.first;
       final data = _convertTimestampsToStrings(doc.data()) as Map<String, dynamic>;
       return UserMissionMap.fromJson(data);
-    });
+    })
+        .handleError((error, stackTrace) {
+          print('❌ Error in userMissionMapStreamByUserId for userId=$userId: $error');
+          print('Stack trace: $stackTrace');
+        });
   }
 
   /// Update a user's mission map (e.g., advance to next mission)
@@ -1221,12 +1978,25 @@ class FirestoreService {
       await _userMissionMapsCollection.doc(missionMap.id).set(data);
       print('✅ Updated user mission map: ${missionMap.id}');
 
-      // Update user's current mission index
-      final userDoc = _usersCollection.doc(missionMap.userId);
-      await userDoc.update({
-        'currentMissionIndex': missionMap.currentMissionIndex,
+      // Update strategy's currentMission
+      final currentMission = missionMap.currentMissionIndex != null && 
+                             missionMap.currentMissionIndex! < missionMap.missions.length
+          ? missionMap.missions[missionMap.currentMissionIndex!].mission
+          : null;
+      
+      await _userStrategiesCollection.doc(missionMap.strategyId).update({
+        'currentMission': currentMission,
         'updatedAt': FieldValue.serverTimestamp(),
       });
+
+      // Backward compatibility: Update user's current mission index if userId exists
+      if (missionMap.userId != null) {
+        final userDoc = _usersCollection.doc(missionMap.userId);
+        await userDoc.update({
+          'currentMissionIndex': missionMap.currentMissionIndex,
+          'updatedAt': FieldValue.serverTimestamp(),
+        });
+      }
     } catch (e) {
       print('❌ Error updating user mission map: $e');
       rethrow;
@@ -1234,16 +2004,15 @@ class FirestoreService {
   }
 
   /// Delete a user's mission map
-  Future<void> deleteUserMissionMap(String missionMapId, String userId) async {
+  Future<void> deleteUserMissionMap(String missionMapId, String strategyId) async {
     try {
       await _userMissionMapsCollection.doc(missionMapId).delete();
       print('✅ Deleted user mission map: $missionMapId');
 
-      // Update user document to reflect no mission map
-      final userDoc = _usersCollection.doc(userId);
-      await userDoc.update({
+      // Update strategy document to reflect no mission map
+      await _userStrategiesCollection.doc(strategyId).update({
         'hasMissionMap': false,
-        'currentMissionIndex': null,
+        'currentMission': null,
         'updatedAt': FieldValue.serverTimestamp(),
       });
     } catch (e) {
@@ -1253,18 +2022,18 @@ class FirestoreService {
   }
 
   /// Advance user to next mission
-  Future<void> advanceToNextMission(String userId) async {
+  Future<void> advanceToNextMission(String strategyId) async {
     try {
-      final missionMap = await getUserMissionMap(userId);
+      final missionMap = await getUserMissionMap(strategyId);
       if (missionMap == null) {
-        throw Exception('No mission map found for user');
+        throw Exception('No mission map found for strategy');
       }
 
       final currentIndex = missionMap.currentMissionIndex ?? 0;
       final nextIndex = currentIndex + 1;
 
       if (nextIndex >= missionMap.missions.length) {
-        print('⚠️ User is already on the last mission');
+        print('⚠️ Strategy is already on the last mission');
         return;
       }
 
@@ -1274,9 +2043,160 @@ class FirestoreService {
       );
 
       await updateUserMissionMap(updatedMap);
-      print('✅ Advanced user to mission ${nextIndex + 1}');
+      print('✅ Advanced strategy to mission ${nextIndex + 1}');
     } catch (e) {
       print('❌ Error advancing to next mission: $e');
+      rethrow;
+    }
+  }
+
+  // ========== DENORMALIZATION HELPERS ==========
+
+  /// Update strategy's purpose field
+  Future<void> updateStrategyPurpose(String strategyId, String? purpose) async {
+    try {
+      await _userStrategiesCollection.doc(strategyId).update({
+        'purpose': purpose,
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+      print('✅ Updated strategy purpose for: $strategyId');
+    } catch (e) {
+      print('❌ Error updating strategy purpose: $e');
+      rethrow;
+    }
+  }
+
+  /// Update strategy's currentVision field
+  Future<void> updateStrategyCurrentVision(String strategyId, String? vision) async {
+    try {
+      await _userStrategiesCollection.doc(strategyId).update({
+        'currentVision': vision,
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+      print('✅ Updated strategy currentVision for: $strategyId');
+    } catch (e) {
+      print('❌ Error updating strategy currentVision: $e');
+      rethrow;
+    }
+  }
+
+  /// Update strategy's currentMission field
+  Future<void> updateStrategyCurrentMission(String strategyId, String? mission) async {
+    try {
+      await _userStrategiesCollection.doc(strategyId).update({
+        'currentMission': mission,
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+      print('✅ Updated strategy currentMission for: $strategyId');
+    } catch (e) {
+      print('❌ Error updating strategy currentMission: $e');
+      rethrow;
+    }
+  }
+
+  /// Increment or decrement strategy's valueCount
+  Future<void> updateStrategyValueCount(String strategyId, int delta) async {
+    try {
+      await _userStrategiesCollection.doc(strategyId).update({
+        'valueCount': FieldValue.increment(delta),
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+      print('✅ Updated strategy valueCount by $delta for: $strategyId');
+    } catch (e) {
+      print('❌ Error updating strategy valueCount: $e');
+      rethrow;
+    }
+  }
+
+  /// Increment or decrement strategy's visionCount
+  Future<void> updateStrategyVisionCount(String strategyId, int delta) async {
+    try {
+      await _userStrategiesCollection.doc(strategyId).update({
+        'visionCount': FieldValue.increment(delta),
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+      print('✅ Updated strategy visionCount by $delta for: $strategyId');
+    } catch (e) {
+      print('❌ Error updating strategy visionCount: $e');
+      rethrow;
+    }
+  }
+
+  /// Sync all denormalized fields for a strategy from actual data
+  /// Useful for data migration or fixing inconsistencies
+  Future<void> syncStrategyDenormalizedFields(String strategyId) async {
+    try {
+      print('🔄 Syncing denormalized fields for strategy: $strategyId');
+
+      // Get the strategy
+      final strategy = await getStrategy(strategyId);
+      if (strategy == null) {
+        throw Exception('Strategy not found: $strategyId');
+      }
+
+      // Count values
+      final valuesSnapshot = await _userValuesCollection
+          .where('strategyId', isEqualTo: strategyId)
+          .get();
+      final valueCount = valuesSnapshot.docs.length;
+
+      // Get current vision
+      final currentVision = await getUserVision(strategyId);
+      
+      // Count visions
+      final visionsSnapshot = await _userVisionsCollection
+          .where('strategyId', isEqualTo: strategyId)
+          .get();
+      final visionCount = visionsSnapshot.docs.length;
+
+      // Get mission map and current mission
+      final missionMap = await getUserMissionMap(strategyId);
+      String? currentMission;
+      bool hasMissionMap = false;
+      
+      if (missionMap != null) {
+        hasMissionMap = true;
+        if (missionMap.currentMissionIndex != null && 
+            missionMap.currentMissionIndex! < missionMap.missions.length) {
+          currentMission = missionMap.missions[missionMap.currentMissionIndex!].mission;
+        }
+      }
+
+      // Update strategy with synced data
+      await _userStrategiesCollection.doc(strategyId).update({
+        'valueCount': valueCount,
+        'currentVision': currentVision?.visionStatement,
+        'visionCount': visionCount,
+        'currentMission': currentMission,
+        'hasMissionMap': hasMissionMap,
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+
+      print('✅ Synced denormalized fields for strategy: $strategyId');
+      print('   - Value count: $valueCount');
+      print('   - Vision count: $visionCount');
+      print('   - Has mission map: $hasMissionMap');
+    } catch (e) {
+      print('❌ Error syncing strategy denormalized fields: $e');
+      rethrow;
+    }
+  }
+
+  /// Sync denormalized fields for all strategies of a user
+  /// Useful for data migration or bulk fixes
+  Future<void> syncAllUserStrategyDenormalizedFields(String userId) async {
+    try {
+      print('🔄 Syncing denormalized fields for all strategies of user: $userId');
+
+      final strategies = await getUserStrategies(userId);
+      
+      for (final strategy in strategies) {
+        await syncStrategyDenormalizedFields(strategy.id);
+      }
+
+      print('✅ Synced ${strategies.length} strategies for user: $userId');
+    } catch (e) {
+      print('❌ Error syncing user strategy denormalized fields: $e');
       rethrow;
     }
   }

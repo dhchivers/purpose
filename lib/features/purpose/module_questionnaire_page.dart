@@ -7,6 +7,7 @@ import 'package:purpose/core/models/question.dart';
 import 'package:purpose/core/models/user_answer.dart';
 import 'package:purpose/core/services/firestore_provider.dart';
 import 'package:purpose/core/services/auth_provider.dart';
+import 'package:purpose/core/services/strategy_context_provider.dart';
 import 'package:purpose/core/theme/app_theme.dart';
 
 /// Provider for a specific question module
@@ -25,11 +26,18 @@ final moduleActiveQuestionsProvider =
 
 /// Provider for user's answers to a module
 final userModuleAnswersProvider = StreamProvider.family<List<UserAnswer>, 
-    ({String userId, String moduleId})>((ref, params) {
+    ({String userId, String strategyId, String moduleId})>((ref, params) {
   final firestoreService = ref.watch(firestoreServiceProvider);
+  // Don't filter by strategyId in query to support legacy answers
   return firestoreService.userAnswersStream(
     userId: params.userId,
+    strategyId: null, // Load all answers, then filter in memory if needed
     questionModuleId: params.moduleId,
+  ).map((allAnswers) => 
+    // Filter to current strategy or null (legacy answers)
+    allAnswers.where((answer) => 
+      answer.strategyId == params.strategyId || answer.strategyId == null
+    ).toList()
   );
 });
 
@@ -68,6 +76,7 @@ class _ModuleQuestionnairePageState
   @override
   Widget build(BuildContext context) {
     final user = ref.watch(currentUserProvider).value;
+    final activeStrategy = ref.watch(activeStrategyProvider);
     final moduleAsync = ref.watch(moduleProvider(widget.moduleId));
     final questionsAsync = ref.watch(moduleActiveQuestionsProvider(widget.moduleId));
 
@@ -76,9 +85,15 @@ class _ModuleQuestionnairePageState
         body: Center(child: Text('Please log in')),
       );
     }
+    
+    if (activeStrategy == null) {
+      return const Scaffold(
+        body: Center(child: Text('No active strategy')),
+      );
+    }
 
     final answersAsync = ref.watch(userModuleAnswersProvider(
-      (userId: user.uid, moduleId: widget.moduleId),
+      (userId: user.uid, strategyId: activeStrategy.id, moduleId: widget.moduleId),
     ));
 
     return Scaffold(
@@ -113,6 +128,7 @@ class _ModuleQuestionnairePageState
                 data: (answers) => _buildQuestionnaire(
                   context,
                   user,
+                  activeStrategy.id,
                   module,
                   questions,
                   answers,
@@ -177,6 +193,7 @@ class _ModuleQuestionnairePageState
   Widget _buildQuestionnaire(
     BuildContext context,
     dynamic user,
+    String strategyId,
     QuestionModule module,
     List<Question> questions,
     List<UserAnswer> answers,
@@ -197,6 +214,7 @@ class _ModuleQuestionnairePageState
       orElse: () => UserAnswer(
         id: '',
         userId: user.uid,
+        strategyId: strategyId,
         questionId: currentQuestion.id,
         questionModuleId: widget.moduleId,
         createdAt: DateTime.now(),
@@ -565,10 +583,19 @@ class _ModuleQuestionnairePageState
 
     try {
       final firestoreService = ref.read(firestoreServiceProvider);
+      final activeStrategy = ref.read(activeStrategyProvider);
+      
+      if (activeStrategy == null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('No active strategy')),
+        );
+        return;
+      }
       
       // Check if an answer already exists for this question
       final existingAnswer = await firestoreService.getUserAnswer(
         userId: user.uid,
+        strategyId: activeStrategy.id,
         questionId: question.id,
       );
 
@@ -588,6 +615,7 @@ class _ModuleQuestionnairePageState
           answer = UserAnswer(
             id: existingAnswer?.id ?? '', // Use existing ID or empty for new
             userId: user.uid,
+            strategyId: activeStrategy.id,
             questionId: question.id,
             questionModuleId: widget.moduleId,
             textAnswer: _textController.text.trim(),
@@ -608,6 +636,7 @@ class _ModuleQuestionnairePageState
             answer = UserAnswer(
               id: existingAnswer?.id ?? '',
               userId: user.uid,
+              strategyId: activeStrategy.id,
               questionId: question.id,
               questionModuleId: widget.moduleId,
               textAnswer: _selectedMultipleOptions.join(','),
@@ -624,6 +653,7 @@ class _ModuleQuestionnairePageState
             answer = UserAnswer(
               id: existingAnswer?.id ?? '',
               userId: user.uid,
+              strategyId: activeStrategy.id,
               questionId: question.id,
               questionModuleId: widget.moduleId,
               selectedOption: _selectedOption,
@@ -643,6 +673,7 @@ class _ModuleQuestionnairePageState
           answer = UserAnswer(
             id: existingAnswer?.id ?? '',
             userId: user.uid,
+            strategyId: activeStrategy.id,
             questionId: question.id,
             questionModuleId: widget.moduleId,
             numericAnswer: _scaleValue,
@@ -661,6 +692,7 @@ class _ModuleQuestionnairePageState
           answer = UserAnswer(
             id: existingAnswer?.id ?? '',
             userId: user.uid,
+            strategyId: activeStrategy.id,
             questionId: question.id,
             questionModuleId: widget.moduleId,
             booleanAnswer: _booleanValue,

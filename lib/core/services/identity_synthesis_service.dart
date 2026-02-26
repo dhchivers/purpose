@@ -19,11 +19,22 @@ class IdentitySynthesisService {
         _firestoreService = firestoreService;
 
   /// Build JSON data from user's purpose module answers
-  Future<String> buildPurposeDataJson(String userId) async {
+  Future<String> buildPurposeDataJson(String userId, String strategyId) async {
+    // Get strategy to access its strategyTypeId
+    final strategy = await _firestoreService.getStrategy(strategyId);
+    if (strategy == null) {
+      throw Exception('Strategy not found');
+    }
+    
     // Fetch all purpose modules
-    final modules = await _firestoreService.getQuestionModulesByParent(
+    final allModules = await _firestoreService.getQuestionModulesByParent(
       ModuleType.purpose,
     );
+    
+    // Filter modules to only include those for this strategy type (or legacy modules with null strategyTypeId)
+    final modules = allModules.where((module) =>
+      module.strategyTypeId == strategy.strategyTypeId || module.strategyTypeId == null
+    ).toList();
 
     // Build hierarchy
     final List<Map<String, dynamic>> hierarchy = [];
@@ -32,11 +43,17 @@ class IdentitySynthesisService {
       // Get questions for this module
       final questions = await _firestoreService.getQuestionsByModule(module.id);
 
-      // Get user answers for this module
-      final answers = await _firestoreService.getUserAnswersByModule(
+      // Get user answers for this module (without strategyId filter to include legacy)
+      final allAnswers = await _firestoreService.getUserAnswersByModule(
         userId: userId,
+        strategyId: null,
         questionModuleId: module.id,
       );
+      
+      // Filter to current strategy or null (legacy answers)
+      final answers = allAnswers.where((answer) => 
+        answer.strategyId == strategyId || answer.strategyId == null
+      ).toList();
 
       // Create answer map for quick lookup
       final answerMap = {for (var a in answers) a.questionId: a};
@@ -86,10 +103,11 @@ class IdentitySynthesisService {
   }
 
   /// Synthesize identity and save result
-  Future<IdentitySynthesisResult> synthesizeAndSave(String userId) async {
+  Future<IdentitySynthesisResult> synthesizeAndSave(String userId, String strategyId) async {
     try {
       print('=== STARTING IDENTITY SYNTHESIS ===');
       print('User ID: $userId');
+      print('Strategy ID: $strategyId');
       
       // Check if all purpose modules are complete
       final user = await _firestoreService.getUser(userId);
@@ -97,18 +115,36 @@ class IdentitySynthesisService {
         throw Exception('User not found');
       }
 
-      final modules = await _firestoreService.getQuestionModulesByParent(
+      // Get strategy to access its strategyTypeId
+      final strategy = await _firestoreService.getStrategy(strategyId);
+      if (strategy == null) {
+        throw Exception('Strategy not found');
+      }
+
+      final allModules = await _firestoreService.getQuestionModulesByParent(
         ModuleType.purpose,
       );
-      print('Found ${modules.length} purpose modules');
+      
+      // Filter modules to only include those for this strategy type (or legacy modules with null strategyTypeId)
+      final modules = allModules.where((module) =>
+        module.strategyTypeId == strategy.strategyTypeId || module.strategyTypeId == null
+      ).toList();
+      
+      print('Found ${modules.length} purpose modules for strategy type ${strategy.strategyTypeId}');
 
       // Verify all modules are complete by checking if all questions have answers
       for (final module in modules) {
         final questions = await _firestoreService.getQuestionsByModule(module.id);
-        final answers = await _firestoreService.getUserAnswersByModule(
+        final allAnswers = await _firestoreService.getUserAnswersByModule(
           userId: userId,
+          strategyId: null,
           questionModuleId: module.id,
         );
+        
+        // Filter to current strategy or null (legacy answers)
+        final answers = allAnswers.where((answer) => 
+          answer.strategyId == strategyId || answer.strategyId == null
+        ).toList();
         
         if (questions.isEmpty) {
           throw Exception('Module ${module.name} has no questions');
@@ -128,11 +164,11 @@ class IdentitySynthesisService {
 
       // Build JSON data
       print('Building purpose data JSON...');
-      final jsonData = await buildPurposeDataJson(userId);
+      final jsonData = await buildPurposeDataJson(userId, strategyId);
       print('JSON data built (${jsonData.length} characters)');
 
       // Calculate answers hash
-      final answersHash = await _firestoreService.calculateAnswersHash(userId);
+      final answersHash = await _firestoreService.calculateAnswersHash(userId, strategyId);
       print('Answers hash: $answersHash');
 
       // Call AI synthesis
@@ -146,6 +182,7 @@ class IdentitySynthesisService {
       // Parse the response
       final result = _parseIdentitySynthesisResponse(
         userId: userId,
+        strategyId: strategyId,
         answersHash: answersHash,
         synthesisJson: synthesisJson,
       );
@@ -166,20 +203,22 @@ class IdentitySynthesisService {
   }
 
   /// Check if existing result is stale, and synthesize if needed
-  Future<IdentitySynthesisResult> getOrSynthesize(String userId) async {
+  Future<IdentitySynthesisResult> getOrSynthesize(String userId, String strategyId) async {
     try {
       print('=== GET OR SYNTHESIZE IDENTITY ===');
       print('User ID: $userId');
+      print('Strategy ID: $strategyId');
       
       // Get existing result
       final existingResult = await _firestoreService.getIdentitySynthesisResult(
         userId,
+        strategyId,
       );
 
       // If no result exists, synthesize
       if (existingResult == null) {
         print('No existing result found, synthesizing...');
-        return await synthesizeAndSave(userId);
+        return await synthesizeAndSave(userId, strategyId);
       }
 
       print('Found existing result from ${existingResult.createdAt}');
@@ -187,13 +226,14 @@ class IdentitySynthesisService {
       // Check if stale
       final isStale = await _firestoreService.isIdentitySynthesisStale(
         userId,
+        strategyId,
         existingResult,
       );
 
       // If stale, re-synthesize
       if (isStale) {
         print('Result is stale, re-synthesizing...');
-        return await synthesizeAndSave(userId);
+        return await synthesizeAndSave(userId, strategyId);
       }
 
       print('Using existing result');
@@ -210,6 +250,7 @@ class IdentitySynthesisService {
   /// Parse AI response into IdentitySynthesisResult model
   IdentitySynthesisResult _parseIdentitySynthesisResponse({
     required String userId,
+    required String strategyId,
     required String answersHash,
     required Map<String, dynamic> synthesisJson,
   }) {
@@ -238,6 +279,7 @@ class IdentitySynthesisService {
     return IdentitySynthesisResult(
       id: '', // Will be set after saving to Firestore
       userId: userId,
+      strategyId: strategyId,
       tierAnalysis: tierAnalysisList,
       integratedIdentity: integratedIdentity,
       purposeOptions: purposeOptionsList,
@@ -267,6 +309,7 @@ class IdentitySynthesisService {
   /// Promote purpose statement to user's profile
   Future<void> promotePurposeToProfile({
     required String userId,
+    required String strategyId,
     required IdentitySynthesisResult result,
   }) async {
     final statement = result.finalPurposeStatement;
@@ -276,6 +319,7 @@ class IdentitySynthesisService {
 
     await _firestoreService.promoteToUserPurpose(
       userId: userId,
+      strategyId: strategyId,
       purposeStatement: statement,
       resultId: result.id,
     );

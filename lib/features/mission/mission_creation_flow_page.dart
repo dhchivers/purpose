@@ -4,6 +4,8 @@ import 'package:go_router/go_router.dart';
 import 'package:purpose/core/services/auth_provider.dart';
 import 'package:purpose/core/services/firestore_provider.dart';
 import 'package:purpose/core/services/gemini_provider.dart';
+import 'package:purpose/core/services/strategy_provider.dart';
+import 'package:purpose/core/services/strategy_context_provider.dart';
 import 'package:purpose/core/models/mission_creation_session.dart';
 import 'package:purpose/core/models/user_mission_map.dart';
 
@@ -60,40 +62,53 @@ class _MissionCreationFlowPageState extends ConsumerState<MissionCreationFlowPag
 
   Future<void> _initializeSession() async {
     final user = ref.read(currentUserProvider).value;
-    if (user == null) return;
+    final activeStrategy = ref.read(activeStrategyProvider);
+    
+    if (user == null || activeStrategy == null) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('No active strategy found. Please select a strategy first.'),
+            backgroundColor: Colors.red,
+          ),
+        );
+        context.go('/');
+      }
+      return;
+    }
 
     try {
       setState(() => _isLoading = true);
       
-      final firestoreService = ref.read(firestoreServiceProvider);
-      
-      // Load user's values and vision
-      final userValues = await firestoreService.getUserValues(user.uid);
-      final coreValues = userValues.map((v) => v.statement).toList();
-      final userVision = await firestoreService.getUserVision(user.uid);
+      // Load strategy's values and vision
+      final values = await ref.read(strategyValuesProvider(activeStrategy.id).future);
+      final coreValues = values.map((v) => v.statement).toList();
+      final vision = await ref.read(strategyVisionProvider(activeStrategy.id).future);
 
       setState(() {
         _session = MissionCreationSession(
           id: DateTime.now().millisecondsSinceEpoch.toString(),
           userId: user.uid,
+          strategyId: activeStrategy.id,
           startedAt: DateTime.now(),
-          purposeStatement: user.purpose,
+          purposeStatement: activeStrategy.purpose,
           coreValues: coreValues,
-          visionStatement: userVision?.visionStatement,
-          visionTimeframeYears: userVision?.timeframeYears,
+          visionStatement: vision?.visionStatement,
+          visionTimeframeYears: vision?.timeframeYears,
         );
         _isLoading = false;
       });
 
-      // Pre-populate constraint values with all user values
+      // Pre-populate constraint values with all strategy values
       _selectedConstraintValues = List.from(coreValues);
     } catch (e) {
       setState(() {
         _session = MissionCreationSession(
           id: DateTime.now().millisecondsSinceEpoch.toString(),
           userId: user.uid,
+          strategyId: activeStrategy.id,
           startedAt: DateTime.now(),
-          purposeStatement: user.purpose,
+          purposeStatement: activeStrategy.purpose,
           coreValues: [],
         );
         _isLoading = false;
@@ -259,6 +274,7 @@ class _MissionCreationFlowPageState extends ConsumerState<MissionCreationFlowPag
       final missionMap = UserMissionMap(
         id: DateTime.now().millisecondsSinceEpoch.toString(),
         userId: user.uid,
+        strategyId: _session!.strategyId,
         missions: _generatedMissions!,
         sessionId: _session!.id,
         currentMissionIndex: 0, // Start at first mission
