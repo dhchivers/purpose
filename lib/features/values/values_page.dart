@@ -2,15 +2,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:purpose/core/services/auth_provider.dart';
-import 'package:purpose/core/services/firestore_provider.dart';
+import 'package:purpose/core/services/strategy_provider.dart';
+import 'package:purpose/core/services/strategy_context_provider.dart';
 import 'package:purpose/core/models/user_value.dart';
+import 'package:purpose/core/models/strategy_type.dart';
 import 'package:purpose/core/theme/app_theme.dart';
-
-/// Provider for user values
-final userValuesProvider = FutureProvider.family<List<UserValue>, String>((ref, userId) async {
-  final firestoreService = ref.watch(firestoreServiceProvider);
-  return firestoreService.getUserValues(userId);
-});
+import 'package:purpose/features/admin/admin_strategy_types_page.dart';
 
 /// Page displaying user's values and entry point to value creation
 class ValuesPage extends ConsumerWidget {
@@ -19,74 +16,213 @@ class ValuesPage extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final currentUserAsync = ref.watch(currentUserProvider);
+    final activeStrategyAsync = ref.watch(activeStrategyAsyncProvider);
+    final strategyTypesAsync = ref.watch(strategyTypesStreamProvider);
 
-    return Scaffold(
-      appBar: AppBar(
-        backgroundColor: AppTheme.primary,
-        foregroundColor: Colors.white,
-        title: const Text('My Values'),
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back),
-          onPressed: () => context.go('/'),
-        ),
-      ),
-      body: currentUserAsync.when(
-        data: (user) {
-          if (user == null) {
-            return const Center(child: Text('Please log in'));
-          }
+    return currentUserAsync.when(
+      data: (user) {
+        if (user == null) {
+          return Scaffold(
+            appBar: AppBar(
+              backgroundColor: AppTheme.primary,
+              foregroundColor: Colors.white,
+              title: const Text('Values'),
+              leading: IconButton(
+                icon: const Icon(Icons.arrow_back),
+                onPressed: () => context.go('/'),
+              ),
+            ),
+            body: const Center(child: Text('Please log in')),
+          );
+        }
 
-          // Load user's values from Firestore
-          final userValuesAsync = ref.watch(userValuesProvider(user.uid));
+        return activeStrategyAsync.when(
+          data: (strategy) {
+            if (strategy == null) {
+              return Scaffold(
+                appBar: AppBar(
+                  backgroundColor: AppTheme.primary,
+                  foregroundColor: Colors.white,
+                  title: const Text('Values'),
+                  leading: IconButton(
+                    icon: const Icon(Icons.arrow_back),
+                    onPressed: () => context.go('/'),
+                  ),
+                ),
+                body: Center(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      const Icon(Icons.dashboard_outlined, size: 64, color: Colors.grey),
+                      const SizedBox(height: 16),
+                      const Text(
+                        'No active strategy',
+                        style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                      ),
+                      const SizedBox(height: 8),
+                      const Text(
+                        'Please create or select a strategy from the dashboard.',
+                        style: TextStyle(color: Colors.grey),
+                      ),
+                      const SizedBox(height: 16),
+                      ElevatedButton(
+                        onPressed: () => context.go('/'),
+                        child: const Text('Go to Dashboard'),
+                      ),
+                    ],
+                  ),
+                ),
+              );
+            }
 
-          return userValuesAsync.when(
-            data: (values) => _buildValuesContent(context, values),
-            loading: () => const Center(child: CircularProgressIndicator()),
-            error: (error, stack) => Center(
+            // Load values for the active strategy
+            final valuesAsync = ref.watch(strategyValuesProvider(strategy.id));
+
+            return Scaffold(
+              appBar: AppBar(
+                backgroundColor: AppTheme.graphite,
+                foregroundColor: Colors.white,
+                title: Row(
+                  children: [
+                    Text(strategy.name),
+                    const SizedBox(width: 12),
+                    strategyTypesAsync.when(
+                      data: (types) {
+                        final strategyType = types.firstWhere(
+                          (type) => type.id == strategy.strategyTypeId,
+                          orElse: () => StrategyType(
+                            id: '',
+                            name: 'Unknown',
+                            enabled: true,
+                            order: 0,
+                            color: 0xFF2196F3,
+                            createdAt: DateTime.now(),
+                            updatedAt: DateTime.now(),
+                          ),
+                        );
+                        return Chip(
+                          label: Text(
+                            strategyType.name,
+                            style: const TextStyle(
+                              fontSize: 11,
+                              color: Colors.white,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                          backgroundColor: Color(strategyType.color),
+                          padding: EdgeInsets.zero,
+                          materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                          visualDensity: VisualDensity.compact,
+                        );
+                      },
+                      loading: () => const SizedBox.shrink(),
+                      error: (_, __) => const SizedBox.shrink(),
+                    ),
+                  ],
+                ),
+                leading: IconButton(
+                  icon: const Icon(Icons.arrow_back),
+                  onPressed: () => context.go('/'),
+                ),
+              ),
+              body: valuesAsync.when(
+                data: (values) => _buildValuesContent(context, values, strategy.name),
+                loading: () => const Center(child: CircularProgressIndicator()),
+                error: (error, stack) => Center(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      const Icon(Icons.error_outline, size: 48, color: Colors.red),
+                      const SizedBox(height: 16),
+                      Text('Error loading values: $error'),
+                      const SizedBox(height: 16),
+                      ElevatedButton(
+                        onPressed: () => ref.refresh(strategyValuesProvider(strategy.id)),
+                        child: const Text('Retry'),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              floatingActionButton: valuesAsync.maybeWhen(
+                data: (values) {
+                  // Only show FAB if under 5 values
+                  if (values.length >= 5) return null;
+                  
+                  return FloatingActionButton.extended(
+                    onPressed: () => context.go('/values/create'),
+                    icon: const Icon(Icons.add),
+                    label: const Text('Create Value'),
+                    backgroundColor: AppTheme.primary,
+                  );
+                },
+                orElse: () => null,
+              ),
+            );
+          },
+          loading: () => Scaffold(
+            appBar: AppBar(
+              backgroundColor: AppTheme.primary,
+              foregroundColor: Colors.white,
+              title: const Text('Values'),
+              leading: IconButton(
+                icon: const Icon(Icons.arrow_back),
+                onPressed: () => context.go('/'),
+              ),
+            ),
+            body: const Center(child: CircularProgressIndicator()),
+          ),
+          error: (error, stack) => Scaffold(
+            appBar: AppBar(
+              backgroundColor: AppTheme.primary,
+              foregroundColor: Colors.white,
+              title: const Text('Values'),
+              leading: IconButton(
+                icon: const Icon(Icons.arrow_back),
+                onPressed: () => context.go('/'),
+              ),
+            ),
+            body: Center(
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
                   const Icon(Icons.error_outline, size: 48, color: Colors.red),
                   const SizedBox(height: 16),
-                  Text('Error loading values: $error'),
-                  const SizedBox(height: 16),
-                  ElevatedButton(
-                    onPressed: () => ref.refresh(userValuesProvider(user.uid)),
-                    child: const Text('Retry'),
-                  ),
+                  Text('Error loading strategy: $error'),
                 ],
               ),
             ),
-          );
-        },
-        loading: () => const Center(child: CircularProgressIndicator()),
-        error: (error, stack) => Center(child: Text('Error: $error')),
+          ),
+        );
+      },
+      loading: () => Scaffold(
+        appBar: AppBar(
+          backgroundColor: AppTheme.primary,
+          foregroundColor: Colors.white,
+          title: const Text('Values'),
+          leading: IconButton(
+            icon: const Icon(Icons.arrow_back),
+            onPressed: () => context.go('/'),
+          ),
+        ),
+        body: const Center(child: CircularProgressIndicator()),
       ),
-      floatingActionButton: currentUserAsync.maybeWhen(
-        data: (user) {
-          if (user == null) return null;
-          final valuesAsync = ref.watch(userValuesProvider(user.uid));
-          final valueCount = valuesAsync.maybeWhen(
-            data: (values) => values.length,
-            orElse: () => 0,
-          );
-          
-          // Only show FAB if under 5 values
-          if (valueCount >= 5) return null;
-          
-          return FloatingActionButton.extended(
-            onPressed: () => context.go('/values/create'),
-            icon: const Icon(Icons.add),
-            label: const Text('Create Value'),
-            backgroundColor: AppTheme.primary,
-          );
-        },
-        orElse: () => null,
+      error: (error, stack) => Scaffold(
+        appBar: AppBar(
+          backgroundColor: AppTheme.primary,
+          foregroundColor: Colors.white,
+          title: const Text('Values'),
+          leading: IconButton(
+            icon: const Icon(Icons.arrow_back),
+            onPressed: () => context.go('/'),
+          ),
+        ),
+        body: Center(child: Text('Error: $error')),
       ),
     );
   }
 
-  Widget _buildValuesContent(BuildContext context, List<UserValue> values) {
+  Widget _buildValuesContent(BuildContext context, List<UserValue> values, String strategyName) {
     return Column(
       children: [
         // Header with info
@@ -94,30 +230,16 @@ class ValuesPage extends ConsumerWidget {
           width: double.infinity,
           padding: const EdgeInsets.all(24),
           decoration: const BoxDecoration(
-            gradient: AppTheme.primaryGradient,
+            color: AppTheme.primary,
           ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Icon(
-                Icons.favorite,
-                size: 48,
-                color: Colors.white,
-              ),
-              const SizedBox(height: 16),
               const Text(
-                'Discover Your Values',
+                'Values',
                 style: TextStyle(
-                  fontSize: 28,
+                  fontSize: 24,
                   fontWeight: FontWeight.bold,
-                  color: Colors.white,
-                ),
-              ),
-              const SizedBox(height: 8),
-              const Text(
-                'Refine 3-5 core values that guide your decisions',
-                style: TextStyle(
-                  fontSize: 16,
                   color: Colors.white,
                 ),
               ),

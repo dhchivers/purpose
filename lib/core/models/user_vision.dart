@@ -6,7 +6,9 @@ part 'user_vision.g.dart';
 @JsonSerializable()
 class UserVision {
   final String id;
-  final String userId;
+  final String strategyId; // Links to parent strategy
+  @Deprecated('Use strategyId instead. Kept for backward compatibility during migration.')
+  final String? userId; // Deprecated: Use strategyId
   final int timeframeYears; // 5, 10, or 15
   final String visionStatement;
   final String? sessionId; // Reference to VisionCreationSession
@@ -15,7 +17,8 @@ class UserVision {
 
   UserVision({
     required this.id,
-    required this.userId,
+    required this.strategyId,
+    @Deprecated('Use strategyId instead') this.userId,
     required this.timeframeYears,
     required this.visionStatement,
     this.sessionId,
@@ -30,6 +33,7 @@ class UserVision {
 
   UserVision copyWith({
     String? id,
+    String? strategyId,
     String? userId,
     int? timeframeYears,
     String? visionStatement,
@@ -39,6 +43,7 @@ class UserVision {
   }) {
     return UserVision(
       id: id ?? this.id,
+      strategyId: strategyId ?? this.strategyId,
       userId: userId ?? this.userId,
       timeframeYears: timeframeYears ?? this.timeframeYears,
       visionStatement: visionStatement ?? this.visionStatement,

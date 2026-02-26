@@ -45,14 +45,21 @@ class AIProcessorService {
   /// Process all unprocessed answers in a module
   Future<Map<String, String>> processModuleAnswers({
     required String userId,
+    required String strategyId,
     required QuestionModule module,
   }) async {
     try {
-      // Get all unprocessed answers for this module
-      final answers = await _firestoreService.getUnprocessedAnswers(
+      // Get all unprocessed answers for this module (without strategyId filter to include legacy)
+      final allAnswers = await _firestoreService.getUnprocessedAnswers(
         userId: userId,
+        strategyId: null,
         questionModuleId: module.id,
       );
+      
+      // Filter to current strategy or null (legacy answers)
+      final answers = allAnswers.where((answer) => 
+        answer.strategyId == strategyId || answer.strategyId == null
+      ).toList();
 
       if (answers.isEmpty) {
         return {};
@@ -90,14 +97,21 @@ class AIProcessorService {
   /// Generate comprehensive module analysis
   Future<String> generateModuleAnalysis({
     required String userId,
+    required String strategyId,
     required QuestionModule module,
   }) async {
     try {
-      // Get all answers for this module (processed or not)
-      final answers = await _firestoreService.getUserAnswersByModule(
+      // Get all answers for this module (without strategyId filter to include legacy)
+      final allAnswers = await _firestoreService.getUserAnswersByModule(
         userId: userId,
+        strategyId: null,
         questionModuleId: module.id,
       );
+      
+      // Filter to current strategy or null (legacy answers)
+      final answers = allAnswers.where((answer) => 
+        answer.strategyId == strategyId || answer.strategyId == null
+      ).toList();
 
       if (answers.isEmpty) {
         throw Exception('No answers found for this module');
@@ -123,6 +137,7 @@ class AIProcessorService {
   /// Generate complete purpose statement from all user's answers
   Future<String> generatePurposeStatement({
     required String userId,
+    required String strategyId,
   }) async {
     try {
       // Get all user's answers across all modules
@@ -134,10 +149,17 @@ class AIProcessorService {
       for (var module in allModules) {
         modulesMap[module.id] = module;
         
-        final moduleAnswers = await _firestoreService.getUserAnswersByModule(
+        final allModuleAnswers = await _firestoreService.getUserAnswersByModule(
           userId: userId,
+          strategyId: null,
           questionModuleId: module.id,
         );
+        
+        // Filter to current strategy or null (legacy answers)
+        final moduleAnswers = allModuleAnswers.where((answer) => 
+          answer.strategyId == strategyId || answer.strategyId == null
+        ).toList();
+        
         allAnswers.addAll(moduleAnswers);
 
         final moduleQuestions = await _firestoreService.getQuestionsByModule(module.id);
@@ -165,24 +187,40 @@ class AIProcessorService {
   /// Check if module has unprocessed answers
   Future<bool> hasUnprocessedAnswers({
     required String userId,
+    required String strategyId,
     required String moduleId,
   }) async {
-    final unprocessed = await _firestoreService.getUnprocessedAnswers(
+    final allUnprocessed = await _firestoreService.getUnprocessedAnswers(
       userId: userId,
+      strategyId: null,
       questionModuleId: moduleId,
     );
+    
+    // Filter to current strategy or null (legacy answers)
+    final unprocessed = allUnprocessed.where((answer) => 
+      answer.strategyId == strategyId || answer.strategyId == null
+    ).toList();
+    
     return unprocessed.isNotEmpty;
   }
 
   /// Get count of unprocessed answers for a module
   Future<int> getUnprocessedCount({
     required String userId,
+    required String strategyId,
     required String moduleId,
   }) async {
-    final unprocessed = await _firestoreService.getUnprocessedAnswers(
+    final allUnprocessed = await _firestoreService.getUnprocessedAnswers(
       userId: userId,
+      strategyId: null,
       questionModuleId: moduleId,
     );
+    
+    // Filter to current strategy or null (legacy answers)
+    final unprocessed = allUnprocessed.where((answer) => 
+      answer.strategyId == strategyId || answer.strategyId == null
+    ).toList();
+    
     return unprocessed.length;
   }
 }

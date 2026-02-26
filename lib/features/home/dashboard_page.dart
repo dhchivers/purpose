@@ -2,8 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:purpose/core/services/auth_provider.dart';
-import 'package:purpose/features/values/values_page.dart';
-import 'package:purpose/features/mission/mission_map_page.dart';
+import 'package:purpose/core/services/strategy_provider.dart';
+import 'package:purpose/core/services/strategy_context_provider.dart';
+import 'package:purpose/shared/widgets/strategy_selector.dart';
 import 'package:intl/intl.dart';
 
 class DashboardPage extends ConsumerWidget {
@@ -245,6 +246,14 @@ class DashboardPage extends ConsumerWidget {
                     ),
                   ),
 
+                // Strategy Selector
+                const SizedBox(height: 16),
+                const StrategySelector(
+                  showCreateButton: true,
+                  compact: false,
+                ),
+                const SizedBox(height: 24),
+
                 // Quick Action Buttons
                 Row(
                   children: [
@@ -319,30 +328,77 @@ class DashboardPage extends ConsumerWidget {
                       flex: 1,
                       child: Column(
                         children: [
-                          _PurposeCard(
-                            value: user.purpose ?? 'Not set',
-                            color: user.purpose != null ? const Color(0xFF1E6BFF) : Colors.grey,
-                            lastUpdated: user.purpose != null ? user.updatedAt : null,
-                          ),
-                          const SizedBox(height: 12),
-                          _PurposeCard(
-                            icon: Icons.visibility,
-                            label: 'Vision',
-                            value: user.vision ?? 'Not set',
-                            color: user.vision != null ? const Color(0xFF1E6BFF) : Colors.grey,
-                            lastUpdated: user.vision != null ? user.updatedAt : null,
-                            onTap: () {
-                              if (user.vision != null) {
-                                context.go('/vision');
-                              } else {
-                                context.go('/vision/create');
+                          // Purpose Card - Strategy-scoped
+                          Consumer(
+                            builder: (context, ref, child) {
+                              final activeStrategy = ref.watch(activeStrategyProvider);
+                              
+                              if (activeStrategy == null) {
+                                return _PurposeCard(
+                                  value: 'No active strategy',
+                                  color: Colors.grey,
+                                  onTap: () => context.go('/'),
+                                );
                               }
+                              
+                              return _PurposeCard(
+                                value: activeStrategy.purpose ?? 'Not set',
+                                color: activeStrategy.purpose != null ? const Color(0xFF1E6BFF) : Colors.grey,
+                                lastUpdated: activeStrategy.purpose != null ? activeStrategy.updatedAt : null,
+                                onTap: () => context.go('/purpose'),
+                              );
                             },
                           ),
                           const SizedBox(height: 12),
+                          // Vision Card - Strategy-scoped
                           Consumer(
                             builder: (context, ref, child) {
-                              final missionMapAsync = ref.watch(userMissionMapProvider);
+                              final activeStrategy = ref.watch(activeStrategyProvider);
+                              
+                              if (activeStrategy == null) {
+                                return _PurposeCard(
+                                  icon: Icons.visibility,
+                                  label: 'Vision',
+                                  value: 'No active strategy',
+                                  color: Colors.grey,
+                                  onTap: () => context.go('/'),
+                                );
+                              }
+                              
+                              return _PurposeCard(
+                                icon: Icons.visibility,
+                                label: 'Vision',
+                                value: activeStrategy.currentVision ?? 'Not set',
+                                color: activeStrategy.currentVision != null ? const Color(0xFF1E6BFF) : Colors.grey,
+                                lastUpdated: activeStrategy.currentVision != null ? activeStrategy.updatedAt : null,
+                                onTap: () {
+                                  if (activeStrategy.currentVision != null) {
+                                    context.go('/vision');
+                                  } else {
+                                    context.go('/vision/create');
+                                  }
+                                },
+                              );
+                            },
+                          ),
+                          const SizedBox(height: 12),
+                          // Mission Card - Strategy-scoped
+                          Consumer(
+                            builder: (context, ref, child) {
+                              // Get active strategy first
+                              final activeStrategy = ref.watch(activeStrategyProvider);
+                              
+                              if (activeStrategy == null) {
+                                return _PurposeCard(
+                                  icon: Icons.track_changes,
+                                  label: 'Mission',
+                                  value: 'No active strategy',
+                                  color: Colors.grey,
+                                  onTap: () => context.go('/'),
+                                );
+                              }
+                              
+                              final missionMapAsync = ref.watch(strategyMissionMapStreamProvider(activeStrategy.id));
                               return missionMapAsync.when(
                                 data: (missionMap) {
                                   final hasMissions = missionMap != null && missionMap.missions.isNotEmpty;
@@ -383,12 +439,16 @@ class DashboardPage extends ConsumerWidget {
                                   value: 'Loading...',
                                   color: Colors.grey,
                                 ),
-                                error: (_, __) => const _PurposeCard(
-                                  icon: Icons.track_changes,
-                                  label: 'Mission',
-                                  value: 'Error loading',
-                                  color: Colors.grey,
-                                ),
+                                error: (error, stack) {
+                                  print('❌ Error loading mission map on dashboard: $error');
+                                  print('Stack trace: $stack');
+                                  return const _PurposeCard(
+                                    icon: Icons.track_changes,
+                                    label: 'Mission',
+                                    value: 'Error loading',
+                                    color: Colors.grey,
+                                  );
+                                },
                               );
                             },
                           ),
@@ -404,7 +464,16 @@ class DashboardPage extends ConsumerWidget {
                           // Load and display user values
                           Consumer(
                             builder: (context, ref, child) {
-                              final userValuesAsync = ref.watch(userValuesProvider(user.uid));
+                              // Get active strategy first
+                              final activeStrategy = ref.watch(activeStrategyProvider);
+                              
+                              if (activeStrategy == null) {
+                                return const _ValuesCard(
+                                  values: [],
+                                );
+                              }
+                              
+                              final userValuesAsync = ref.watch(strategyValuesProvider(activeStrategy.id));
                               return userValuesAsync.when(
                                 data: (userValues) {
                                   // Find the most recently updated value
@@ -423,7 +492,11 @@ class DashboardPage extends ConsumerWidget {
                                   );
                                 },
                                 loading: () => const _ValuesCard(values: []),
-                                error: (_, __) => const _ValuesCard(values: []),
+                                error: (error, stack) {
+                                  print('❌ Error loading values on dashboard: $error');
+                                  print('Stack trace: $stack');
+                                  return const _ValuesCard(values: []);
+                                },
                               );
                             },
                           ),
@@ -441,9 +514,13 @@ class DashboardPage extends ConsumerWidget {
           );
         },
         loading: () => const Center(child: CircularProgressIndicator()),
-        error: (error, stack) => Center(
-          child: Text('Error: $error'),
-        ),
+        error: (error, stack) {
+          print('❌ Error loading user on dashboard: $error');
+          print('Stack trace: $stack');
+          return Center(
+            child: Text('Error: $error'),
+          );
+        },
       ),
     );
   }

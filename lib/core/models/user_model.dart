@@ -44,13 +44,22 @@ class UserModel {
   /// Whether the user's email is verified
   final bool emailVerified;
 
+  /// ID of the user's default/primary strategy
+  final String? defaultStrategyId;
+
+  /// Total number of strategies created by this user
+  final int strategyCount;
+
   /// User's personal purpose statement
+  @Deprecated('Use strategy-based purpose instead. Kept for backward compatibility during migration.')
   final String? purpose;
 
   /// User's vision statement
+  @Deprecated('Use strategy-based vision instead. Kept for backward compatibility during migration.')
   final String? vision;
 
   /// User's mission statement
+  @Deprecated('Use strategy-based mission instead. Kept for backward compatibility during migration.')
   final String? mission;
 
   /// List of goal IDs associated with this user
@@ -79,9 +88,11 @@ class UserModel {
     this.completedModuleIds,
     required this.updatedAt,
     required this.emailVerified,
-    this.purpose,
-    this.vision,
-    this.mission,
+    this.defaultStrategyId,
+    this.strategyCount = 0,
+    @Deprecated('Use strategy-based purpose') this.purpose,
+    @Deprecated('Use strategy-based vision') this.vision,
+    @Deprecated('Use strategy-based mission') this.mission,
     this.goalIds,
     this.onboardingCompleted = false,
   });
@@ -108,6 +119,8 @@ class UserModel {
     DateTime? createdAt,
     DateTime? updatedAt,
     bool? emailVerified,
+    String? defaultStrategyId,
+    int? strategyCount,
     String? purpose,
     String? vision,
     String? mission,
@@ -127,6 +140,8 @@ class UserModel {
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
       emailVerified: emailVerified ?? this.emailVerified,
+      defaultStrategyId: defaultStrategyId ?? this.defaultStrategyId,
+      strategyCount: strategyCount ?? this.strategyCount,
       purpose: purpose ?? this.purpose,
       moduleProgress: moduleProgress ?? this.moduleProgress,
       completedModuleIds: completedModuleIds ?? this.completedModuleIds,

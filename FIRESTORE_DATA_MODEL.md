@@ -126,14 +126,12 @@ Firestore Database
 {
   id: string,                               // Auto-generated document ID
   parentModule: string,                     // "purpose" | "vision" | "mission" | "goals" | "objectives"
+  strategyTypeId: string?,                  // Reference to strategy type (Personal, Career, Financial, etc.)
   name: string,                             // Display name
   description: string,                      // What this module covers
   order: number,                            // Display order
   totalQuestions: number,                   // Number of questions
   isActive: boolean,                        // Whether visible to users
-  measureName: string?,                     // Name of what this module measures (e.g., "Passion Level")
-  measureDescription: string?,              // Description of what the measure represents and how it should be calculated
-  maxMeasureValue: string?,                 // Maximum value for the measure (e.g., "10", "100%") - used in agent prompts
   agentPrompt: string?,                     // Instructions for AI agent to process module answers
   agentResponse: string?,                   // AI agent's generated insights/response
   createdAt: Timestamp,
@@ -147,16 +145,14 @@ Firestore Database
 {
   "id": "purpose_discovery_1",
   "parentModule": "purpose",
+  "strategyTypeId": "personal_001",
   "name": "Passion Discovery",
   "description": "Explore what brings you joy and fulfillment",
   "order": 1,
   "totalQuestions": 8,
   "isActive": true,
-  "measureName": "Passion Clarity",
-  "measureDescription": "A measure of how clearly the user understands their core passions based on specificity, confidence, and consistency in their responses",
-  "maxMeasureValue": "10",
-  "agentPrompt": "Analyze the user's answers to identify their core passions. Rate their passion clarity from 1-{maxMeasureValue} based on {measureDescription}. Create a summary highlighting their strongest areas of interest and fulfillment.",
-  "agentResponse": "Based on your responses, you demonstrate strongest passion in creative expression and helping others with a clarity score of 8.5/10...",
+  "agentPrompt": "Analyze the user's answers to identify their core passions. Create a summary highlighting their strongest areas of interest and fulfillment.",
+  "agentResponse": "Based on your responses, you demonstrate strongest passion in creative expression and helping others...",
   "createdAt": "2026-02-01T00:00:00Z",
   "updatedAt": "2026-02-01T00:00:00Z"
 }

@@ -1,11 +1,14 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:purpose/core/models/question_module.dart';
 import 'package:purpose/core/models/module_type.dart';
+import 'package:purpose/core/models/strategy_type.dart';
 import 'package:purpose/core/services/firestore_provider.dart';
-import 'package:purpose/core/services/auth_provider.dart';import 'package:purpose/core/theme/app_theme.dart';import 'dart:convert';
+import 'package:purpose/core/services/auth_provider.dart';
+import 'package:purpose/core/services/strategy_context_provider.dart';
+import 'package:purpose/core/theme/app_theme.dart';
+import 'package:purpose/features/admin/admin_strategy_types_page.dart';
 
 /// Provider for streaming Purpose modules
 final purposeModulesProvider = StreamProvider<List<QuestionModule>>((ref) {
@@ -14,16 +17,23 @@ final purposeModulesProvider = StreamProvider<List<QuestionModule>>((ref) {
 });
 
 /// Provider to check if a module is completed by a user
-final moduleCompletionProvider = StreamProvider.family<bool, ({String userId, String moduleId})>((ref, params) async* {
+final moduleCompletionProvider = StreamProvider.family<bool, ({String userId, String strategyId, String moduleId})>((ref, params) async* {
   final firestoreService = ref.watch(firestoreServiceProvider);
   
   // Stream answers and check completion on each update
+  // Don't filter by strategyId in query to include legacy answers with null strategyId
   final answersStream = firestoreService.userAnswersStream(
     userId: params.userId,
+    strategyId: null, // Load all answers for this module, regardless of strategyId
     questionModuleId: params.moduleId,
   );
   
-  await for (final answers in answersStream) {
+  await for (final allAnswers in answersStream) {
+    // Filter to current strategy or null (legacy answers)
+    final answers = allAnswers.where((answer) => 
+      answer.strategyId == params.strategyId || answer.strategyId == null
+    ).toList();
+    
     // Get current active questions (they rarely change, so fetching is fine)
     final questions = await firestoreService.getQuestionsByModule(params.moduleId);
     
@@ -35,25 +45,32 @@ final moduleCompletionProvider = StreamProvider.family<bool, ({String userId, St
     // Check if all questions have answers
     final answeredQuestionIds = answers.map((a) => a.questionId).toSet();
     final isComplete = questions.every((q) => answeredQuestionIds.contains(q.id));
+    
     yield isComplete;
   }
 });
 
 /// Provider to check if all purpose modules are completed
-final allPurposeModulesCompleteProvider = StreamProvider.family<bool, String>((ref, userId) async* {
+final allPurposeModulesCompleteProvider = StreamProvider.family<bool, ({String userId, String strategyId, String strategyTypeId})>((ref, params) async* {
   final modulesAsync = await ref.watch(purposeModulesProvider.future);
   
-  if (modulesAsync.isEmpty) {
+  // Filter modules by strategy type (including modules with null strategyTypeId)
+  final filteredModules = modulesAsync.where((module) => 
+    module.strategyTypeId == params.strategyTypeId ||
+    module.strategyTypeId == null
+  ).toList();
+  
+  if (filteredModules.isEmpty) {
     yield false;
     return;
   }
   
   // Create streams for each module completion and combine them
   await for (final _ in Stream.periodic(const Duration(milliseconds: 500))) {
-    // Get current completion status for all modules
-    final completionStates = modulesAsync.map((module) {
+    // Get current completion status for all filtered modules
+    final completionStates = filteredModules.map((module) {
       final completionAsync = ref.read(
-        moduleCompletionProvider((userId: userId, moduleId: module.id))
+        moduleCompletionProvider((userId: params.userId, strategyId: params.strategyId, moduleId: module.id))
       );
       return completionAsync.whenOrNull(data: (isComplete) => isComplete) ?? false;
     }).toList();
@@ -73,34 +90,78 @@ class PurposeModulesPage extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final currentUserAsync = ref.watch(currentUserProvider);
     final modulesAsync = ref.watch(purposeModulesProvider);
+    final activeStrategy = ref.watch(activeStrategyProvider);
+    final strategyTypesAsync = ref.watch(strategyTypesStreamProvider);
 
     return Scaffold(
       appBar: AppBar(
-        backgroundColor: AppTheme.primary,
+        backgroundColor: AppTheme.graphite,
         foregroundColor: Colors.white,
-        title: const Text('Purpose - Context Collection'),
+        title: Row(
+          children: [
+            Text(activeStrategy?.name ?? 'Purpose'),
+            if (activeStrategy != null) ...[
+              const SizedBox(width: 12),
+              strategyTypesAsync.when(
+                data: (types) {
+                  final strategyType = types.firstWhere(
+                    (type) => type.id == activeStrategy.strategyTypeId,
+                    orElse: () => StrategyType(
+                      id: '',
+                      name: 'Unknown',
+                      enabled: true,
+                      order: 0,
+                      color: 0xFF2196F3,
+                      createdAt: DateTime.now(),
+                      updatedAt: DateTime.now(),
+                    ),
+                  );
+                  return Chip(
+                    label: Text(
+                      strategyType.name,
+                      style: const TextStyle(
+                        fontSize: 11,
+                        color: Colors.white,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                    backgroundColor: Color(strategyType.color),
+                    padding: EdgeInsets.zero,
+                    materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    visualDensity: VisualDensity.compact,
+                  );
+                },
+                loading: () => const SizedBox.shrink(),
+                error: (_, __) => const SizedBox.shrink(),
+              ),
+            ],
+          ],
+        ),
         leading: IconButton(
           icon: const Icon(Icons.arrow_back),
           onPressed: () => context.go('/'),
         ),
-        actions: [
-          // Temporary debug button
-          IconButton(
-            icon: const Icon(Icons.code),
-            tooltip: 'View JSON Data',
-            onPressed: () => _showJsonDialog(context, ref, currentUserAsync.value?.uid),
-          ),
-        ],
       ),
       body: currentUserAsync.when(
         data: (user) {
           if (user == null) {
             return const Center(child: Text('Please log in'));
           }
+          
+          if (activeStrategy == null) {
+            return const Center(child: Text('No active strategy'));
+          }
 
           return modulesAsync.when(
             data: (modules) {
-              if (modules.isEmpty) {
+              // Filter modules to show those matching the active strategy type
+              // OR modules without a strategy type (legacy modules)
+              final filteredModules = modules.where((module) => 
+                module.strategyTypeId == activeStrategy.strategyTypeId ||
+                module.strategyTypeId == null
+              ).toList();
+              
+              if (filteredModules.isEmpty) {
                 return Center(
                   child: Column(
                     mainAxisAlignment: MainAxisAlignment.center,
@@ -120,7 +181,7 @@ class PurposeModulesPage extends ConsumerWidget {
                       ),
                       const SizedBox(height: 8),
                       const Text(
-                        'Check back soon for context collection modules',
+                        'No modules found for this strategy type',
                         style: TextStyle(color: Colors.grey),
                       ),
                     ],
@@ -135,52 +196,17 @@ class PurposeModulesPage extends ConsumerWidget {
                     width: double.infinity,
                     padding: const EdgeInsets.all(24),
                     decoration: const BoxDecoration(
-                      gradient: AppTheme.primaryGradient,
+                      color: AppTheme.primary,
                     ),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        const Icon(
-                          Icons.star,
-                          size: 48,
-                          color: Colors.white,
-                        ),
-                        const SizedBox(height: 16),
                         const Text(
-                          'Discover Your Purpose',
+                          'Purpose',
                           style: TextStyle(
-                            fontSize: 28,
+                            fontSize: 24,
                             fontWeight: FontWeight.bold,
                             color: Colors.white,
-                          ),
-                        ),
-                        const SizedBox(height: 8),
-                        Text(
-                          'Complete ${modules.length} module${modules.length != 1 ? 's' : ''} to uncover what drives you',
-                          style: const TextStyle(
-                            fontSize: 16,
-                            color: Colors.white,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-
-                  // Progress indicator
-                  Container(
-                    padding: const EdgeInsets.all(16),
-                    color: AppTheme.primaryTintLight,
-                    child: Row(
-                      children: [
-                        const Icon(Icons.info_outline, color: AppTheme.primary),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: Text(
-                            'Answer questions in each module sequentially. Your responses will help shape your purpose statement.',
-                            style: const TextStyle(
-                              fontSize: 14,
-                              color: AppTheme.graphite,
-                            ),
                           ),
                         ),
                       ],
@@ -191,13 +217,14 @@ class PurposeModulesPage extends ConsumerWidget {
                   Expanded(
                     child: ListView.builder(
                       padding: const EdgeInsets.all(16),
-                      itemCount: modules.length,
+                      itemCount: filteredModules.length,
                       itemBuilder: (context, index) {
-                        final module = modules[index];
+                        final module = filteredModules[index];
                         
                         return _ModuleCard(
                           module: module,
                           userId: user.uid,
+                          strategyId: activeStrategy.id,
                         );
                       },
                     ),
@@ -207,7 +234,11 @@ class PurposeModulesPage extends ConsumerWidget {
                   Consumer(
                     builder: (context, ref, child) {
                       final allCompleteAsync = ref.watch(
-                        allPurposeModulesCompleteProvider(user.uid),
+                        allPurposeModulesCompleteProvider((
+                          userId: user.uid, 
+                          strategyId: activeStrategy.id,
+                          strategyTypeId: activeStrategy.strategyTypeId,
+                        )),
                       );
 
                       return allCompleteAsync.when(
@@ -269,219 +300,24 @@ class PurposeModulesPage extends ConsumerWidget {
       ),
     );
   }
-
-  /// Show dialog with JSON data for debugging
-  void _showJsonDialog(BuildContext context, WidgetRef ref, String? userId) async {
-    if (userId == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('User not logged in')),
-      );
-      return;
-    }
-
-    // Show loading dialog first
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (context) => const Center(
-        child: Card(
-          child: Padding(
-            padding: EdgeInsets.all(24.0),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                CircularProgressIndicator(),
-                SizedBox(height: 16),
-                Text('Loading data...'),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-
-    try {
-      final firestoreService = ref.read(firestoreServiceProvider);
-      
-      // Fetch all purpose modules
-      final modules = await firestoreService.getAllQuestionModules();
-      final purposeModules = modules.where((m) => m.parentModule == ModuleType.purpose).toList();
-      
-      // Build hierarchy
-      final List<Map<String, dynamic>> hierarchy = [];
-      
-      for (final module in purposeModules) {
-        // Get questions for this module
-        final questions = await firestoreService.getQuestionsByModule(module.id);
-        
-        // Get user answers for this module
-        final answers = await firestoreService.getUserAnswersByModule(
-          userId: userId,
-          questionModuleId: module.id,
-        );
-        
-        // Create answer map for quick lookup
-        final answerMap = {for (var a in answers) a.questionId: a};
-        
-        // Build questions with answers
-        final questionsData = questions.map((q) {
-          final answer = answerMap[q.id];
-          return {
-            'id': q.id,
-            'questionText': q.questionText,
-            'helperText': q.helperText,
-            'questionType': q.questionType.value,
-            'order': q.order,
-            'isRequired': q.isRequired,
-            'answer': answer != null ? {
-              'id': answer.id,
-              'textAnswer': answer.textAnswer,
-              'numericAnswer': answer.numericAnswer,
-              'selectedOption': answer.selectedOption,
-              'booleanAnswer': answer.booleanAnswer,
-              'notes': answer.notes,
-              'createdAt': answer.createdAt.toIso8601String(),
-              'updatedAt': answer.updatedAt.toIso8601String(),
-            } : null,
-          };
-        }).toList();
-        
-        // Add module with questions and answers
-        hierarchy.add({
-          'id': module.id,
-          'name': module.name,
-          'description': module.description,
-          'questions': questionsData,
-        });
-      }
-      
-      final jsonData = {
-        'userId': userId,
-        'moduleType': 'purpose',
-        'exportedAt': DateTime.now().toIso8601String(),
-        'modules': hierarchy,
-      };
-      
-      final jsonString = const JsonEncoder.withIndent('  ').convert(jsonData);
-      
-      // Close loading dialog
-      if (context.mounted) {
-        Navigator.of(context).pop();
-        
-        // Show JSON dialog
-        showDialog(
-          context: context,
-          builder: (context) => _JsonDataDialog(jsonString: jsonString),
-        );
-      }
-    } catch (e) {
-      // Close loading dialog
-      if (context.mounted) {
-        Navigator.of(context).pop();
-        
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error loading data: $e')),
-        );
-      }
-    }
-  }
-}
-
-/// Dialog to display JSON data with copy functionality
-class _JsonDataDialog extends StatelessWidget {
-  final String jsonString;
-
-  const _JsonDataDialog({required this.jsonString});
-
-  @override
-  Widget build(BuildContext context) {
-    return Dialog(
-      child: Container(
-        width: MediaQuery.of(context).size.width * 0.9,
-        height: MediaQuery.of(context).size.height * 0.8,
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                const Text(
-                  'Purpose Data (JSON)',
-                  style: TextStyle(
-                    fontSize: 20,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-                IconButton(
-                  icon: const Icon(Icons.close),
-                  onPressed: () => Navigator.of(context).pop(),
-                ),
-              ],
-            ),
-            const SizedBox(height: 16),
-            Expanded(
-              child: Container(
-                decoration: BoxDecoration(
-                  color: Colors.grey[100],
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: Colors.grey[300]!),
-                ),
-                child: SingleChildScrollView(
-                  padding: const EdgeInsets.all(12),
-                  child: SelectableText(
-                    jsonString,
-                    style: const TextStyle(
-                      fontFamily: 'monospace',
-                      fontSize: 12,
-                      color: Color(0xFF4A148C), // Dark purple
-                    ),
-                  ),
-                ),
-              ),
-            ),
-            const SizedBox(height: 16),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.end,
-              children: [
-                OutlinedButton.icon(
-                  icon: const Icon(Icons.copy),
-                  label: const Text('Copy to Clipboard'),
-                  onPressed: () async {
-                    await Clipboard.setData(ClipboardData(text: jsonString));
-                    if (context.mounted) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(
-                          content: Text('JSON copied to clipboard'),
-                          duration: Duration(seconds: 2),
-                        ),
-                      );
-                    }
-                  },
-                ),
-              ],
-            ),
-          ],
-        ),
-      ),
-    );
-  }
 }
 
 /// Module card widget with completion status
 class _ModuleCard extends ConsumerWidget {
   final QuestionModule module;
   final String userId;
+  final String strategyId;
 
   const _ModuleCard({
     required this.module,
     required this.userId,
+    required this.strategyId,
   });
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final completionAsync = ref.watch(moduleCompletionProvider(
-      (userId: userId, moduleId: module.id),
+      (userId: userId, strategyId: strategyId, moduleId: module.id),
     ));
 
     return completionAsync.when(

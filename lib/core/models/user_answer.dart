@@ -11,6 +11,9 @@ class UserAnswer {
   /// ID of the user who provided this answer
   final String userId;
 
+  /// ID of the strategy this answer belongs to (optional for backward compatibility)
+  final String? strategyId;
+
   /// ID of the question being answered
   final String questionId;
 
@@ -47,6 +50,7 @@ class UserAnswer {
   const UserAnswer({
     required this.id,
     required this.userId,
+    this.strategyId,
     required this.questionId,
     required this.questionModuleId,
     this.textAnswer,
@@ -83,6 +87,7 @@ class UserAnswer {
   UserAnswer copyWith({
     String? id,
     String? userId,
+    String? strategyId,
     String? questionId,
     String? questionModuleId,
     String? textAnswer,
@@ -98,6 +103,7 @@ class UserAnswer {
     return UserAnswer(
       id: id ?? this.id,
       userId: userId ?? this.userId,
+      strategyId: strategyId ?? this.strategyId,
       questionId: questionId ?? this.questionId,
       questionModuleId: questionModuleId ?? this.questionModuleId,
       textAnswer: textAnswer ?? this.textAnswer,

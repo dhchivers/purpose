@@ -17,6 +17,9 @@ class QuestionModule {
   )
   final ModuleType parentModule;
 
+  /// Strategy type this module belongs to (Personal, Career, Financial, etc.)
+  final String? strategyTypeId;
+
   /// Name of the question module
   final String name;
 
@@ -31,15 +34,6 @@ class QuestionModule {
 
   /// Whether this module is active/visible to users
   final bool isActive;
-
-  /// Name of the measure this module assesses (e.g., "Passion Level", "Goal Clarity")
-  final String? measureName;
-
-  /// Description of what the measure represents and how it should be calculated
-  final String? measureDescription;
-
-  /// Maximum value for the measure (e.g., "10", "100%") - used in agent prompts
-  final String? maxMeasureValue;
 
   /// Prompt/instructions for the AI agent to process this module's answers
   final String? agentPrompt;
@@ -56,14 +50,12 @@ class QuestionModule {
   const QuestionModule({
     required this.id,
     required this.parentModule,
+    this.strategyTypeId,
     required this.name,
     required this.description,
     required this.order,
     required this.totalQuestions,
     this.isActive = true,
-    this.measureName,
-    this.measureDescription,
-    this.maxMeasureValue,
     this.agentPrompt,
     this.agentResponse,
     required this.createdAt,
@@ -88,14 +80,12 @@ class QuestionModule {
   QuestionModule copyWith({
     String? id,
     ModuleType? parentModule,
+    String? strategyTypeId,
     String? name,
     String? description,
     int? order,
     int? totalQuestions,
     bool? isActive,
-    String? measureName,
-    String? measureDescription,
-    String? maxMeasureValue,
     String? agentPrompt,
     String? agentResponse,
     DateTime? createdAt,
@@ -104,14 +94,12 @@ class QuestionModule {
     return QuestionModule(
       id: id ?? this.id,
       parentModule: parentModule ?? this.parentModule,
+      strategyTypeId: strategyTypeId ?? this.strategyTypeId,
       name: name ?? this.name,
       description: description ?? this.description,
       order: order ?? this.order,
       totalQuestions: totalQuestions ?? this.totalQuestions,
       isActive: isActive ?? this.isActive,
-      measureName: measureName ?? this.measureName,
-      measureDescription: measureDescription ?? this.measureDescription,
-      maxMeasureValue: maxMeasureValue ?? this.maxMeasureValue,
       agentPrompt: agentPrompt ?? this.agentPrompt,
       agentResponse: agentResponse ?? this.agentResponse,
       createdAt: createdAt ?? this.createdAt,

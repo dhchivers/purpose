@@ -4,6 +4,8 @@ import 'package:go_router/go_router.dart';
 import 'package:purpose/core/services/auth_provider.dart';
 import 'package:purpose/core/services/firestore_provider.dart';
 import 'package:purpose/core/services/gemini_provider.dart';
+import 'package:purpose/core/services/strategy_provider.dart';
+import 'package:purpose/core/services/strategy_context_provider.dart';
 import 'package:purpose/core/models/vision_creation_session.dart';
 import 'package:purpose/core/models/user_vision.dart';
 import 'package:purpose/core/theme/app_theme.dart';
@@ -49,31 +51,47 @@ class _VisionCreationFlowPageState extends ConsumerState<VisionCreationFlowPage>
 
   Future<void> _initializeSession() async {
     final user = ref.read(currentUserProvider).value;
-    if (user == null) return;
+    final activeStrategy = ref.read(activeStrategyProvider);
+    
+    if (user == null || activeStrategy == null) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('No active strategy found. Please select a strategy first.'),
+            backgroundColor: Colors.red,
+          ),
+        );
+        context.go('/');
+      }
+      return;
+    }
 
     try {
-      // Load user's core values
-      final firestoreService = ref.read(firestoreServiceProvider);
-      final userValues = await firestoreService.getUserValues(user.uid);
-      final coreValues = userValues.map((v) => v.statement).toList();
+      // Load strategy's values
+      final values = await ref.read(strategyValuesProvider(activeStrategy.id).future);
+      final coreValues = values.map((v) => v.statement).toList();
 
       setState(() {
         _session = VisionCreationSession(
           id: DateTime.now().millisecondsSinceEpoch.toString(),
           userId: user.uid,
+          strategyId: activeStrategy.id,
           startedAt: DateTime.now(),
-          purposeStatement: user.purpose, // Load from user profile
-          coreValues: coreValues, // Load from user values
+          purposeStatement: activeStrategy.purpose,
+          coreValues: coreValues,
         );
       });
-    } catch (e) {
+    } catch (e, stackTrace) {
+      print('❌ Error initializing vision session: $e');
+      print('Stack trace: $stackTrace');
       // If we can't load values, proceed with empty list
       setState(() {
         _session = VisionCreationSession(
           id: DateTime.now().millisecondsSinceEpoch.toString(),
           userId: user.uid,
+          strategyId: activeStrategy.id,
           startedAt: DateTime.now(),
-          purposeStatement: user.purpose,
+          purposeStatement: activeStrategy.purpose,
           coreValues: [],
         );
       });
@@ -168,7 +186,9 @@ class _VisionCreationFlowPageState extends ConsumerState<VisionCreationFlowPage>
 
       // Save session
       await firestoreService.saveVisionCreationSession(_session!);
-    } catch (e) {
+    } catch (e, stackTrace) {
+      print('❌ Error generating vision statements: $e');
+      print('Stack trace: $stackTrace');
       setState(() {
         _isLoading = false;
       });
@@ -201,6 +221,7 @@ class _VisionCreationFlowPageState extends ConsumerState<VisionCreationFlowPage>
       final userVision = UserVision(
         id: DateTime.now().millisecondsSinceEpoch.toString(),
         userId: _session!.userId,
+        strategyId: _session!.strategyId,
         timeframeYears: _session!.timeframeYears!,
         visionStatement: finalStatement,
         sessionId: _session!.id,
@@ -236,7 +257,9 @@ class _VisionCreationFlowPageState extends ConsumerState<VisionCreationFlowPage>
           }
         });
       }
-    } catch (e) {
+    } catch (e, stackTrace) {
+      print('❌ Error saving vision: $e');
+      print('Stack trace: $stackTrace');
       setState(() {
         _isLoading = false;
       });

@@ -15,6 +15,9 @@ class IdentitySynthesisResult {
   /// User ID this analysis belongs to
   final String userId;
 
+  /// Strategy ID this analysis belongs to
+  final String strategyId;
+
   /// Analysis results for each tier/module
   final List<TierAnalysis> tierAnalysis;
 
@@ -43,6 +46,7 @@ class IdentitySynthesisResult {
   const IdentitySynthesisResult({
     required this.id,
     required this.userId,
+    required this.strategyId,
     required this.tierAnalysis,
     required this.integratedIdentity,
     required this.purposeOptions,
@@ -118,6 +122,7 @@ class IdentitySynthesisResult {
   IdentitySynthesisResult copyWith({
     String? id,
     String? userId,
+    String? strategyId,
     List<TierAnalysis>? tierAnalysis,
     IntegratedIdentity? integratedIdentity,
     List<PurposeOption>? purposeOptions,
@@ -130,6 +135,7 @@ class IdentitySynthesisResult {
     return IdentitySynthesisResult(
       id: id ?? this.id,
       userId: userId ?? this.userId,
+      strategyId: strategyId ?? this.strategyId,
       tierAnalysis: tierAnalysis ?? this.tierAnalysis,
       integratedIdentity: integratedIdentity ?? this.integratedIdentity,
       purposeOptions: purposeOptions ?? this.purposeOptions,

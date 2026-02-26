@@ -35,7 +35,8 @@ enum InfluenceScale {
 @JsonSerializable(explicitToJson: true)
 class VisionCreationSession {
   final String id;
-  final String userId;
+  final String strategyId; // Links to parent strategy
+  final String userId; // Kept for permission checks
   final DateTime startedAt;
   final DateTime? completedAt;
   
@@ -56,6 +57,7 @@ class VisionCreationSession {
 
   VisionCreationSession({
     required this.id,
+    required this.strategyId,
     required this.userId,
     required this.startedAt,
     this.completedAt,
@@ -77,6 +79,7 @@ class VisionCreationSession {
 
   VisionCreationSession copyWith({
     String? id,
+    String? strategyId,
     String? userId,
     DateTime? startedAt,
     DateTime? completedAt,
@@ -92,6 +95,7 @@ class VisionCreationSession {
   }) {
     return VisionCreationSession(
       id: id ?? this.id,
+      strategyId: strategyId ?? this.strategyId,
       userId: userId ?? this.userId,
       startedAt: startedAt ?? this.startedAt,
       completedAt: completedAt ?? this.completedAt,

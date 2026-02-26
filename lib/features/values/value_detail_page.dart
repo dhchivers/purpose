@@ -3,10 +3,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 import 'package:purpose/core/services/firestore_provider.dart';
+import 'package:purpose/core/services/strategy_provider.dart';
 import 'package:purpose/core/models/user_value.dart';
 import 'package:purpose/core/models/value_creation_session.dart';
 import 'package:purpose/core/theme/app_theme.dart';
-import 'package:purpose/features/values/values_page.dart';
 
 /// Page for viewing and editing a specific value
 class ValueDetailPage extends ConsumerStatefulWidget {
@@ -102,7 +102,7 @@ class _ValueDetailPageState extends ConsumerState<ValueDetailPage> {
 
       if (mounted) {
         // Invalidate the values list to refresh it
-        ref.invalidate(userValuesProvider(updatedValue.userId));
+        ref.invalidate(strategyValuesProvider(updatedValue.strategyId));
 
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
@@ -159,7 +159,7 @@ class _ValueDetailPageState extends ConsumerState<ValueDetailPage> {
 
     try {
       final firestoreService = ref.read(firestoreServiceProvider);
-      await firestoreService.deleteUserValue(widget.valueId, _currentValue!.userId);
+      await firestoreService.deleteUserValue(widget.valueId, _currentValue!.strategyId);
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(

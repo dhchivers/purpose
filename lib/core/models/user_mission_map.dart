@@ -7,7 +7,9 @@ part 'user_mission_map.g.dart';
 @JsonSerializable(explicitToJson: true)
 class UserMissionMap {
   final String id;
-  final String userId;
+  final String strategyId; // Links to parent strategy
+  @Deprecated('Use strategyId instead. Kept for backward compatibility during migration.')
+  final String? userId; // Deprecated: Use strategyId
   final List<Mission> missions; // 3-5 sequential missions
   final String? sessionId; // Reference to MissionCreationSession
   final int? currentMissionIndex; // Which mission user is currently working on (0-based)
@@ -17,7 +19,8 @@ class UserMissionMap {
 
   UserMissionMap({
     required this.id,
-    required this.userId,
+    required this.strategyId,
+    @Deprecated('Use strategyId instead') this.userId,
     required this.missions,
     this.sessionId,
     this.currentMissionIndex,
@@ -33,6 +36,7 @@ class UserMissionMap {
 
   UserMissionMap copyWith({
     String? id,
+    String? strategyId,
     String? userId,
     List<Mission>? missions,
     String? sessionId,
@@ -43,6 +47,7 @@ class UserMissionMap {
   }) {
     return UserMissionMap(
       id: id ?? this.id,
+      strategyId: strategyId ?? this.strategyId,
       userId: userId ?? this.userId,
       missions: missions ?? this.missions,
       sessionId: sessionId ?? this.sessionId,

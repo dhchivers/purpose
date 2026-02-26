@@ -8,7 +8,8 @@ part of 'user_vision.dart';
 
 UserVision _$UserVisionFromJson(Map<String, dynamic> json) => UserVision(
   id: json['id'] as String,
-  userId: json['userId'] as String,
+  strategyId: json['strategyId'] as String,
+  userId: json['userId'] as String?,
   timeframeYears: (json['timeframeYears'] as num).toInt(),
   visionStatement: json['visionStatement'] as String,
   sessionId: json['sessionId'] as String?,
@@ -19,6 +20,7 @@ UserVision _$UserVisionFromJson(Map<String, dynamic> json) => UserVision(
 Map<String, dynamic> _$UserVisionToJson(UserVision instance) =>
     <String, dynamic>{
       'id': instance.id,
+      'strategyId': instance.strategyId,
       'userId': instance.userId,
       'timeframeYears': instance.timeframeYears,
       'visionStatement': instance.visionStatement,

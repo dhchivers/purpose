@@ -127,7 +127,7 @@ class AdminSettingsPage extends ConsumerWidget {
                 _buildAdminTile(
                   context: context,
                   icon: Icons.question_answer,
-                  title: 'Question Modules',
+                  title: 'Purpose Question Modules',
                   subtitle: 'Manage question modules and questions',
                   onTap: () => context.go('/admin/modules'),
                 ),
@@ -140,6 +140,16 @@ class AdminSettingsPage extends ConsumerWidget {
                   title: 'Values Seeds',
                   subtitle: 'Manage value options for exploration',
                   onTap: () => context.go('/admin/values-seeds'),
+                ),
+                const SizedBox(height: 12),
+
+                // Strategy Types Management
+                _buildAdminTile(
+                  context: context,
+                  icon: Icons.category,
+                  title: 'Strategy Types',
+                  subtitle: 'Manage strategy classification types',
+                  onTap: () => context.go('/admin/strategy-types'),
                 ),
                 const SizedBox(height: 12),
 

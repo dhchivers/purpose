@@ -8,7 +8,8 @@ part of 'user_value.dart';
 
 UserValue _$UserValueFromJson(Map<String, dynamic> json) => UserValue(
   id: json['id'] as String,
-  userId: json['userId'] as String,
+  strategyId: json['strategyId'] as String,
+  userId: json['userId'] as String?,
   seedValue: json['seedValue'] as String,
   refinedLabel: json['refinedLabel'] as String,
   statement: json['statement'] as String,
@@ -22,6 +23,7 @@ UserValue _$UserValueFromJson(Map<String, dynamic> json) => UserValue(
 
 Map<String, dynamic> _$UserValueToJson(UserValue instance) => <String, dynamic>{
   'id': instance.id,
+  'strategyId': instance.strategyId,
   'userId': instance.userId,
   'seedValue': instance.seedValue,
   'refinedLabel': instance.refinedLabel,

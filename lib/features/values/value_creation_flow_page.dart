@@ -4,10 +4,11 @@ import 'package:go_router/go_router.dart';
 import 'package:purpose/core/services/auth_provider.dart';
 import 'package:purpose/core/services/firestore_provider.dart';
 import 'package:purpose/core/services/gemini_provider.dart';
+import 'package:purpose/core/services/strategy_provider.dart';
+import 'package:purpose/core/services/strategy_context_provider.dart';
 import 'package:purpose/core/models/value_creation_session.dart';
 import 'package:purpose/core/models/user_value.dart';
 import 'package:purpose/core/theme/app_theme.dart';
-import 'package:purpose/features/values/values_page.dart';
 
 /// Provider for streaming value seeds
 final valueSeedsProvider = StreamProvider<List<String>>((ref) {
@@ -63,11 +64,30 @@ class _ValueCreationFlowPageState extends ConsumerState<ValueCreationFlowPage> {
   void _initializeSession() {
     final user = ref.read(currentUserProvider).value;
     if (user == null) return;
+    
+    // Get active strategy
+    final activeStrategy = ref.read(activeStrategyProvider);
+    if (activeStrategy == null) {
+      // Show error - no active strategy
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('No active strategy found. Please select or create a strategy first.'),
+              backgroundColor: Colors.red,
+            ),
+          );
+          context.go('/');
+        }
+      });
+      return;
+    }
 
     setState(() {
       _session = ValueCreationSession(
         id: DateTime.now().millisecondsSinceEpoch.toString(),
         userId: user.uid,
+        strategyId: activeStrategy.id,
         seedValue: '', // Will be set when user selects
         startedAt: DateTime.now(),
         currentPhase: 1,
@@ -1566,6 +1586,7 @@ class _ValueCreationFlowPageState extends ConsumerState<ValueCreationFlowPage> {
       final userValue = UserValue(
         id: 'value_${DateTime.now().millisecondsSinceEpoch}',
         userId: user.uid,
+        strategyId: _session!.strategyId,
         seedValue: _session!.seedValue,
         refinedLabel: refinedLabel,
         statement: finalStatement,
@@ -1585,7 +1606,7 @@ class _ValueCreationFlowPageState extends ConsumerState<ValueCreationFlowPage> {
 
       if (mounted) {
         // Invalidate the values list to refresh it
-        ref.invalidate(userValuesProvider(user.uid));
+        ref.invalidate(strategyValuesProvider(_session!.strategyId));
 
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(

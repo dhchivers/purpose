@@ -11,6 +11,7 @@ IdentitySynthesisResult _$IdentitySynthesisResultFromJson(
 ) => IdentitySynthesisResult(
   id: json['id'] as String,
   userId: json['userId'] as String,
+  strategyId: json['strategyId'] as String,
   tierAnalysis: (json['tierAnalysis'] as List<dynamic>)
       .map((e) => TierAnalysis.fromJson(e as Map<String, dynamic>))
       .toList(),
@@ -32,6 +33,7 @@ Map<String, dynamic> _$IdentitySynthesisResultToJson(
 ) => <String, dynamic>{
   'id': instance.id,
   'userId': instance.userId,
+  'strategyId': instance.strategyId,
   'tierAnalysis': instance.tierAnalysis.map((e) => e.toJson()).toList(),
   'integratedIdentity': instance.integratedIdentity.toJson(),
   'purposeOptions': instance.purposeOptions.map((e) => e.toJson()).toList(),
