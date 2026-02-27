@@ -15,6 +15,18 @@ Firestore Database
 ├── users/                          # User profiles
 │   └── {userId}/                   # Document per user
 │
+├── user_strategies/                # User strategies
+│   └── {strategyId}/               # Document per strategy
+│
+├── strategy_types/                 # Strategy type definitions
+│   └── {typeId}/                   # Document per strategy type
+│
+├── strategy_preferences/           # Preferences within strategies
+│   └── {preferenceId}/             # Document per preference
+│
+├── type_preferences/               # Baseline preferences for strategy types
+│   └── {typePreferenceId}/         # Document per type preference
+│
 ├── question_modules/               # Question module containers
 │   └── {moduleId}/                 # Document per question module
 │
@@ -23,6 +35,15 @@ Firestore Database
 │
 ├── user_answers/                   # User responses
 │   └── {answerId}/                 # Document per answer
+│
+├── user_values/                    # User values
+│   └── {valueId}/                  # Document per value
+│
+├── user_vision/                    # User vision statements
+│   └── {visionId}/                 # Document per vision
+│
+├── user_mission_maps/              # User mission maps
+│   └── {missionMapId}/             # Document per mission map
 │
 └── identity_synthesis_results/     # AI identity analysis results
     └── {resultId}/                 # Document per synthesis
@@ -556,6 +577,145 @@ service cloud.firestore {
     }
   }
 }
+```
+
+---
+
+## 9. Strategy Preferences Collection
+
+**Collection**: `strategy_preferences`  
+**Purpose**: Store preference values and priorities within each strategy
+
+### StrategyPreference Structure
+
+```dart
+{
+  id: string,                               // Auto-generated document ID
+  strategyId: string,                       // Reference to parent strategy
+  name: string,                             // Full name of the preference
+  shortLabel: string,                       // Short label for compact displays
+  description: string,                      // Detailed description
+  relativeWeight: number,                   // Relative importance (0.0 to 1.0)
+  monetaryFactorPerYear: number,           // Annual monetary value/impact
+  order: number,                            // Display order
+  enabled: boolean,                         // Whether preference is active
+  createdAt: Timestamp,                     // Creation timestamp
+  updatedAt: Timestamp                      // Last update timestamp
+}
+```
+
+### Example Strategy Preference Document
+
+```json
+{
+  "id": "pref_abc123",
+  "strategyId": "strategy_xyz789",
+  "name": "Work-Life Balance",
+  "shortLabel": "Balance",
+  "description": "Maintaining healthy boundaries between professional and personal life",
+  "relativeWeight": 0.85,
+  "monetaryFactorPerYear": 15000,
+  "order": 1,
+  "enabled": true,
+  "createdAt": "2026-02-26T10:00:00Z",
+  "updatedAt": "2026-02-26T10:00:00Z"
+}
+```
+
+### Key Features
+
+- **Relative Weight**: Values between 0.0 and 1.0 to indicate priority
+- **Monetary Factor**: Annual financial impact or value in base currency
+- **Ordering**: Custom sort order for display
+- **Strategy-scoped**: Each preference belongs to a specific strategy
+- **Flexible**: Can represent costs, benefits, values, or priorities
+
+### Common Use Cases
+
+1. **Priority Weighting**: Rank different aspects of strategy by importance
+2. **Cost-Benefit Analysis**: Track financial implications of preferences
+3. **Decision Making**: Use weights to guide strategic choices
+4. **Resource Allocation**: Allocate budget based on monetary factors
+5. **Trade-off Analysis**: Compare preferences across multiple dimensions
+
+### Firestore Indexes Required
+
+```
+Collection: strategy_preferences
+- strategyId (Ascending) + order (Ascending)
+- strategyId (Ascending) + enabled (Ascending) + order (Ascending)
+- strategyId (Ascending) + relativeWeight (Descending)
+```
+
+---
+
+## 10. Type Preferences Collection
+
+**Collection**: `type_preferences`  
+**Purpose**: Store baseline preference templates for each strategy type
+
+### TypePreference Structure
+
+```dart
+{
+  id: string,                               // Auto-generated document ID
+  strategyTypeId: string,                   // Reference to parent strategy type
+  name: string,                             // Full name of the preference
+  shortLabel: string,                       // Short label for compact displays
+  description: string,                      // Detailed description
+  order: number,                            // Display order
+  enabled: boolean,                         // Whether preference is active
+  createdAt: Timestamp,                     // Creation timestamp
+  updatedAt: Timestamp                      // Last update timestamp
+}
+```
+
+### Example Type Preference Document
+
+```json
+{
+  "id": "type_pref_abc123",
+  "strategyTypeId": "personal_strategy_type",
+  "name": "Work-Life Balance",
+  "shortLabel": "Balance",
+  "description": "Maintaining healthy boundaries between professional and personal life",
+  "order": 1,
+  "enabled": true,
+  "createdAt": "2026-02-26T10:00:00Z",
+  "updatedAt": "2026-02-26T10:00:00Z"
+}
+```
+
+### Key Features
+
+- **Template-based**: Provides baseline preferences for each strategy type
+- **Reusable**: Can be selected when creating strategy-specific preferences
+- **Type-scoped**: Each preference belongs to a specific strategy type
+- **Admin-managed**: Typically maintained by administrators
+- **Extensible**: Users can customize when applying to specific strategies
+
+### Common Use Cases
+
+1. **Preference Templates**: Provide standard options for each strategy type
+2. **Quick Selection**: Users can select from pre-defined preferences
+3. **Consistency**: Ensure similar strategies use similar preference sets
+4. **Onboarding**: Help new users understand common preferences
+5. **Best Practices**: Encode expert knowledge into preference templates
+
+### Relationship to Strategy Preferences
+
+When a user creates a new strategy, they can:
+1. View type preferences available for that strategy type
+2. Select relevant preferences to add to their strategy
+3. Customize the selected preferences (set weights, monetary values)
+4. Save as strategy-specific preferences
+
+### Firestore Indexes Required
+
+```
+Collection: type_preferences
+- strategyTypeId (Ascending) + order (Ascending)
+- strategyTypeId (Ascending) + enabled (Ascending) + order (Ascending)
 ```
 
 ---

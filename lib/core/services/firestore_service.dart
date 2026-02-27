@@ -16,6 +16,8 @@ import 'package:purpose/core/models/mission_creation_session.dart';
 import 'package:purpose/core/models/user_mission_map.dart';
 import 'package:purpose/core/models/user_strategy.dart';
 import 'package:purpose/core/models/strategy_type.dart';
+import 'package:purpose/core/models/strategy_preference.dart';
+import 'package:purpose/core/models/type_preference.dart';
 import 'package:purpose/core/constants/app_constants.dart';
 
 /// Service for managing Firestore database operations
@@ -38,6 +40,10 @@ class FirestoreService {
       _db.collection('user_strategies');
   CollectionReference get _strategyTypesCollection =>
       _db.collection('strategy_types');
+  CollectionReference get _strategyPreferencesCollection =>
+      _db.collection('strategy_preferences');
+  CollectionReference get _typePreferencesCollection =>
+      _db.collection('type_preferences');
   CollectionReference get _valueCreationSessionsCollection =>
       _db.collection('value_creation_sessions');
   CollectionReference get _userValuesCollection =>
@@ -724,6 +730,298 @@ class FirestoreService {
       print('❌ Error counting strategies by type: $e');
       print('Stack trace: $stackTrace');
       return 0;
+    }
+  }
+
+  // ========== STRATEGY PREFERENCE OPERATIONS ==========
+
+  /// Get a single strategy preference by ID
+  Future<StrategyPreference?> getStrategyPreference(String id) async {
+    try {
+      final doc = await _strategyPreferencesCollection.doc(id).get();
+      if (!doc.exists) return null;
+      
+      final data = _convertTimestampsToStrings(doc.data()) as Map<String, dynamic>;
+      data['id'] = doc.id;
+      return StrategyPreference.fromJson(data);
+    } catch (e, stackTrace) {
+      print('❌ Error getting strategy preference: $e');
+      print('Stack trace: $stackTrace');
+      return null;
+    }
+  }
+
+  /// Get all preferences for a specific strategy
+  Future<List<StrategyPreference>> getStrategyPreferences(String strategyId) async {
+    try {
+      final snapshot = await _strategyPreferencesCollection
+          .where('strategyId', isEqualTo: strategyId)
+          .where('enabled', isEqualTo: true)
+          .orderBy('order')
+          .get();
+      
+      return snapshot.docs.map((doc) {
+        final data = _convertTimestampsToStrings(doc.data()) as Map<String, dynamic>;
+        data['id'] = doc.id;
+        return StrategyPreference.fromJson(data);
+      }).toList();
+    } catch (e, stackTrace) {
+      print('❌ Error getting strategy preferences: $e');
+      print('Stack trace: $stackTrace');
+      return [];
+    }
+  }
+
+  /// Get all preferences for a specific strategy (including disabled ones)
+  Future<List<StrategyPreference>> getAllStrategyPreferences(String strategyId) async {
+    try {
+      final snapshot = await _strategyPreferencesCollection
+          .where('strategyId', isEqualTo: strategyId)
+          .orderBy('order')
+          .get();
+      
+      return snapshot.docs.map((doc) {
+        final data = _convertTimestampsToStrings(doc.data()) as Map<String, dynamic>;
+        data['id'] = doc.id;
+        return StrategyPreference.fromJson(data);
+      }).toList();
+    } catch (e, stackTrace) {
+      print('❌ Error getting all strategy preferences: $e');
+      print('Stack trace: $stackTrace');
+      return [];
+    }
+  }
+
+  /// Stream of preferences for a specific strategy
+  Stream<List<StrategyPreference>> strategyPreferencesStream(String strategyId) {
+    return _strategyPreferencesCollection
+        .where('strategyId', isEqualTo: strategyId)
+        .where('enabled', isEqualTo: true)
+        .orderBy('order')
+        .snapshots()
+        .map((snapshot) => snapshot.docs
+            .map((doc) {
+              final data = _convertTimestampsToStrings(doc.data()) as Map<String, dynamic>;
+              data['id'] = doc.id;
+              return StrategyPreference.fromJson(data);
+            })
+            .toList())
+        .handleError((error, stackTrace) {
+          print('❌ Error in strategyPreferencesStream: $error');
+          print('Stack trace: $stackTrace');
+        });
+  }
+
+  /// Create a new strategy preference
+  Future<String> createStrategyPreference(StrategyPreference preference) async {
+    try {
+      final data = preference.toJson();
+      data['createdAt'] = Timestamp.fromDate(preference.createdAt);
+      data['updatedAt'] = Timestamp.fromDate(preference.updatedAt);
+      
+      final docRef = await _strategyPreferencesCollection.add(data);
+      print('✅ Created strategy preference: ${docRef.id} (${preference.name})');
+      return docRef.id;
+    } catch (e, stackTrace) {
+      print('❌ Error creating strategy preference: $e');
+      print('Stack trace: $stackTrace');
+      rethrow;
+    }
+  }
+
+  /// Update an existing strategy preference
+  Future<void> updateStrategyPreference(StrategyPreference preference) async {
+    try {
+      final data = preference.toJson();
+      data['updatedAt'] = Timestamp.fromDate(DateTime.now());
+      data['createdAt'] = Timestamp.fromDate(preference.createdAt);
+      
+      await _strategyPreferencesCollection.doc(preference.id).update(data);
+      print('✅ Updated strategy preference: ${preference.id} (${preference.name})');
+    } catch (e, stackTrace) {
+      print('❌ Error updating strategy preference: $e');
+      print('Stack trace: $stackTrace');
+      rethrow;
+    }
+  }
+
+  /// Delete a strategy preference
+  Future<void> deleteStrategyPreference(String id) async {
+    try {
+      await _strategyPreferencesCollection.doc(id).delete();
+      print('✅ Deleted strategy preference: $id');
+    } catch (e, stackTrace) {
+      print('❌ Error deleting strategy preference: $e');
+      print('Stack trace: $stackTrace');
+      rethrow;
+    }
+  }
+
+  /// Batch update preference orders
+  Future<void> updatePreferenceOrders(List<StrategyPreference> preferences) async {
+    try {
+      final batch = _db.batch();
+      
+      for (final preference in preferences) {
+        final docRef = _strategyPreferencesCollection.doc(preference.id);
+        batch.update(docRef, {
+          'order': preference.order,
+          'updatedAt': Timestamp.fromDate(DateTime.now()),
+        });
+      }
+      
+      await batch.commit();
+      print('✅ Updated ${preferences.length} preference orders');
+    } catch (e, stackTrace) {
+      print('❌ Error updating preference orders: $e');
+      print('Stack trace: $stackTrace');
+      rethrow;
+    }
+  }
+
+  // ========== TYPE PREFERENCE OPERATIONS ==========
+
+  /// Get a single type preference by ID
+  Future<TypePreference?> getTypePreference(String id) async {
+    try {
+      final doc = await _typePreferencesCollection.doc(id).get();
+      if (!doc.exists) return null;
+      
+      final data = _convertTimestampsToStrings(doc.data()) as Map<String, dynamic>;
+      data['id'] = doc.id;
+      return TypePreference.fromJson(data);
+    } catch (e, stackTrace) {
+      print('❌ Error getting type preference: $e');
+      print('Stack trace: $stackTrace');
+      return null;
+    }
+  }
+
+  /// Get all preferences for a specific strategy type
+  Future<List<TypePreference>> getTypePreferences(String strategyTypeId) async {
+    try {
+      final snapshot = await _typePreferencesCollection
+          .where('strategyTypeId', isEqualTo: strategyTypeId)
+          .where('enabled', isEqualTo: true)
+          .orderBy('order')
+          .get();
+      
+      return snapshot.docs.map((doc) {
+        final data = _convertTimestampsToStrings(doc.data()) as Map<String, dynamic>;
+        data['id'] = doc.id;
+        return TypePreference.fromJson(data);
+      }).toList();
+    } catch (e, stackTrace) {
+      print('❌ Error getting type preferences: $e');
+      print('Stack trace: $stackTrace');
+      return [];
+    }
+  }
+
+  /// Get all preferences for a specific strategy type (including disabled ones)
+  Future<List<TypePreference>> getAllTypePreferences(String strategyTypeId) async {
+    try {
+      final snapshot = await _typePreferencesCollection
+          .where('strategyTypeId', isEqualTo: strategyTypeId)
+          .orderBy('order')
+          .get();
+      
+      return snapshot.docs.map((doc) {
+        final data = _convertTimestampsToStrings(doc.data()) as Map<String, dynamic>;
+        data['id'] = doc.id;
+        return TypePreference.fromJson(data);
+      }).toList();
+    } catch (e, stackTrace) {
+      print('❌ Error getting all type preferences: $e');
+      print('Stack trace: $stackTrace');
+      return [];
+    }
+  }
+
+  /// Stream of preferences for a specific strategy type
+  Stream<List<TypePreference>> typePreferencesStream(String strategyTypeId) {
+    return _typePreferencesCollection
+        .where('strategyTypeId', isEqualTo: strategyTypeId)
+        .where('enabled', isEqualTo: true)
+        .orderBy('order')
+        .snapshots()
+        .map((snapshot) => snapshot.docs
+            .map((doc) {
+              final data = _convertTimestampsToStrings(doc.data()) as Map<String, dynamic>;
+              data['id'] = doc.id;
+              return TypePreference.fromJson(data);
+            })
+            .toList())
+        .handleError((error, stackTrace) {
+          print('❌ Error in typePreferencesStream: $error');
+          print('Stack trace: $stackTrace');
+        });
+  }
+
+  /// Create a new type preference (admin operation)
+  Future<String> createTypePreference(TypePreference preference) async {
+    try {
+      final data = preference.toJson();
+      data['createdAt'] = Timestamp.fromDate(preference.createdAt);
+      data['updatedAt'] = Timestamp.fromDate(preference.updatedAt);
+      
+      final docRef = await _typePreferencesCollection.add(data);
+      print('✅ Created type preference: ${docRef.id} (${preference.name})');
+      return docRef.id;
+    } catch (e, stackTrace) {
+      print('❌ Error creating type preference: $e');
+      print('Stack trace: $stackTrace');
+      rethrow;
+    }
+  }
+
+  /// Update an existing type preference (admin operation)
+  Future<void> updateTypePreference(TypePreference preference) async {
+    try {
+      final data = preference.toJson();
+      data['updatedAt'] = Timestamp.fromDate(DateTime.now());
+      data['createdAt'] = Timestamp.fromDate(preference.createdAt);
+      
+      await _typePreferencesCollection.doc(preference.id).update(data);
+      print('✅ Updated type preference: ${preference.id} (${preference.name})');
+    } catch (e, stackTrace) {
+      print('❌ Error updating type preference: $e');
+      print('Stack trace: $stackTrace');
+      rethrow;
+    }
+  }
+
+  /// Delete a type preference (admin operation)
+  Future<void> deleteTypePreference(String id) async {
+    try {
+      await _typePreferencesCollection.doc(id).delete();
+      print('✅ Deleted type preference: $id');
+    } catch (e, stackTrace) {
+      print('❌ Error deleting type preference: $e');
+      print('Stack trace: $stackTrace');
+      rethrow;
+    }
+  }
+
+  /// Batch update type preference orders (admin operation)
+  Future<void> updateTypePreferenceOrders(List<TypePreference> preferences) async {
+    try {
+      final batch = _db.batch();
+      
+      for (final preference in preferences) {
+        final docRef = _typePreferencesCollection.doc(preference.id);
+        batch.update(docRef, {
+          'order': preference.order,
+          'updatedAt': Timestamp.fromDate(DateTime.now()),
+        });
+      }
+      
+      await batch.commit();
+      print('✅ Updated ${preferences.length} type preference orders');
+    } catch (e, stackTrace) {
+      print('❌ Error updating type preference orders: $e');
+      print('Stack trace: $stackTrace');
+      rethrow;
     }
   }
 

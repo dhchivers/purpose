@@ -153,6 +153,16 @@ class AdminSettingsPage extends ConsumerWidget {
                 ),
                 const SizedBox(height: 12),
 
+                // Type Preferences Management
+                _buildAdminTile(
+                  context: context,
+                  icon: Icons.tune,
+                  title: 'Type Preferences',
+                  subtitle: 'Manage preference templates for strategy types',
+                  onTap: () => context.go('/admin/type-preferences'),
+                ),
+                const SizedBox(height: 12),
+
                 // User Management
                 _buildAdminTile(
                   context: context,
