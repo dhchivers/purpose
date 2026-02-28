@@ -20,6 +20,8 @@ final purposeModulesProvider = StreamProvider<List<QuestionModule>>((ref) {
 final moduleCompletionProvider = StreamProvider.family<bool, ({String userId, String strategyId, String moduleId})>((ref, params) async* {
   final firestoreService = ref.watch(firestoreServiceProvider);
   
+  print('🔍 moduleCompletionProvider called for module: ${params.moduleId}, strategy: ${params.strategyId}');
+  
   // Stream answers and check completion on each update
   final answersStream = firestoreService.userAnswersStream(
     userId: params.userId,
@@ -28,24 +30,40 @@ final moduleCompletionProvider = StreamProvider.family<bool, ({String userId, St
   );
   
   await for (final allAnswers in answersStream) {
+    print('📊 Total answers for module ${params.moduleId}: ${allAnswers.length}');
+    
+    // Debug: Print all answer strategyIds
+    for (final answer in allAnswers) {
+      print('  Answer ${answer.id}: strategyId = ${answer.strategyId}, questionId = ${answer.questionId}');
+    }
+    
     // Check if there are ANY answers with a strategyId set (not null)
     final hasStrategySpecificAnswers = allAnswers.any((answer) => answer.strategyId != null);
+    print('  Has strategy-specific answers: $hasStrategySpecificAnswers');
     
     // Filter answers based on whether strategy-specific answers exist
     final answers = allAnswers.where((answer) {
       if (hasStrategySpecificAnswers) {
         // If strategy-specific answers exist, ONLY show answers for current strategy
-        return answer.strategyId == params.strategyId;
+        final matches = answer.strategyId == params.strategyId;
+        print('  Filtering answer ${answer.id}: strategyId=${answer.strategyId}, matches=${matches}');
+        return matches;
       } else {
         // If all answers have null strategyId (true legacy), show them for all strategies
-        return answer.strategyId == null;
+        final matches = answer.strategyId == null;
+        print('  Filtering answer ${answer.id} (legacy mode): strategyId=${answer.strategyId}, matches=${matches}');
+        return matches;
       }
     }).toList();
     
+    print('  Filtered answers count: ${answers.length}');
+    
     // Get current active questions (they rarely change, so fetching is fine)
     final questions = await firestoreService.getQuestionsByModule(params.moduleId);
+    print('  Total questions in module: ${questions.length}');
     
     if (questions.isEmpty) {
+      print('  ⚠️ No questions found, yielding false');
       yield false;
       continue;
     }
@@ -53,6 +71,9 @@ final moduleCompletionProvider = StreamProvider.family<bool, ({String userId, St
     // Check if all questions have answers
     final answeredQuestionIds = answers.map((a) => a.questionId).toSet();
     final isComplete = questions.every((q) => answeredQuestionIds.contains(q.id));
+    
+    print('  ✅ Module completion status: $isComplete');
+    print('  Answered questions: ${answeredQuestionIds.length}/${questions.length}');
     
     yield isComplete;
   }
@@ -100,6 +121,8 @@ class PurposeModulesPage extends ConsumerWidget {
     final modulesAsync = ref.watch(purposeModulesProvider);
     final activeStrategy = ref.watch(activeStrategyProvider);
     final strategyTypesAsync = ref.watch(strategyTypesStreamProvider);
+
+    print('🎯 PurposeModulesPage build: activeStrategy = ${activeStrategy?.id} (${activeStrategy?.name})');
 
     return Scaffold(
       appBar: AppBar(
@@ -324,6 +347,8 @@ class _ModuleCard extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    print('🃏 _ModuleCard build: module=${module.name}, strategyId=$strategyId');
+    
     final completionAsync = ref.watch(moduleCompletionProvider(
       (userId: userId, strategyId: strategyId, moduleId: module.id),
     ));
