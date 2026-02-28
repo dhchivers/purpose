@@ -21,7 +21,6 @@ final moduleCompletionProvider = StreamProvider.family<bool, ({String userId, St
   final firestoreService = ref.watch(firestoreServiceProvider);
   
   // Stream answers and check completion on each update
-  // Don't filter by strategyId in query to include legacy answers with null strategyId
   final answersStream = firestoreService.userAnswersStream(
     userId: params.userId,
     strategyId: null, // Load all answers for this module, regardless of strategyId
@@ -29,10 +28,19 @@ final moduleCompletionProvider = StreamProvider.family<bool, ({String userId, St
   );
   
   await for (final allAnswers in answersStream) {
-    // Filter to current strategy or null (legacy answers)
-    final answers = allAnswers.where((answer) => 
-      answer.strategyId == params.strategyId || answer.strategyId == null
-    ).toList();
+    // Check if there are ANY answers with a strategyId set (not null)
+    final hasStrategySpecificAnswers = allAnswers.any((answer) => answer.strategyId != null);
+    
+    // Filter answers based on whether strategy-specific answers exist
+    final answers = allAnswers.where((answer) {
+      if (hasStrategySpecificAnswers) {
+        // If strategy-specific answers exist, ONLY show answers for current strategy
+        return answer.strategyId == params.strategyId;
+      } else {
+        // If all answers have null strategyId (true legacy), show them for all strategies
+        return answer.strategyId == null;
+      }
+    }).toList();
     
     // Get current active questions (they rarely change, so fetching is fine)
     final questions = await firestoreService.getQuestionsByModule(params.moduleId);

@@ -28,17 +28,24 @@ final moduleActiveQuestionsProvider =
 final userModuleAnswersProvider = StreamProvider.family<List<UserAnswer>, 
     ({String userId, String strategyId, String moduleId})>((ref, params) {
   final firestoreService = ref.watch(firestoreServiceProvider);
-  // Don't filter by strategyId in query to support legacy answers
+  // Load all answers for this module to determine filtering strategy
   return firestoreService.userAnswersStream(
     userId: params.userId,
-    strategyId: null, // Load all answers, then filter in memory if needed
+    strategyId: null, // Load all answers, then filter based on context
     questionModuleId: params.moduleId,
-  ).map((allAnswers) => 
-    // Filter to current strategy or null (legacy answers)
-    allAnswers.where((answer) => 
-      answer.strategyId == params.strategyId || answer.strategyId == null
-    ).toList()
-  );
+  ).map((allAnswers) {
+    // Check if there are ANY answers with a strategyId set (not null)
+    final hasStrategySpecificAnswers = allAnswers.any((answer) => answer.strategyId != null);
+    
+    // Filter answers based on whether strategy-specific answers exist
+    if (hasStrategySpecificAnswers) {
+      // If strategy-specific answers exist, ONLY show answers for current strategy
+      return allAnswers.where((answer) => answer.strategyId == params.strategyId).toList();
+    } else {
+      // If all answers have null strategyId (true legacy), show them for all strategies
+      return allAnswers.where((answer) => answer.strategyId == null).toList();
+    }
+  });
 });
 
 class ModuleQuestionnairePage extends ConsumerStatefulWidget {
