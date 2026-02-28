@@ -24,6 +24,7 @@ class Mission {
   final String timeHorizon; // "0-2 years", "2-4 years", etc.
   final RiskLevel? riskLevel; // Parsed risk level (low, medium, high)
   final int durationMonths; // Duration of this mission in months (default 12)
+  final double? totalAnnualInvestment; // Total annual budget/investment for this mission
 
   Mission({
     required this.mission,
@@ -35,6 +36,7 @@ class Mission {
     required this.timeHorizon,
     this.riskLevel,
     this.durationMonths = 12,
+    this.totalAnnualInvestment,
   });
 
   factory Mission.fromJson(Map<String, dynamic> json) => _$MissionFromJson(json);
@@ -51,6 +53,7 @@ class Mission {
     String? timeHorizon,
     RiskLevel? riskLevel,
     int? durationMonths,
+    double? totalAnnualInvestment,
   }) {
     return Mission(
       mission: mission ?? this.mission,
@@ -62,6 +65,7 @@ class Mission {
       timeHorizon: timeHorizon ?? this.timeHorizon,
       riskLevel: riskLevel ?? this.riskLevel,
       durationMonths: durationMonths ?? this.durationMonths,
+      totalAnnualInvestment: totalAnnualInvestment ?? this.totalAnnualInvestment,
     );
   }
 }

@@ -1474,4 +1474,39 @@ Generate the mission map now.
       }
     ];
   }
+
+  /// Generate a structured JSON response using a custom prompt and system message
+  /// 
+  /// This is a general-purpose method for AI interactions that need structured output.
+  Future<String> generateStructuredResponse({
+    required String prompt,
+    required String systemPrompt,
+    String model = 'gpt-4o',
+    double temperature = 0.7,
+    int maxTokens = 4096,
+  }) async {
+    try {
+      final response = await _makeOpenAIRequest(
+        model: model,
+        messages: [
+          {
+            'role': 'system',
+            'content': systemPrompt,
+          },
+          {
+            'role': 'user',
+            'content': prompt,
+          },
+        ],
+        temperature: temperature,
+        maxTokens: maxTokens,
+        responseFormat: {"type": "json_object"}, // Request JSON response
+      );
+      
+      return _extractContent(response);
+    } catch (e) {
+      print('Error generating structured response: $e');
+      rethrow;
+    }
+  }
 }

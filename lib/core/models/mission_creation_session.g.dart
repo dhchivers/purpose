@@ -16,6 +16,7 @@ Mission _$MissionFromJson(Map<String, dynamic> json) => Mission(
   timeHorizon: json['timeHorizon'] as String,
   riskLevel: $enumDecodeNullable(_$RiskLevelEnumMap, json['riskLevel']),
   durationMonths: (json['durationMonths'] as num?)?.toInt() ?? 12,
+  totalAnnualInvestment: (json['totalAnnualInvestment'] as num?)?.toDouble(),
 );
 
 Map<String, dynamic> _$MissionToJson(Mission instance) => <String, dynamic>{
@@ -28,6 +29,7 @@ Map<String, dynamic> _$MissionToJson(Mission instance) => <String, dynamic>{
   'timeHorizon': instance.timeHorizon,
   'riskLevel': _$RiskLevelEnumMap[instance.riskLevel],
   'durationMonths': instance.durationMonths,
+  'totalAnnualInvestment': instance.totalAnnualInvestment,
 };
 
 const _$RiskLevelEnumMap = {

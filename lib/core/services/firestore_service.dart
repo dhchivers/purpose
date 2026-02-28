@@ -923,6 +923,7 @@ class FirestoreService {
     try {
       final snapshot = await _typePreferencesCollection
           .where('strategyTypeId', isEqualTo: strategyTypeId)
+          .where('enabled', isEqualTo: true)
           .orderBy('order')
           .get();
       

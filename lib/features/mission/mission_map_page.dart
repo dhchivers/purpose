@@ -31,6 +31,7 @@ class _MissionMapPageState extends ConsumerState<MissionMapPage> {
   final TextEditingController _capabilityController = TextEditingController();
   final TextEditingController _riskGuardrailController = TextEditingController();
   final TextEditingController _durationController = TextEditingController();
+  final TextEditingController _investmentController = TextEditingController();
 
   @override
   void dispose() {
@@ -39,6 +40,7 @@ class _MissionMapPageState extends ConsumerState<MissionMapPage> {
     _capabilityController.dispose();
     _riskGuardrailController.dispose();
     _durationController.dispose();
+    _investmentController.dispose();
     super.dispose();
   }
 
@@ -50,6 +52,7 @@ class _MissionMapPageState extends ConsumerState<MissionMapPage> {
       _capabilityController.text = mission.capabilityRequired;
       _riskGuardrailController.text = mission.riskOrValueGuardrail;
       _durationController.text = mission.durationMonths.toString();
+      _investmentController.text = mission.totalAnnualInvestment?.toString() ?? '';
     });
   }
 
@@ -61,6 +64,7 @@ class _MissionMapPageState extends ConsumerState<MissionMapPage> {
       _capabilityController.clear();
       _riskGuardrailController.clear();
       _durationController.clear();
+      _investmentController.clear();
     });
   }
 
@@ -102,6 +106,14 @@ class _MissionMapPageState extends ConsumerState<MissionMapPage> {
     const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
                     'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
     return '${months[date.month - 1]} ${date.year}';
+  }
+
+  // Format number with thousand separators
+  String _formatNumber(int number) {
+    return number.toString().replaceAllMapped(
+      RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'),
+      (Match match) => '${match[1]},',
+    );
   }
 
   Future<void> _updateStrategyStartDate(UserMissionMap missionMap, DateTime newDate) async {
@@ -163,6 +175,21 @@ class _MissionMapPageState extends ConsumerState<MissionMapPage> {
       return;
     }
 
+    // Parse total annual investment (optional)
+    double? totalAnnualInvestment;
+    if (_investmentController.text.trim().isNotEmpty) {
+      totalAnnualInvestment = double.tryParse(_investmentController.text.trim());
+      if (totalAnnualInvestment == null || totalAnnualInvestment < 0) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Total annual investment must be a valid positive number'),
+            backgroundColor: AppTheme.error,
+          ),
+        );
+        return;
+      }
+    }
+
     setState(() => _isSaving = true);
 
     try {
@@ -189,6 +216,7 @@ class _MissionMapPageState extends ConsumerState<MissionMapPage> {
         riskOrValueGuardrail: riskGuardrail,
         riskLevel: riskLevel,
         durationMonths: duration,
+        totalAnnualInvestment: totalAnnualInvestment,
       );
 
       // Update mission list
@@ -1660,6 +1688,23 @@ class _MissionMapPageState extends ConsumerState<MissionMapPage> {
                     ),
                     const SizedBox(width: 12),
                     _buildRiskBadge(mission.riskLevel),
+                    if (mission.totalAnnualInvestment != null) ...[
+                      const SizedBox(width: 12),
+                      Icon(
+                        Icons.attach_money,
+                        size: 14,
+                        color: statusColor,
+                      ),
+                      const SizedBox(width: 2),
+                      Text(
+                        '\$${_formatNumber(mission.totalAnnualInvestment!.toInt())}/year',
+                        style: TextStyle(
+                          fontSize: 13,
+                          color: statusColor,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ],
                   ],
                 ),
                 const SizedBox(height: 12),
@@ -1903,6 +1948,42 @@ class _MissionMapPageState extends ConsumerState<MissionMapPage> {
             border: OutlineInputBorder(),
             isDense: true,
             hintText: 'e.g., 12',
+          ),
+        ),
+        const SizedBox(height: 16),
+        Row(
+          children: [
+            const Icon(
+              Icons.attach_money,
+              size: 16,
+              color: AppTheme.primary,
+            ),
+            const SizedBox(width: 6),
+            const Text(
+              'Total Annual Investment',
+              style: TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+                color: AppTheme.primary,
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        TextField(
+          controller: _investmentController,
+          keyboardType: TextInputType.number,
+          maxLines: 1,
+          style: const TextStyle(
+            fontSize: 13,
+            color: AppTheme.graphite,
+            height: 1.4,
+          ),
+          decoration: const InputDecoration(
+            border: OutlineInputBorder(),
+            isDense: true,
+            hintText: 'e.g., 50000',
+            prefixText: '\$',
           ),
         ),
       ],

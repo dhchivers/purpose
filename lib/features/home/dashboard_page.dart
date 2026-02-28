@@ -298,13 +298,9 @@ class DashboardPage extends ConsumerWidget {
                     const SizedBox(width: 8),
                     Expanded(
                       child: _QuickActionButton(
-                        icon: Icons.flag_outlined,
-                        label: 'Goals',
-                        onTap: () {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(content: Text('Goals module coming soon!')),
-                          );
-                        },
+                        icon: Icons.tune_outlined,
+                        label: 'Value Profile',
+                        onTap: () => context.go('/value-profile'),
                       ),
                     ),
                   ],
@@ -319,7 +315,7 @@ class DashboardPage extends ConsumerWidget {
                       ),
                 ),
                 const SizedBox(height: 16),
-                // Two column layout: Left (Purpose/Vision/Mission) and Right (Values/Goals)
+                // Two column layout: Left (Purpose/Vision/Mission) and Right (Values/Value Profile)
                 Row(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
@@ -456,7 +452,7 @@ class DashboardPage extends ConsumerWidget {
                       ),
                     ),
                     const SizedBox(width: 12),
-                    // Right Column: Values and Goals
+                    // Right Column: Values and Value Profile
                     Expanded(
                       flex: 1,
                       child: Column(
@@ -765,10 +761,10 @@ class _GoalsCard extends StatelessWidget {
           children: [
             Row(
               children: [
-                const Icon(Icons.checklist, size: 32, color: Color(0xFF1E6BFF)),
+                const Icon(Icons.tune, size: 32, color: Color(0xFF1E6BFF)),
                 const SizedBox(width: 8),
                 Text(
-                  'Goals',
+                  'Value Profile',
                   style: Theme.of(context).textTheme.bodySmall,
                 ),
               ],
@@ -786,7 +782,7 @@ class _GoalsCard extends StatelessWidget {
                   ),
                   const SizedBox(height: 4),
                   Text(
-                    value == '0' ? 'No goals yet' : 'Goals set',
+                    value == '0' ? 'No profile yet' : 'Profile configured',
                     style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                           color: Colors.grey,
                         ),
