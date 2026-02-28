@@ -5,23 +5,23 @@ import 'package:purpose/core/services/auth_provider.dart';
 
 /// State for the currently selected strategy context
 class StrategyContext {
-  final UserStrategy? selectedStrategy;
+  final String? selectedStrategyId; // Store ID instead of full object
   final bool isLoading;
   final String? error;
 
   const StrategyContext({
-    this.selectedStrategy,
+    this.selectedStrategyId,
     this.isLoading = false,
     this.error,
   });
 
   StrategyContext copyWith({
-    UserStrategy? selectedStrategy,
+    String? selectedStrategyId,
     bool? isLoading,
     String? error,
   }) {
     return StrategyContext(
-      selectedStrategy: selectedStrategy ?? this.selectedStrategy,
+      selectedStrategyId: selectedStrategyId ?? this.selectedStrategyId,
       isLoading: isLoading ?? this.isLoading,
       error: error ?? this.error,
     );
@@ -32,9 +32,14 @@ class StrategyContext {
 class StrategyContextNotifier extends StateNotifier<StrategyContext> {
   StrategyContextNotifier() : super(const StrategyContext());
 
-  /// Set the selected strategy
+  /// Set the selected strategy by ID
+  void setStrategyId(String? strategyId) {
+    state = state.copyWith(selectedStrategyId: strategyId, error: null);
+  }
+
+  /// Set the selected strategy (extracts ID)
   void setStrategy(UserStrategy? strategy) {
-    state = state.copyWith(selectedStrategy: strategy, error: null);
+    state = state.copyWith(selectedStrategyId: strategy?.id, error: null);
   }
 
   /// Set loading state
@@ -58,22 +63,35 @@ final strategyContextProvider = StateNotifierProvider<StrategyContextNotifier, S
   return StrategyContextNotifier();
 });
 
-/// Provider for the currently selected strategy (convenience)
-final currentStrategyProvider = Provider<UserStrategy?>((ref) {
-  return ref.watch(strategyContextProvider).selectedStrategy;
+/// Provider for the currently selected strategy ID (convenience)
+final currentStrategyIdProvider = Provider<String?>((ref) {
+  return ref.watch(strategyContextProvider).selectedStrategyId;
+});
+
+/// Stream provider for the currently selected strategy with real-time updates
+final currentStrategyStreamProvider = StreamProvider<UserStrategy?>((ref) {
+  final strategyId = ref.watch(currentStrategyIdProvider);
+  
+  if (strategyId == null) {
+    return Stream.value(null);
+  }
+  
+  // Watch the strategy stream to get real-time updates
+  return ref.watch(strategyStreamProvider(strategyId).stream);
 });
 
 /// Provider that automatically selects the default strategy if none is selected
-/// This is the main provider UI components should use
+/// This is the main provider UI components should use - returns the latest data via stream
 final activeStrategyProvider = Provider<UserStrategy?>((ref) {
-  final strategyContext = ref.watch(strategyContextProvider);
+  final strategyId = ref.watch(currentStrategyIdProvider);
   
-  // If a strategy is explicitly selected, use it
-  if (strategyContext.selectedStrategy != null) {
-    return strategyContext.selectedStrategy;
+  // If a strategy is explicitly selected, get it from the stream
+  if (strategyId != null) {
+    final strategyAsync = ref.watch(strategyStreamProvider(strategyId));
+    return strategyAsync.value;
   }
   
-  // Otherwise, try to use the default strategy
+  // Otherwise, use the default strategy stream
   final defaultStrategyAsync = ref.watch(currentUserDefaultStrategyProvider);
   return defaultStrategyAsync.value;
 });
@@ -81,11 +99,11 @@ final activeStrategyProvider = Provider<UserStrategy?>((ref) {
 /// Provider that ensures a strategy is selected by auto-selecting default if needed
 /// Returns AsyncValue to handle loading and error states
 final activeStrategyAsyncProvider = Provider<AsyncValue<UserStrategy?>>((ref) {
-  final strategyContext = ref.watch(strategyContextProvider);
+  final strategyId = ref.watch(currentStrategyIdProvider);
   
-  // If a strategy is explicitly selected, wrap it in AsyncValue
-  if (strategyContext.selectedStrategy != null) {
-    return AsyncValue.data(strategyContext.selectedStrategy);
+  // If a strategy is explicitly selected, get it from the stream
+  if (strategyId != null) {
+    return ref.watch(strategyStreamProvider(strategyId));
   }
   
   // Otherwise, return the default strategy async state
@@ -108,7 +126,7 @@ Future<void> initializeStrategyContext(WidgetRef ref) async {
     final defaultStrategy = await ref.read(defaultStrategyProvider(user.uid).future);
     
     if (defaultStrategy != null) {
-      ref.read(strategyContextProvider.notifier).setStrategy(defaultStrategy);
+      ref.read(strategyContextProvider.notifier).setStrategyId(defaultStrategy.id);
     } else {
       ref.read(strategyContextProvider.notifier).setLoading(false);
     }
