@@ -28,23 +28,24 @@ final moduleActiveQuestionsProvider =
 final userModuleAnswersProvider = StreamProvider.family<List<UserAnswer>, 
     ({String userId, String strategyId, String moduleId})>((ref, params) {
   final firestoreService = ref.watch(firestoreServiceProvider);
-  // Load all answers for this module to determine filtering strategy
+  
+  // STRICT FILTERING: Only show answers that match the current strategyId
+  // This ensures each strategy has its own isolated set of answers
   return firestoreService.userAnswersStream(
     userId: params.userId,
-    strategyId: null, // Load all answers, then filter based on context
+    strategyId: null, // Load all to detect null answers for logging
     questionModuleId: params.moduleId,
   ).map((allAnswers) {
-    // Check if there are ANY answers with a strategyId set (not null)
-    final hasStrategySpecificAnswers = allAnswers.any((answer) => answer.strategyId != null);
+    // Filter to only answers for this specific strategy
+    final answers = allAnswers.where((answer) => answer.strategyId == params.strategyId).toList();
     
-    // Filter answers based on whether strategy-specific answers exist
-    if (hasStrategySpecificAnswers) {
-      // If strategy-specific answers exist, ONLY show answers for current strategy
-      return allAnswers.where((answer) => answer.strategyId == params.strategyId).toList();
-    } else {
-      // If all answers have null strategyId (true legacy), show them for all strategies
-      return allAnswers.where((answer) => answer.strategyId == null).toList();
+    // Log any null-strategyId answers being ignored
+    final nullAnswers = allAnswers.where((answer) => answer.strategyId == null);
+    if (nullAnswers.isNotEmpty) {
+      print('⚠️ Ignoring ${nullAnswers.length} null-strategyId answers in module ${params.moduleId}');
     }
+    
+    return answers;
   });
 });
 

@@ -986,16 +986,16 @@ class FirestoreService {
     final module = await getQuestionModule(questionModuleId);
     if (module == null) return false;
 
-    // Get user's answers (without strategyId filter to include legacy answers)
+    // Get user's answers - STRICT: Only answers for this specific strategy
     final allAnswers = await getUserAnswersByModule(
       userId: userId,
-      strategyId: null, // Load all to include legacy answers
+      strategyId: null, // Load all to check
       questionModuleId: questionModuleId,
     );
     
-    // Filter to current strategy or null (legacy answers)
+    // Filter to ONLY answers matching current strategy (no null fallback)
     final answers = allAnswers.where((answer) => 
-      answer.strategyId == strategyId || answer.strategyId == null
+      answer.strategyId == strategyId
     ).toList();
 
     // Check if all questions are answered

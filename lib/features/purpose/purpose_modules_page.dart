@@ -25,40 +25,26 @@ final moduleCompletionProvider = StreamProvider.family<bool, ({String userId, St
   // Stream answers and check completion on each update
   final answersStream = firestoreService.userAnswersStream(
     userId: params.userId,
-    strategyId: null, // Load all answers for this module, regardless of strategyId
+    strategyId: null, // Load all answers to see what we have
     questionModuleId: params.moduleId,
   );
   
   await for (final allAnswers in answersStream) {
     print('📊 Total answers for module ${params.moduleId}: ${allAnswers.length}');
     
-    // Debug: Print all answer strategyIds
-    for (final answer in allAnswers) {
-      print('  Answer ${answer.id}: strategyId = ${answer.strategyId}, questionId = ${answer.questionId}');
-    }
-    
-    // Check if there are ANY answers with a strategyId set (not null)
-    final hasStrategySpecificAnswers = allAnswers.any((answer) => answer.strategyId != null);
-    print('  Has strategy-specific answers: $hasStrategySpecificAnswers');
-    
-    // Filter answers based on whether strategy-specific answers exist
+    // STRICT FILTERING: Only show answers that match the current strategyId
+    // This ensures each strategy has its own isolated set of answers
     final answers = allAnswers.where((answer) {
-      if (hasStrategySpecificAnswers) {
-        // If strategy-specific answers exist, ONLY show answers for current strategy
-        final matches = answer.strategyId == params.strategyId;
-        print('  Filtering answer ${answer.id}: strategyId=${answer.strategyId}, matches=${matches}');
-        return matches;
-      } else {
-        // If all answers have null strategyId (true legacy), show them for all strategies
-        final matches = answer.strategyId == null;
-        print('  Filtering answer ${answer.id} (legacy mode): strategyId=${answer.strategyId}, matches=${matches}');
-        return matches;
+      final matches = answer.strategyId == params.strategyId;
+      if (!matches && answer.strategyId == null) {
+        print('  ⚠️ Ignoring null-strategyId answer ${answer.id} for questionId ${answer.questionId}');
       }
+      return matches;
     }).toList();
     
-    print('  Filtered answers count: ${answers.length}');
+    print('  Filtered to answers with strategyId=${params.strategyId}: ${answers.length}');
     
-    // Get current active questions (they rarely change, so fetching is fine)
+    // Get current active questions
     final questions = await firestoreService.getQuestionsByModule(params.moduleId);
     print('  Total questions in module: ${questions.length}');
     
