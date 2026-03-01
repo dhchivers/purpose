@@ -114,7 +114,7 @@ class _SliderQuestionState extends State<SliderQuestion> {
               const Spacer(),
               
               // Reasoning toggle if available
-              if (widget.question.reasoning.isNotEmpty)
+              if (widget.question.reasoning != null && widget.question.reasoning!.isNotEmpty)
                 IconButton(
                   icon: Icon(
                     _showReasoning ? Icons.expand_less : Icons.info_outline,
@@ -136,7 +136,7 @@ class _SliderQuestionState extends State<SliderQuestion> {
 
           // Question text
           Text(
-            widget.question.questionText,
+            widget.question.text,
             style: TextStyle(
               fontSize: 15,
               fontWeight: FontWeight.w600,
@@ -146,7 +146,7 @@ class _SliderQuestionState extends State<SliderQuestion> {
           ),
 
           // Reasoning (expandable)
-          if (_showReasoning && widget.question.reasoning.isNotEmpty) ...[
+          if (_showReasoning && widget.question.reasoning != null && widget.question.reasoning!.isNotEmpty) ...[
             const SizedBox(height: 12),
             Container(
               padding: const EdgeInsets.all(12),
@@ -165,7 +165,7 @@ class _SliderQuestionState extends State<SliderQuestion> {
                   const SizedBox(width: 8),
                   Expanded(
                     child: Text(
-                      widget.question.reasoning,
+                      widget.question.reasoning ?? '',
                       style: TextStyle(
                         fontSize: 12,
                         color: Colors.grey[700],
