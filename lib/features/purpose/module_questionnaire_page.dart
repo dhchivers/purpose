@@ -292,6 +292,42 @@ class _ModuleQuestionnairePageState
           ),
         ),
 
+        // Module description
+        if (module.description.isNotEmpty) ...[
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(16),
+            color: Colors.grey[100],
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Icon(Icons.info_outline, size: 20, color: Colors.grey[700]),
+                    const SizedBox(width: 8),
+                    Text(
+                      'About this module',
+                      style: TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.grey[800],
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  module.description,
+                  style: TextStyle(
+                    fontSize: 14,
+                    color: Colors.grey[700],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+
         // Question content
         Expanded(
           child: SingleChildScrollView(
@@ -477,11 +513,13 @@ class _ModuleQuestionnairePageState
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 if (labels != null && labels.isNotEmpty)
-                  Text(
-                    labels[0],
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: Colors.grey[600],
+                  Flexible(
+                    child: Text(
+                      labels[0],
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: Colors.grey[600],
+                      ),
                     ),
                   ),
                 Text(
@@ -492,11 +530,14 @@ class _ModuleQuestionnairePageState
                   ),
                 ),
                 if (labels != null && labels.length > 1)
-                  Text(
-                    labels[1],
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: Colors.grey[600],
+                  Flexible(
+                    child: Text(
+                      labels[1],
+                      textAlign: TextAlign.right,
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: Colors.grey[600],
+                      ),
                     ),
                   ),
               ],
@@ -513,6 +554,27 @@ class _ModuleQuestionnairePageState
                   _scaleValue = value.toInt();
                 });
               },
+            ),
+            const SizedBox(height: 8),
+            // Tick mark labels
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 24),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: List.generate(
+                  max - min + 1,
+                  (index) => Text(
+                    '${min + index}',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: Colors.grey[600],
+                      fontWeight: _scaleValue == min + index 
+                          ? FontWeight.bold 
+                          : FontWeight.normal,
+                    ),
+                  ),
+                ),
+              ),
             ),
           ],
         );
