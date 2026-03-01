@@ -16,6 +16,13 @@ final purposeModulesProvider = StreamProvider<List<QuestionModule>>((ref) {
   return firestoreService.questionModulesStream(ModuleType.purpose);
 });
 
+/// Provider to get the actual question count for a module
+final moduleQuestionCountProvider = FutureProvider.family<int, String>((ref, moduleId) async {
+  final firestoreService = ref.watch(firestoreServiceProvider);
+  final questions = await firestoreService.getQuestionsByModule(moduleId);
+  return questions.length;
+});
+
 /// Provider to check if a module is completed by a user
 final moduleCompletionProvider = StreamProvider.family<bool, ({String userId, String strategyId, String moduleId})>((ref, params) async* {
   final firestoreService = ref.watch(firestoreServiceProvider);
@@ -435,22 +442,43 @@ class _ModuleCard extends ConsumerWidget {
                             ),
                           ),
                           const SizedBox(height: 8),
-                          Row(
-                            children: [
-                              Icon(
-                                Icons.quiz_outlined,
-                                size: 16,
-                                color: Colors.grey[600],
-                              ),
-                              const SizedBox(width: 4),
-                              Text(
-                                '${module.totalQuestions} questions',
-                                style: TextStyle(
-                                  fontSize: 12,
-                                  color: Colors.grey[600],
-                                ),
-                              ),
-                            ],
+                          Consumer(
+                            builder: (context, ref, child) {
+                              final questionCountAsync = ref.watch(moduleQuestionCountProvider(module.id));
+                              return Row(
+                                children: [
+                                  Icon(
+                                    Icons.quiz_outlined,
+                                    size: 16,
+                                    color: Colors.grey[600],
+                                  ),
+                                  const SizedBox(width: 4),
+                                  questionCountAsync.when(
+                                    data: (count) => Text(
+                                      '$count questions',
+                                      style: TextStyle(
+                                        fontSize: 12,
+                                        color: Colors.grey[600],
+                                      ),
+                                    ),
+                                    loading: () => Text(
+                                      '${module.totalQuestions} questions',
+                                      style: TextStyle(
+                                        fontSize: 12,
+                                        color: Colors.grey[600],
+                                      ),
+                                    ),
+                                    error: (_, __) => Text(
+                                      '${module.totalQuestions} questions',
+                                      style: TextStyle(
+                                        fontSize: 12,
+                                        color: Colors.grey[600],
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              );
+                            },
                           ),
                         ],
                       ),
@@ -563,22 +591,43 @@ class _ModuleCard extends ConsumerWidget {
                         ),
                       ),
                       const SizedBox(height: 8),
-                      Row(
-                        children: [
-                          Icon(
-                            Icons.quiz_outlined,
-                            size: 16,
-                            color: Colors.grey[600],
-                          ),
-                          const SizedBox(width: 4),
-                          Text(
-                            '${module.totalQuestions} questions',
-                            style: TextStyle(
-                              fontSize: 12,
-                              color: Colors.grey[600],
-                            ),
-                          ),
-                        ],
+                      Consumer(
+                        builder: (context, ref, child) {
+                          final questionCountAsync = ref.watch(moduleQuestionCountProvider(module.id));
+                          return Row(
+                            children: [
+                              Icon(
+                                Icons.quiz_outlined,
+                                size: 16,
+                                color: Colors.grey[600],
+                              ),
+                              const SizedBox(width: 4),
+                              questionCountAsync.when(
+                                data: (count) => Text(
+                                  '$count questions',
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    color: Colors.grey[600],
+                                  ),
+                                ),
+                                loading: () => Text(
+                                  '${module.totalQuestions} questions',
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    color: Colors.grey[600],
+                                  ),
+                                ),
+                                error: (_, __) => Text(
+                                  '${module.totalQuestions} questions',
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    color: Colors.grey[600],
+                                  ),
+                                ),
+                              ),
+                            ],
+                          );
+                        },
                       ),
                     ],
                   ),
