@@ -775,6 +775,7 @@ class _ModuleQuestionnairePageState
       // Debug logging
       print('=== SAVING ANSWER ===');
       print('User ID: ${answer.userId}');
+      print('Strategy ID: ${answer.strategyId}');
       print('Question ID: ${answer.questionId}');
       print('Module ID: ${answer.questionModuleId}');
       print('Answer ID: ${answer.id}');
