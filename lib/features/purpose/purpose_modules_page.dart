@@ -28,7 +28,7 @@ final moduleQuestionCountProvider = FutureProvider.family<int, String>((ref, mod
 final moduleCompletionProvider = StreamProvider.family<bool, ({String userId, String strategyId, String moduleId})>((ref, params) async* {
   final firestoreService = ref.watch(firestoreServiceProvider);
   
-  print('🔍 moduleCompletionProvider START for module: ${params.moduleId}, strategy: ${params.strategyId}, user: ${params.userId}');
+  // print('🔍 moduleCompletionProvider START for module: ${params.moduleId}, strategy: ${params.strategyId}, user: ${params.userId}');
   
   // Stream answers and check completion on each update
   final answersStream = firestoreService.userAnswersStream(
@@ -37,36 +37,36 @@ final moduleCompletionProvider = StreamProvider.family<bool, ({String userId, St
     questionModuleId: params.moduleId,
   );
   
-  print('🔍 About to listen to answersStream...');
+  // print('🔍 About to listen to answersStream...');
   
   await for (final allAnswers in answersStream) {
-    print('📊 Total answers for module ${params.moduleId}: ${allAnswers.length}');
+    // print('📊 Total answers for module ${params.moduleId}: ${allAnswers.length}');
     
     // Log all answer strategyIds for debugging
-    for (var answer in allAnswers) {
-      print('  Answer ${answer.id}: questionId=${answer.questionId}, strategyId=${answer.strategyId}');
-    }
+    // for (var answer in allAnswers) {
+    //   print('  Answer ${answer.id}: questionId=${answer.questionId}, strategyId=${answer.strategyId}');
+    // }
     
     // STRICT FILTERING: Only show answers that match the current strategyId
     // This ensures each strategy has its own isolated set of answers
     final answers = allAnswers.where((answer) {
       final matches = answer.strategyId == params.strategyId;
-      if (!matches && answer.strategyId == null) {
-        print('  ⚠️ Ignoring null-strategyId answer ${answer.id} for questionId ${answer.questionId}');
-      } else if (!matches && answer.strategyId != null) {
-        print('  ⚠️ Ignoring answer ${answer.id} with different strategyId: ${answer.strategyId}');
-      }
+      // if (!matches && answer.strategyId == null) {
+      //   print('  ⚠️ Ignoring null-strategyId answer ${answer.id} for questionId ${answer.questionId}');
+      // } else if (!matches && answer.strategyId != null) {
+      //   print('  ⚠️ Ignoring answer ${answer.id} with different strategyId: ${answer.strategyId}');
+      // }
       return matches;
     }).toList();
     
-    print('  Filtered to answers with strategyId=${params.strategyId}: ${answers.length}');
+    // print('  Filtered to answers with strategyId=${params.strategyId}: ${answers.length}');
     
     // Get current active questions
     final questions = await firestoreService.getQuestionsByModule(params.moduleId);
-    print('  Total questions in module: ${questions.length}');
+    // print('  Total questions in module: ${questions.length}');
     
     if (questions.isEmpty) {
-      print('  ⚠️ No questions found, yielding false');
+      // print('  ⚠️ No questions found, yielding false');
       yield false;
       continue;
     }
@@ -75,8 +75,8 @@ final moduleCompletionProvider = StreamProvider.family<bool, ({String userId, St
     final answeredQuestionIds = answers.map((a) => a.questionId).toSet();
     final isComplete = questions.every((q) => answeredQuestionIds.contains(q.id));
     
-    print('  ✅ Module completion status: $isComplete');
-    print('  Answered questions: ${answeredQuestionIds.length}/${questions.length}');
+    // print('  ✅ Module completion status: $isComplete');
+    // print('  Answered questions: ${answeredQuestionIds.length}/${questions.length}');
     
     yield isComplete;
   }
@@ -118,48 +118,27 @@ final allPurposeModulesCompleteProvider = StreamProvider.family<bool, ({String u
 class PurposeModulesPage extends ConsumerWidget {
   const PurposeModulesPage({super.key});
 
-  Future<void> _debugCheckAnswers(WidgetRef ref, String userId, String strategyId) async {
-    final firestoreService = ref.read(firestoreServiceProvider);
-    final modules = await ref.read(purposeModulesProvider.future);
-    
-    print('\n=== DEBUG: Checking answers for strategyId=$strategyId ===');
-    
-    for (var module in modules) {
-      // Get all answers for this module (no strategy filter)
-      final allAnswers = await firestoreService.getUserAnswersByModule(
-        userId: userId,
-        questionModuleId: module.id,
-      );
-      
-      print('\n📦 Module: ${module.name} (${module.id})');
-      print('   Total answers in DB: ${allAnswers.length}');
-      
-      if (allAnswers.isNotEmpty) {
-        for (var answer in allAnswers) {
-          print('   - Answer ${answer.id}: questionId=${answer.questionId}, strategyId=${answer.strategyId}');
-        }
-      }
-      
-      // Check strategy-specific answers
-      final strategyAnswers = allAnswers.where((a) => a.strategyId == strategyId).toList();
-      print('   Answers matching strategyId=$strategyId: ${strategyAnswers.length}');
-      
-      // Check questions
-      final questions = await firestoreService.getQuestionsByModule(module.id);
-      print('   Total questions: ${questions.length}');
-    }
-    
-    print('\n=== END DEBUG ===\n');
-  }
+  // Debug function - DISABLED
+  // Future<void> _debugCheckAnswers(WidgetRef ref, String userId, String strategyId) async {
+  //   final firestoreService = ref.read(firestoreServiceProvider);
+  //   final modules = await ref.read(purposeModulesProvider.future);
+  //   
+  //   for (var module in modules) {
+  //     final allAnswers = await firestoreService.getUserAnswersByModule(
+  //       userId: userId,
+  //       questionModuleId: module.id,
+  //     );
+  //   }
+  // }
 
   Future<void> _migrateNullAnswersToStrategy(WidgetRef ref, String userId, String strategyId) async {
     final firestoreService = ref.read(firestoreServiceProvider);
     final modules = await ref.read(purposeModulesProvider.future);
     
-    print('\n=== MIGRATING NULL-STRATEGYID ANSWERS ===');
-    print('Target strategyId: $strategyId');
+    // print('\n=== MIGRATING NULL-STRATEGYID ANSWERS ===');
+    // print('Target strategyId: $strategyId');
     
-    int totalMigrated = 0;
+    // int totalMigrated = 0;
     
     for (var module in modules) {
       final allAnswers = await firestoreService.getUserAnswersByModule(
@@ -170,8 +149,8 @@ class PurposeModulesPage extends ConsumerWidget {
       final nullAnswers = allAnswers.where((a) => a.strategyId == null).toList();
       
       if (nullAnswers.isNotEmpty) {
-        print('\n📦 Module: ${module.name}');
-        print('   Migrating ${nullAnswers.length} answers...');
+        // print('\n📦 Module: ${module.name}');
+        // print('   Migrating ${nullAnswers.length} answers...');
         
         for (var answer in nullAnswers) {
           // Create updated answer with strategyId
@@ -190,15 +169,15 @@ class PurposeModulesPage extends ConsumerWidget {
           );
           
           await firestoreService.saveUserAnswer(updatedAnswer);
-          totalMigrated++;
-          print('   ✅ Migrated answer ${answer.id}');
+          // totalMigrated++;
+          // print('   ✅ Migrated answer ${answer.id}');
         }
       }
     }
     
-    print('\n=== MIGRATION COMPLETE ===');
-    print('Total answers migrated: $totalMigrated');
-    print('=========================\n');
+    // print('\n=== MIGRATION COMPLETE ===');
+    // print('Total answers migrated: $totalMigrated');
+    // print('=========================\n');
   }
 
   @override
@@ -208,14 +187,14 @@ class PurposeModulesPage extends ConsumerWidget {
     final activeStrategy = ref.watch(activeStrategyProvider);
     final strategyTypesAsync = ref.watch(strategyTypesStreamProvider);
 
-    print('🎯 PurposeModulesPage build: activeStrategy = ${activeStrategy?.id} (${activeStrategy?.name})');
+    // print('🎯 PurposeModulesPage build: activeStrategy = ${activeStrategy?.id} (${activeStrategy?.name})');
     
     // Auto-migrate null-strategyId answers on page load
     if (activeStrategy != null) {
       currentUserAsync.whenData((user) {
         if (user != null) {
           Future.microtask(() async {
-            await _debugCheckAnswers(ref, user.uid, activeStrategy.id);
+            // await _debugCheckAnswers(ref, user.uid, activeStrategy.id);
             // Auto-migrate null answers to current strategy
             await _migrateNullAnswersToStrategy(ref, user.uid, activeStrategy.id);
           });
@@ -445,7 +424,7 @@ class _ModuleCard extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    print('🃏 _ModuleCard build: module=${module.name}, strategyId=$strategyId');
+    // print('🃏 _ModuleCard build: module=${module.name}, strategyId=$strategyId');
     
     final completionAsync = ref.watch(moduleCompletionProvider(
       (userId: userId, strategyId: strategyId, moduleId: module.id),
@@ -453,7 +432,7 @@ class _ModuleCard extends ConsumerWidget {
 
     return completionAsync.when(
       data: (isCompleted) {
-        print('  ✅ Module ${module.name}: isCompleted=$isCompleted');
+        // print('  ✅ Module ${module.name}: isCompleted=$isCompleted');
         return Card(
           margin: const EdgeInsets.only(bottom: 16),
           elevation: isCompleted ? 1 : 2,
@@ -602,7 +581,7 @@ class _ModuleCard extends ConsumerWidget {
         );
       },
       loading: () {
-        print('  ⏳ Module ${module.name}: LOADING completion status');
+        // print('  ⏳ Module ${module.name}: LOADING completion status');
         return Card(
         margin: const EdgeInsets.only(bottom: 16),
         child: Padding(
@@ -653,7 +632,7 @@ class _ModuleCard extends ConsumerWidget {
       );
       },
       error: (error, stack) {
-        print('  ❌ Module ${module.name}: ERROR - $error');
+        // print('  ❌ Module ${module.name}: ERROR - $error');
         return Card(
         margin: const EdgeInsets.only(bottom: 16),
         child: InkWell(

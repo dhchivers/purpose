@@ -40,10 +40,10 @@ final userModuleAnswersProvider = StreamProvider.family<List<UserAnswer>,
     final answers = allAnswers.where((answer) => answer.strategyId == params.strategyId).toList();
     
     // Log any null-strategyId answers being ignored
-    final nullAnswers = allAnswers.where((answer) => answer.strategyId == null);
-    if (nullAnswers.isNotEmpty) {
-      print('⚠️ Ignoring ${nullAnswers.length} null-strategyId answers in module ${params.moduleId}');
-    }
+    // final nullAnswers = allAnswers.where((answer) => answer.strategyId == null);
+    // if (nullAnswers.isNotEmpty) {
+    //   print('⚠️ Ignoring ${nullAnswers.length} null-strategyId answers in module ${params.moduleId}');
+    // }
     
     return answers;
   });
@@ -773,17 +773,17 @@ class _ModuleQuestionnairePageState
       }
 
       // Debug logging
-      print('=== SAVING ANSWER ===');
-      print('User ID: ${answer.userId}');
-      print('Strategy ID: ${answer.strategyId}');
-      print('Question ID: ${answer.questionId}');
-      print('Module ID: ${answer.questionModuleId}');
-      print('Answer ID: ${answer.id}');
-      print('Is Update: ${existingAnswer != null}');
+      // print('=== SAVING ANSWER ===');
+      // print('User ID: ${answer.userId}');
+      // print('Strategy ID: ${answer.strategyId}');
+      // print('Question ID: ${answer.questionId}');
+      // print('Module ID: ${answer.questionModuleId}');
+      // print('Answer ID: ${answer.id}');
+      // print('Is Update: ${existingAnswer != null}');
       
       await firestoreService.saveUserAnswer(answer);
       
-      print('Answer saved successfully');
+      // print('Answer saved successfully');
 
       // Move to next question or finish
       if (_currentQuestionIndex < questions.length - 1) {
@@ -814,10 +814,10 @@ class _ModuleQuestionnairePageState
   /// to process the user's answers and generate AI insights
   Future<void> _triggerBackendAIProcessing(String userId, String moduleId) async {
     try {
-      print('=== BACKEND AI PROCESSING TRIGGER ===');
-      print('User ID: $userId');
-      print('Module ID: $moduleId');
-      print('Timestamp: ${DateTime.now().toIso8601String()}');
+      // print('=== BACKEND AI PROCESSING TRIGGER ===');
+      // print('User ID: $userId');
+      // print('Module ID: $moduleId');
+      // print('Timestamp: ${DateTime.now().toIso8601String()}');
       
       // TODO: Implement backend trigger
       // This could be:
@@ -834,9 +834,9 @@ class _ModuleQuestionnairePageState
       //   createdAt: DateTime.now(),
       // );
       
-      print('Backend AI processing trigger completed (placeholder)');
+      // print('Backend AI processing trigger completed (placeholder)');
     } catch (e) {
-      print('Error triggering backend AI processing: $e');
+      // print('Error triggering backend AI processing: $e');
       // Don't show error to user - this should happen in the background
     }
   }
