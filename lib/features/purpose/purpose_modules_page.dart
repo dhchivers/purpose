@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 import 'package:purpose/core/models/question_module.dart';
 import 'package:purpose/core/models/module_type.dart';
 import 'package:purpose/core/models/strategy_type.dart';
+import 'package:purpose/core/models/user_answer.dart';
 import 'package:purpose/core/services/firestore_provider.dart';
 import 'package:purpose/core/services/auth_provider.dart';
 import 'package:purpose/core/services/strategy_context_provider.dart';
