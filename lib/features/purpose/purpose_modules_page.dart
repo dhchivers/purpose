@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 import 'package:purpose/core/models/question_module.dart';
 import 'package:purpose/core/models/module_type.dart';
 import 'package:purpose/core/models/strategy_type.dart';
+import 'package:purpose/core/models/user_answer.dart';
 import 'package:purpose/core/services/firestore_provider.dart';
 import 'package:purpose/core/services/auth_provider.dart';
 import 'package:purpose/core/services/strategy_context_provider.dart';
@@ -16,28 +17,56 @@ final purposeModulesProvider = StreamProvider<List<QuestionModule>>((ref) {
   return firestoreService.questionModulesStream(ModuleType.purpose);
 });
 
+/// Provider to get the actual question count for a module
+final moduleQuestionCountProvider = FutureProvider.family<int, String>((ref, moduleId) async {
+  final firestoreService = ref.watch(firestoreServiceProvider);
+  final questions = await firestoreService.getQuestionsByModule(moduleId);
+  return questions.length;
+});
+
 /// Provider to check if a module is completed by a user
 final moduleCompletionProvider = StreamProvider.family<bool, ({String userId, String strategyId, String moduleId})>((ref, params) async* {
   final firestoreService = ref.watch(firestoreServiceProvider);
   
+  // print('🔍 moduleCompletionProvider START for module: ${params.moduleId}, strategy: ${params.strategyId}, user: ${params.userId}');
+  
   // Stream answers and check completion on each update
-  // Don't filter by strategyId in query to include legacy answers with null strategyId
   final answersStream = firestoreService.userAnswersStream(
     userId: params.userId,
-    strategyId: null, // Load all answers for this module, regardless of strategyId
+    strategyId: null, // Load all answers to see what we have
     questionModuleId: params.moduleId,
   );
   
+  // print('🔍 About to listen to answersStream...');
+  
   await for (final allAnswers in answersStream) {
-    // Filter to current strategy or null (legacy answers)
-    final answers = allAnswers.where((answer) => 
-      answer.strategyId == params.strategyId || answer.strategyId == null
-    ).toList();
+    // print('📊 Total answers for module ${params.moduleId}: ${allAnswers.length}');
     
-    // Get current active questions (they rarely change, so fetching is fine)
+    // Log all answer strategyIds for debugging
+    // for (var answer in allAnswers) {
+    //   print('  Answer ${answer.id}: questionId=${answer.questionId}, strategyId=${answer.strategyId}');
+    // }
+    
+    // STRICT FILTERING: Only show answers that match the current strategyId
+    // This ensures each strategy has its own isolated set of answers
+    final answers = allAnswers.where((answer) {
+      final matches = answer.strategyId == params.strategyId;
+      // if (!matches && answer.strategyId == null) {
+      //   print('  ⚠️ Ignoring null-strategyId answer ${answer.id} for questionId ${answer.questionId}');
+      // } else if (!matches && answer.strategyId != null) {
+      //   print('  ⚠️ Ignoring answer ${answer.id} with different strategyId: ${answer.strategyId}');
+      // }
+      return matches;
+    }).toList();
+    
+    // print('  Filtered to answers with strategyId=${params.strategyId}: ${answers.length}');
+    
+    // Get current active questions
     final questions = await firestoreService.getQuestionsByModule(params.moduleId);
+    // print('  Total questions in module: ${questions.length}');
     
     if (questions.isEmpty) {
+      // print('  ⚠️ No questions found, yielding false');
       yield false;
       continue;
     }
@@ -45,6 +74,9 @@ final moduleCompletionProvider = StreamProvider.family<bool, ({String userId, St
     // Check if all questions have answers
     final answeredQuestionIds = answers.map((a) => a.questionId).toSet();
     final isComplete = questions.every((q) => answeredQuestionIds.contains(q.id));
+    
+    // print('  ✅ Module completion status: $isComplete');
+    // print('  Answered questions: ${answeredQuestionIds.length}/${questions.length}');
     
     yield isComplete;
   }
@@ -86,6 +118,68 @@ final allPurposeModulesCompleteProvider = StreamProvider.family<bool, ({String u
 class PurposeModulesPage extends ConsumerWidget {
   const PurposeModulesPage({super.key});
 
+  // Debug function - DISABLED
+  // Future<void> _debugCheckAnswers(WidgetRef ref, String userId, String strategyId) async {
+  //   final firestoreService = ref.read(firestoreServiceProvider);
+  //   final modules = await ref.read(purposeModulesProvider.future);
+  //   
+  //   for (var module in modules) {
+  //     final allAnswers = await firestoreService.getUserAnswersByModule(
+  //       userId: userId,
+  //       questionModuleId: module.id,
+  //     );
+  //   }
+  // }
+
+  Future<void> _migrateNullAnswersToStrategy(WidgetRef ref, String userId, String strategyId) async {
+    final firestoreService = ref.read(firestoreServiceProvider);
+    final modules = await ref.read(purposeModulesProvider.future);
+    
+    // print('\n=== MIGRATING NULL-STRATEGYID ANSWERS ===');
+    // print('Target strategyId: $strategyId');
+    
+    // int totalMigrated = 0;
+    
+    for (var module in modules) {
+      final allAnswers = await firestoreService.getUserAnswersByModule(
+        userId: userId,
+        questionModuleId: module.id,
+      );
+      
+      final nullAnswers = allAnswers.where((a) => a.strategyId == null).toList();
+      
+      if (nullAnswers.isNotEmpty) {
+        // print('\n📦 Module: ${module.name}');
+        // print('   Migrating ${nullAnswers.length} answers...');
+        
+        for (var answer in nullAnswers) {
+          // Create updated answer with strategyId
+          final updatedAnswer = UserAnswer(
+            id: answer.id,
+            userId: answer.userId,
+            strategyId: strategyId, // Set the strategy ID
+            questionId: answer.questionId,
+            questionModuleId: answer.questionModuleId,
+            textAnswer: answer.textAnswer,
+            selectedOption: answer.selectedOption,
+            numericAnswer: answer.numericAnswer,
+            booleanAnswer: answer.booleanAnswer,
+            createdAt: answer.createdAt,
+            updatedAt: DateTime.now(),
+          );
+          
+          await firestoreService.saveUserAnswer(updatedAnswer);
+          // totalMigrated++;
+          // print('   ✅ Migrated answer ${answer.id}');
+        }
+      }
+    }
+    
+    // print('\n=== MIGRATION COMPLETE ===');
+    // print('Total answers migrated: $totalMigrated');
+    // print('=========================\n');
+  }
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final currentUserAsync = ref.watch(currentUserProvider);
@@ -93,6 +187,20 @@ class PurposeModulesPage extends ConsumerWidget {
     final activeStrategy = ref.watch(activeStrategyProvider);
     final strategyTypesAsync = ref.watch(strategyTypesStreamProvider);
 
+    // print('🎯 PurposeModulesPage build: activeStrategy = ${activeStrategy?.id} (${activeStrategy?.name})');
+    
+    // Auto-migrate null-strategyId answers on page load
+    if (activeStrategy != null) {
+      currentUserAsync.whenData((user) {
+        if (user != null) {
+          Future.microtask(() async {
+            // await _debugCheckAnswers(ref, user.uid, activeStrategy.id);
+            // Auto-migrate null answers to current strategy
+            await _migrateNullAnswersToStrategy(ref, user.uid, activeStrategy.id);
+          });
+        }
+      });
+    }
     return Scaffold(
       appBar: AppBar(
         backgroundColor: AppTheme.graphite,
@@ -316,12 +424,15 @@ class _ModuleCard extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    // print('🃏 _ModuleCard build: module=${module.name}, strategyId=$strategyId');
+    
     final completionAsync = ref.watch(moduleCompletionProvider(
       (userId: userId, strategyId: strategyId, moduleId: module.id),
     ));
 
     return completionAsync.when(
       data: (isCompleted) {
+        // print('  ✅ Module ${module.name}: isCompleted=$isCompleted');
         return Card(
           margin: const EdgeInsets.only(bottom: 16),
           elevation: isCompleted ? 1 : 2,
@@ -416,22 +527,43 @@ class _ModuleCard extends ConsumerWidget {
                             ),
                           ),
                           const SizedBox(height: 8),
-                          Row(
-                            children: [
-                              Icon(
-                                Icons.quiz_outlined,
-                                size: 16,
-                                color: Colors.grey[600],
-                              ),
-                              const SizedBox(width: 4),
-                              Text(
-                                '${module.totalQuestions} questions',
-                                style: TextStyle(
-                                  fontSize: 12,
-                                  color: Colors.grey[600],
-                                ),
-                              ),
-                            ],
+                          Consumer(
+                            builder: (context, ref, child) {
+                              final questionCountAsync = ref.watch(moduleQuestionCountProvider(module.id));
+                              return Row(
+                                children: [
+                                  Icon(
+                                    Icons.quiz_outlined,
+                                    size: 16,
+                                    color: Colors.grey[600],
+                                  ),
+                                  const SizedBox(width: 4),
+                                  questionCountAsync.when(
+                                    data: (count) => Text(
+                                      '$count questions',
+                                      style: TextStyle(
+                                        fontSize: 12,
+                                        color: Colors.grey[600],
+                                      ),
+                                    ),
+                                    loading: () => Text(
+                                      '${module.totalQuestions} questions',
+                                      style: TextStyle(
+                                        fontSize: 12,
+                                        color: Colors.grey[600],
+                                      ),
+                                    ),
+                                    error: (_, __) => Text(
+                                      '${module.totalQuestions} questions',
+                                      style: TextStyle(
+                                        fontSize: 12,
+                                        color: Colors.grey[600],
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              );
+                            },
                           ),
                         ],
                       ),
@@ -448,7 +580,9 @@ class _ModuleCard extends ConsumerWidget {
           ),
         );
       },
-      loading: () => Card(
+      loading: () {
+        // print('  ⏳ Module ${module.name}: LOADING completion status');
+        return Card(
         margin: const EdgeInsets.only(bottom: 16),
         child: Padding(
           padding: const EdgeInsets.all(16),
@@ -495,8 +629,11 @@ class _ModuleCard extends ConsumerWidget {
             ],
           ),
         ),
-      ),
-      error: (error, stack) => Card(
+      );
+      },
+      error: (error, stack) {
+        // print('  ❌ Module ${module.name}: ERROR - $error');
+        return Card(
         margin: const EdgeInsets.only(bottom: 16),
         child: InkWell(
           onTap: () => context.go('/purpose/module/${module.id}'),
@@ -544,22 +681,43 @@ class _ModuleCard extends ConsumerWidget {
                         ),
                       ),
                       const SizedBox(height: 8),
-                      Row(
-                        children: [
-                          Icon(
-                            Icons.quiz_outlined,
-                            size: 16,
-                            color: Colors.grey[600],
-                          ),
-                          const SizedBox(width: 4),
-                          Text(
-                            '${module.totalQuestions} questions',
-                            style: TextStyle(
-                              fontSize: 12,
-                              color: Colors.grey[600],
-                            ),
-                          ),
-                        ],
+                      Consumer(
+                        builder: (context, ref, child) {
+                          final questionCountAsync = ref.watch(moduleQuestionCountProvider(module.id));
+                          return Row(
+                            children: [
+                              Icon(
+                                Icons.quiz_outlined,
+                                size: 16,
+                                color: Colors.grey[600],
+                              ),
+                              const SizedBox(width: 4),
+                              questionCountAsync.when(
+                                data: (count) => Text(
+                                  '$count questions',
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    color: Colors.grey[600],
+                                  ),
+                                ),
+                                loading: () => Text(
+                                  '${module.totalQuestions} questions',
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    color: Colors.grey[600],
+                                  ),
+                                ),
+                                error: (_, __) => Text(
+                                  '${module.totalQuestions} questions',
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    color: Colors.grey[600],
+                                  ),
+                                ),
+                              ),
+                            ],
+                          );
+                        },
                       ),
                     ],
                   ),
@@ -573,7 +731,8 @@ class _ModuleCard extends ConsumerWidget {
             ),
           ),
         ),
-      ),
+      );
+      },
     );
   }
 }

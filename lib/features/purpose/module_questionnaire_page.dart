@@ -28,17 +28,25 @@ final moduleActiveQuestionsProvider =
 final userModuleAnswersProvider = StreamProvider.family<List<UserAnswer>, 
     ({String userId, String strategyId, String moduleId})>((ref, params) {
   final firestoreService = ref.watch(firestoreServiceProvider);
-  // Don't filter by strategyId in query to support legacy answers
+  
+  // STRICT FILTERING: Only show answers that match the current strategyId
+  // This ensures each strategy has its own isolated set of answers
   return firestoreService.userAnswersStream(
     userId: params.userId,
-    strategyId: null, // Load all answers, then filter in memory if needed
+    strategyId: null, // Load all to detect null answers for logging
     questionModuleId: params.moduleId,
-  ).map((allAnswers) => 
-    // Filter to current strategy or null (legacy answers)
-    allAnswers.where((answer) => 
-      answer.strategyId == params.strategyId || answer.strategyId == null
-    ).toList()
-  );
+  ).map((allAnswers) {
+    // Filter to only answers for this specific strategy
+    final answers = allAnswers.where((answer) => answer.strategyId == params.strategyId).toList();
+    
+    // Log any null-strategyId answers being ignored
+    // final nullAnswers = allAnswers.where((answer) => answer.strategyId == null);
+    // if (nullAnswers.isNotEmpty) {
+    //   print('⚠️ Ignoring ${nullAnswers.length} null-strategyId answers in module ${params.moduleId}');
+    // }
+    
+    return answers;
+  });
 });
 
 class ModuleQuestionnairePage extends ConsumerStatefulWidget {
@@ -284,6 +292,42 @@ class _ModuleQuestionnairePageState
           ),
         ),
 
+        // Module description
+        if (module.description.isNotEmpty) ...[
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(16),
+            color: Colors.grey[100],
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Icon(Icons.info_outline, size: 20, color: Colors.grey[700]),
+                    const SizedBox(width: 8),
+                    Text(
+                      'About this module',
+                      style: TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.grey[800],
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  module.description,
+                  style: TextStyle(
+                    fontSize: 14,
+                    color: Colors.grey[700],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+
         // Question content
         Expanded(
           child: SingleChildScrollView(
@@ -469,11 +513,13 @@ class _ModuleQuestionnairePageState
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 if (labels != null && labels.isNotEmpty)
-                  Text(
-                    labels[0],
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: Colors.grey[600],
+                  Flexible(
+                    child: Text(
+                      labels[0],
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: Colors.grey[600],
+                      ),
                     ),
                   ),
                 Text(
@@ -484,11 +530,14 @@ class _ModuleQuestionnairePageState
                   ),
                 ),
                 if (labels != null && labels.length > 1)
-                  Text(
-                    labels[1],
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: Colors.grey[600],
+                  Flexible(
+                    child: Text(
+                      labels[1],
+                      textAlign: TextAlign.right,
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: Colors.grey[600],
+                      ),
                     ),
                   ),
               ],
@@ -505,6 +554,27 @@ class _ModuleQuestionnairePageState
                   _scaleValue = value.toInt();
                 });
               },
+            ),
+            const SizedBox(height: 8),
+            // Tick mark labels
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 24),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: List.generate(
+                  max - min + 1,
+                  (index) => Text(
+                    '${min + index}',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: Colors.grey[600],
+                      fontWeight: _scaleValue == min + index 
+                          ? FontWeight.bold 
+                          : FontWeight.normal,
+                    ),
+                  ),
+                ),
+              ),
             ),
           ],
         );
@@ -703,16 +773,17 @@ class _ModuleQuestionnairePageState
       }
 
       // Debug logging
-      print('=== SAVING ANSWER ===');
-      print('User ID: ${answer.userId}');
-      print('Question ID: ${answer.questionId}');
-      print('Module ID: ${answer.questionModuleId}');
-      print('Answer ID: ${answer.id}');
-      print('Is Update: ${existingAnswer != null}');
+      // print('=== SAVING ANSWER ===');
+      // print('User ID: ${answer.userId}');
+      // print('Strategy ID: ${answer.strategyId}');
+      // print('Question ID: ${answer.questionId}');
+      // print('Module ID: ${answer.questionModuleId}');
+      // print('Answer ID: ${answer.id}');
+      // print('Is Update: ${existingAnswer != null}');
       
       await firestoreService.saveUserAnswer(answer);
       
-      print('Answer saved successfully');
+      // print('Answer saved successfully');
 
       // Move to next question or finish
       if (_currentQuestionIndex < questions.length - 1) {
@@ -743,10 +814,10 @@ class _ModuleQuestionnairePageState
   /// to process the user's answers and generate AI insights
   Future<void> _triggerBackendAIProcessing(String userId, String moduleId) async {
     try {
-      print('=== BACKEND AI PROCESSING TRIGGER ===');
-      print('User ID: $userId');
-      print('Module ID: $moduleId');
-      print('Timestamp: ${DateTime.now().toIso8601String()}');
+      // print('=== BACKEND AI PROCESSING TRIGGER ===');
+      // print('User ID: $userId');
+      // print('Module ID: $moduleId');
+      // print('Timestamp: ${DateTime.now().toIso8601String()}');
       
       // TODO: Implement backend trigger
       // This could be:
@@ -763,9 +834,9 @@ class _ModuleQuestionnairePageState
       //   createdAt: DateTime.now(),
       // );
       
-      print('Backend AI processing trigger completed (placeholder)');
+      // print('Backend AI processing trigger completed (placeholder)');
     } catch (e) {
-      print('Error triggering backend AI processing: $e');
+      // print('Error triggering backend AI processing: $e');
       // Don't show error to user - this should happen in the background
     }
   }
