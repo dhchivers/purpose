@@ -18,6 +18,8 @@ import 'package:purpose/core/models/mission_map.dart';
 import 'package:purpose/core/models/mission_document.dart';
 import 'package:purpose/core/models/user_strategy.dart';
 import 'package:purpose/core/models/strategy_type.dart';
+import 'package:purpose/core/models/goal.dart';
+import 'package:purpose/core/models/objective.dart';
 import 'package:purpose/core/constants/app_constants.dart';
 
 /// Service for managing Firestore database operations
@@ -56,6 +58,10 @@ class FirestoreService {
       _db.collection('mission_maps');
   CollectionReference get _missionsCollection =>
       _db.collection('missions');
+  CollectionReference get _goalsCollection =>
+      _db.collection('goals');
+  CollectionReference get _objectivesCollection =>
+      _db.collection('objectives');
 
   /// Helper to convert all Timestamp objects to ISO strings to avoid Int64 issues on web
   /// Also converts integer milliseconds (from migration scripts) to ISO strings
@@ -2266,6 +2272,223 @@ class FirestoreService {
       print('✅ Deleted mission document: $missionId');
     } catch (e) {
       print('❌ Error deleting mission document: $e');
+      rethrow;
+    }
+  }
+
+  // ========== GOAL OPERATIONS ==========
+
+  /// Save a goal
+  Future<void> saveGoal(Goal goal) async {
+    try {
+      final data = _convertTimestampsToStrings(goal.toJson()) as Map<String, dynamic>;
+      await _goalsCollection.doc(goal.id).set(data);
+      print('✅ Saved goal: ${goal.id}');
+    } catch (e) {
+      print('❌ Error saving goal: $e');
+      rethrow;
+    }
+  }
+
+  /// Get a specific goal
+  Future<Goal?> getGoal(String goalId) async {
+    try {
+      final doc = await _goalsCollection.doc(goalId).get();
+      
+      if (!doc.exists) {
+        print('ℹ️ Goal not found: $goalId');
+        return null;
+      }
+
+      final docData = doc.data() as Map<String, dynamic>;
+      docData['id'] = doc.id;
+      final data = _convertTimestampsToStrings(docData) as Map<String, dynamic>;
+      return Goal.fromJson(data);
+    } catch (e) {
+      print('❌ Error getting goal $goalId: $e');
+      rethrow;
+    }
+  }
+
+  /// Get all goals for a mission
+  Future<List<Goal>> getGoalsForMission(String missionId) async {
+    try {
+      final querySnapshot = await _goalsCollection
+          .where('missionId', isEqualTo: missionId)
+          .orderBy('dateCreated')
+          .get();
+
+      final goals = <Goal>[];
+      for (var doc in querySnapshot.docs) {
+        final docData = doc.data() as Map<String, dynamic>;
+        docData['id'] = doc.id;
+        final data = _convertTimestampsToStrings(docData) as Map<String, dynamic>;
+        goals.add(Goal.fromJson(data));
+      }
+
+      return goals;
+    } catch (e) {
+      print('❌ Error getting goals for mission $missionId: $e');
+      rethrow;
+    }
+  }
+
+  /// Stream goals for a mission
+  Stream<List<Goal>> goalsForMissionStream(String missionId) {
+    return _goalsCollection
+        .where('missionId', isEqualTo: missionId)
+        .orderBy('dateCreated')
+        .snapshots()
+        .map((snapshot) {
+      final goals = <Goal>[];
+      for (var doc in snapshot.docs) {
+        final docData = doc.data() as Map<String, dynamic>;
+        docData['id'] = doc.id;
+        final data = _convertTimestampsToStrings(docData) as Map<String, dynamic>;
+        goals.add(Goal.fromJson(data));
+      }
+      return goals;
+    }).handleError((error) {
+      print('❌ Error in goalsForMissionStream for missionId=$missionId: $error');
+      return <Goal>[];
+    });
+  }
+
+  /// Update a goal
+  Future<void> updateGoal(Goal goal) async {
+    try {
+      final data = _convertTimestampsToStrings(goal.toJson()) as Map<String, dynamic>;
+      data['updatedAt'] = FieldValue.serverTimestamp();
+      await _goalsCollection.doc(goal.id).set(data);
+      print('✅ Updated goal: ${goal.id}');
+    } catch (e) {
+      print('❌ Error updating goal: $e');
+      rethrow;
+    }
+  }
+
+  /// Delete a goal (and all its objectives)
+  Future<void> deleteGoal(String goalId) async {
+    try {
+      // Delete all objectives for this goal
+      final objectivesSnapshot = await _objectivesCollection
+          .where('goalId', isEqualTo: goalId)
+          .get();
+      
+      final batch = _db.batch();
+      for (var doc in objectivesSnapshot.docs) {
+        batch.delete(doc.reference);
+      }
+      
+      // Delete the goal
+      batch.delete(_goalsCollection.doc(goalId));
+      
+      await batch.commit();
+      print('✅ Deleted goal and ${objectivesSnapshot.docs.length} objectives: $goalId');
+    } catch (e) {
+      print('❌ Error deleting goal: $e');
+      rethrow;
+    }
+  }
+
+  // ========== OBJECTIVE OPERATIONS ==========
+
+  /// Save an objective
+  Future<void> saveObjective(Objective objective) async {
+    try {
+      final data = _convertTimestampsToStrings(objective.toJson()) as Map<String, dynamic>;
+      await _objectivesCollection.doc(objective.id).set(data);
+      print('✅ Saved objective: ${objective.id}');
+    } catch (e) {
+      print('❌ Error saving objective: $e');
+      rethrow;
+    }
+  }
+
+  /// Get a specific objective
+  Future<Objective?> getObjective(String objectiveId) async {
+    try {
+      final doc = await _objectivesCollection.doc(objectiveId).get();
+      
+      if (!doc.exists) {
+        print('ℹ️ Objective not found: $objectiveId');
+        return null;
+      }
+
+      final docData = doc.data() as Map<String, dynamic>;
+      docData['id'] = doc.id;
+      final data = _convertTimestampsToStrings(docData) as Map<String, dynamic>;
+      return Objective.fromJson(data);
+    } catch (e) {
+      print('❌ Error getting objective $objectiveId: $e');
+      rethrow;
+    }
+  }
+
+  /// Get all objectives for a goal
+  Future<List<Objective>> getObjectivesForGoal(String goalId) async {
+    try {
+      final querySnapshot = await _objectivesCollection
+          .where('goalId', isEqualTo: goalId)
+          .orderBy('dateCreated')
+          .get();
+
+      final objectives = <Objective>[];
+      for (var doc in querySnapshot.docs) {
+        final docData = doc.data() as Map<String, dynamic>;
+        docData['id'] = doc.id;
+        final data = _convertTimestampsToStrings(docData) as Map<String, dynamic>;
+        objectives.add(Objective.fromJson(data));
+      }
+
+      return objectives;
+    } catch (e) {
+      print('❌ Error getting objectives for goal $goalId: $e');
+      rethrow;
+    }
+  }
+
+  /// Stream objectives for a goal
+  Stream<List<Objective>> objectivesForGoalStream(String goalId) {
+    return _objectivesCollection
+        .where('goalId', isEqualTo: goalId)
+        .orderBy('dateCreated')
+        .snapshots()
+        .map((snapshot) {
+      final objectives = <Objective>[];
+      for (var doc in snapshot.docs) {
+        final docData = doc.data() as Map<String, dynamic>;
+        docData['id'] = doc.id;
+        final data = _convertTimestampsToStrings(docData) as Map<String, dynamic>;
+        objectives.add(Objective.fromJson(data));
+      }
+      return objectives;
+    }).handleError((error) {
+      print('❌ Error in objectivesForGoalStream for goalId=$goalId: $error');
+      return <Objective>[];
+    });
+  }
+
+  /// Update an objective
+  Future<void> updateObjective(Objective objective) async {
+    try {
+      final data = _convertTimestampsToStrings(objective.toJson()) as Map<String, dynamic>;
+      data['updatedAt'] = FieldValue.serverTimestamp();
+      await _objectivesCollection.doc(objective.id).set(data);
+      print('✅ Updated objective: ${objective.id}');
+    } catch (e) {
+      print('❌ Error updating objective: $e');
+      rethrow;
+    }
+  }
+
+  /// Delete an objective
+  Future<void> deleteObjective(String objectiveId) async {
+    try {
+      await _objectivesCollection.doc(objectiveId).delete();
+      print('✅ Deleted objective: $objectiveId');
+    } catch (e) {
+      print('❌ Error deleting objective: $e');
       rethrow;
     }
   }
