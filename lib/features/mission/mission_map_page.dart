@@ -5,7 +5,8 @@ import 'package:purpose/core/services/auth_provider.dart';
 import 'package:purpose/core/services/firestore_provider.dart';
 import 'package:purpose/core/services/strategy_provider.dart';
 import 'package:purpose/core/services/strategy_context_provider.dart';
-import 'package:purpose/core/models/user_mission_map.dart';
+import 'package:purpose/core/models/mission_map.dart';
+import 'package:purpose/core/models/mission_document.dart';
 import 'package:purpose/core/models/mission_creation_session.dart';
 import 'package:purpose/core/models/strategy_type.dart';
 import 'package:purpose/core/theme/app_theme.dart';
@@ -42,7 +43,7 @@ class _MissionMapPageState extends ConsumerState<MissionMapPage> {
     super.dispose();
   }
 
-  void _startEditingMission(Mission mission, int index) {
+  void _startEditingMission(MissionDocument mission, int index) {
     setState(() {
       _editingMissionIndex = index;
       _missionController.text = mission.mission;
@@ -75,12 +76,12 @@ class _MissionMapPageState extends ConsumerState<MissionMapPage> {
   }
 
   // Calculate mission start date based on cumulative durations
-  DateTime? _calculateMissionStartDate(UserMissionMap missionMap, int missionIndex) {
+  DateTime? _calculateMissionStartDate(MissionMap missionMap, List<MissionDocument> missions, int missionIndex) {
     if (missionMap.strategyStartDate == null) return null;
     
     int cumulativeMonths = 0;
     for (int i = 0; i < missionIndex; i++) {
-      cumulativeMonths += missionMap.missions[i].durationMonths;
+      cumulativeMonths += missions[i].durationMonths;
     }
     
     final startDate = missionMap.strategyStartDate!;
@@ -88,11 +89,11 @@ class _MissionMapPageState extends ConsumerState<MissionMapPage> {
   }
 
   // Calculate mission end date
-  DateTime? _calculateMissionEndDate(UserMissionMap missionMap, int missionIndex) {
-    final startDate = _calculateMissionStartDate(missionMap, missionIndex);
+  DateTime? _calculateMissionEndDate(MissionMap missionMap, List<MissionDocument> missions, int missionIndex) {
+    final startDate = _calculateMissionStartDate(missionMap, missions, missionIndex);
     if (startDate == null) return null;
     
-    final durationMonths = missionMap.missions[missionIndex].durationMonths;
+    final durationMonths = missions[missionIndex].durationMonths;
     return DateTime(startDate.year, startDate.month + durationMonths - 1, 1);
   }
 
@@ -104,7 +105,7 @@ class _MissionMapPageState extends ConsumerState<MissionMapPage> {
     return '${months[date.month - 1]} ${date.year}';
   }
 
-  Future<void> _updateStrategyStartDate(UserMissionMap missionMap, DateTime newDate) async {
+  Future<void> _updateStrategyStartDate(MissionMap missionMap, DateTime newDate) async {
     try {
       final firestoreService = ref.read(firestoreServiceProvider);
       final updatedMap = missionMap.copyWith(
@@ -112,8 +113,8 @@ class _MissionMapPageState extends ConsumerState<MissionMapPage> {
         updatedAt: DateTime.now(),
       );
       
-      await firestoreService.updateUserMissionMap(updatedMap);
-      ref.invalidate(strategyMissionMapStreamProvider(missionMap.strategyId));
+      await firestoreService.updateMissionMap(updatedMap);
+      ref.invalidate(missionMapStreamProvider(missionMap.strategyId));
       ref.invalidate(currentUserProvider);
       
       if (mounted) {
@@ -136,7 +137,7 @@ class _MissionMapPageState extends ConsumerState<MissionMapPage> {
     }
   }
 
-  Future<void> _saveMission(UserMissionMap missionMap, int index) async {
+  Future<void> _saveMission(MissionMap missionMap, List<MissionDocument> missions, int index) async {
     if (_missionController.text.trim().isEmpty ||
         _structuralShiftController.text.trim().isEmpty ||
         _capabilityController.text.trim().isEmpty ||
@@ -167,8 +168,6 @@ class _MissionMapPageState extends ConsumerState<MissionMapPage> {
 
     try {
       final firestoreService = ref.read(firestoreServiceProvider);
-      final user = ref.read(currentUserProvider).value;
-      if (user == null) throw Exception('User not found');
 
       // Parse risk level from guardrail text
       final riskGuardrail = _riskGuardrailController.text.trim();
@@ -181,28 +180,22 @@ class _MissionMapPageState extends ConsumerState<MissionMapPage> {
         riskLevel = RiskLevel.medium;
       }
 
-      // Create updated mission
-      final updatedMission = missionMap.missions[index].copyWith(
+      // Get the mission document to update
+      final missionDoc = missions[index];
+      
+      // Create updated mission document
+      final updatedMissionDoc = missionDoc.copyWith(
         mission: _missionController.text.trim(),
         structuralShift: _structuralShiftController.text.trim(),
         capabilityRequired: _capabilityController.text.trim(),
         riskOrValueGuardrail: riskGuardrail,
         riskLevel: riskLevel,
         durationMonths: duration,
-      );
-
-      // Update mission list
-      final updatedMissions = List<Mission>.from(missionMap.missions);
-      updatedMissions[index] = updatedMission;
-
-      // Create updated mission map
-      final updatedMap = missionMap.copyWith(
-        missions: updatedMissions,
         updatedAt: DateTime.now(),
       );
 
-      await firestoreService.updateUserMissionMap(updatedMap);
-      ref.invalidate(strategyMissionMapStreamProvider(missionMap.strategyId));
+      await firestoreService.updateMissionDocument(updatedMissionDoc);
+      ref.invalidate(missionsForMapStreamProvider(missionMap.id));
       ref.invalidate(currentUserProvider);
       
       setState(() {
@@ -238,9 +231,9 @@ class _MissionMapPageState extends ConsumerState<MissionMapPage> {
     }
   }
 
-  Future<void> _deleteMission(UserMissionMap missionMap, int index) async {
+  Future<void> _deleteMission(MissionMap missionMap, List<MissionDocument> missions, int index) async {
     // Prevent deleting if only one mission remains
-    if (missionMap.missions.length <= 1) {
+    if (missions.length <= 1) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('Cannot delete the last mission. At least one mission is required.'),
@@ -250,7 +243,7 @@ class _MissionMapPageState extends ConsumerState<MissionMapPage> {
       return;
     }
 
-    final mission = missionMap.missions[index];
+    final mission = missions[index];
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
@@ -298,12 +291,21 @@ class _MissionMapPageState extends ConsumerState<MissionMapPage> {
 
     try {
       final firestoreService = ref.read(firestoreServiceProvider);
-      final user = ref.read(currentUserProvider).value;
-      if (user == null) throw Exception('User not found');
 
-      // Remove mission from list
-      final updatedMissions = List<Mission>.from(missionMap.missions);
-      updatedMissions.removeAt(index);
+      // Delete the mission document
+      await firestoreService.deleteMissionDocument(missions[index].id);
+      
+      // Reindex remaining missions by updating their sequenceNumbers
+      final remainingMissions = missions.where((m) => m.id != missions[index].id).toList();
+      for (int i = 0; i < remainingMissions.length; i++) {
+        if (remainingMissions[i].sequenceNumber != i) {
+          final updatedMission = remainingMissions[i].copyWith(
+            sequenceNumber: i,
+            updatedAt: DateTime.now(),
+          );
+          await firestoreService.updateMissionDocument(updatedMission);
+        }
+      }
 
       // Adjust currentMissionIndex if necessary
       int? updatedCurrentIndex = missionMap.currentMissionIndex;
@@ -314,23 +316,23 @@ class _MissionMapPageState extends ConsumerState<MissionMapPage> {
         } else if (index == updatedCurrentIndex) {
           // Current mission deleted, stay at same position (which is now the next mission)
           // But if we deleted the last mission, move back
-          if (updatedCurrentIndex >= updatedMissions.length) {
-            updatedCurrentIndex = updatedMissions.length - 1;
+          if (updatedCurrentIndex >= remainingMissions.length) {
+            updatedCurrentIndex = remainingMissions.length - 1;
           }
         }
         // If deleted after current, no change needed
       }
 
-      // Create updated mission map
+      // Update mission map with new count and currentMissionIndex
       final updatedMap = missionMap.copyWith(
-        missions: updatedMissions,
+        totalMissions: remainingMissions.length,
         currentMissionIndex: updatedCurrentIndex,
         updatedAt: DateTime.now(),
       );
-
-      await firestoreService.updateUserMissionMap(updatedMap);
+      await firestoreService.updateMissionMap(updatedMap);
       
-      ref.invalidate(strategyMissionMapStreamProvider(missionMap.strategyId));
+      ref.invalidate(missionsForMapStreamProvider(missionMap.id));
+      ref.invalidate(missionMapStreamProvider(missionMap.strategyId));
       ref.invalidate(currentUserProvider);
       
       if (mounted) {
@@ -353,14 +355,14 @@ class _MissionMapPageState extends ConsumerState<MissionMapPage> {
     }
   }
 
-  Future<void> _showAddMissionDialog(UserMissionMap missionMap) async {
+  Future<void> _showAddMissionDialog(MissionMap missionMap, List<MissionDocument> missions) async {
     final missionTitleController = TextEditingController();
     final focusController = TextEditingController();
     final structuralShiftController = TextEditingController();
     final capabilityController = TextEditingController();
     final riskGuardrailController = TextEditingController();
     final durationController = TextEditingController(text: '12');
-    int selectedPosition = missionMap.missions.length; // Default: add at end (0-indexed)
+    int selectedPosition = missions.length; // Default: add at end (0-indexed)
     
     // Capture the outer context for SnackBar usage
     final scaffoldContext = context;
@@ -394,7 +396,7 @@ class _MissionMapPageState extends ConsumerState<MissionMapPage> {
                       hintText: 'Select position',
                     ),
                     items: List.generate(
-                      missionMap.missions.length + 1,
+                      missions.length + 1,
                       (index) => DropdownMenuItem(
                         value: index,
                         child: Text('Mission ${index + 1}'),
@@ -535,8 +537,6 @@ class _MissionMapPageState extends ConsumerState<MissionMapPage> {
 
     try {
       final firestoreService = ref.read(firestoreServiceProvider);
-      final user = ref.read(currentUserProvider).value;
-      if (user == null) throw Exception('User not found');
 
       // Parse risk level from guardrail text
       final riskGuardrail = riskGuardrailController.text.trim();
@@ -577,15 +577,40 @@ class _MissionMapPageState extends ConsumerState<MissionMapPage> {
         durationMonths: duration,
       );
 
-      // Insert mission at selected position
-      final updatedMissions = List<Mission>.from(missionMap.missions);
-      updatedMissions.insert(selectedPosition, newMission);
+      // Generate new mission document ID
+      final newMissionId = DateTime.now().millisecondsSinceEpoch.toString();
+      
+      // Create new mission document
+      final newMissionDoc = MissionDocument(
+        id: newMissionId,
+        missionMapId: missionMap.id,
+        strategyId: missionMap.strategyId,
+        sequenceNumber: selectedPosition,
+        mission: newMission.mission,
+        missionSequence: newMission.missionSequence,
+        focus: newMission.focus,
+        structuralShift: newMission.structuralShift,
+        capabilityRequired: newMission.capabilityRequired,
+        riskOrValueGuardrail: newMission.riskOrValueGuardrail,
+        timeHorizon: newMission.timeHorizon,
+        riskLevel: newMission.riskLevel,
+        durationMonths: newMission.durationMonths,
+        createdAt: DateTime.now(),
+        updatedAt: DateTime.now(),
+      );
 
-      // Update mission sequences
-      for (int i = 0; i < updatedMissions.length; i++) {
-        updatedMissions[i] = updatedMissions[i].copyWith(
-          missionSequence: '${i + 1}',
+      // Save new mission document
+      await firestoreService.saveMissionDocument(newMissionDoc);
+
+      // Re-sequence all missions at or after the insertion point
+      for (int i = selectedPosition; i < missions.length; i++) {
+        final missionToUpdate = missions[i];
+        final updatedMission = missionToUpdate.copyWith(
+          sequenceNumber: i + 1,
+          missionSequence: '${i + 2}',
+          updatedAt: DateTime.now(),
         );
+        await firestoreService.updateMissionDocument(updatedMission);
       }
 
       // Adjust currentMissionIndex if necessary
@@ -594,16 +619,16 @@ class _MissionMapPageState extends ConsumerState<MissionMapPage> {
         updatedCurrentIndex = updatedCurrentIndex + 1;
       }
 
-      // Create updated mission map
+      // Update mission map with new count and currentMissionIndex
       final updatedMap = missionMap.copyWith(
-        missions: updatedMissions,
+        totalMissions: missions.length + 1,
         currentMissionIndex: updatedCurrentIndex,
         updatedAt: DateTime.now(),
       );
-
-      await firestoreService.updateUserMissionMap(updatedMap);
+      await firestoreService.updateMissionMap(updatedMap);
       
-      ref.invalidate(strategyMissionMapStreamProvider(missionMap.strategyId));
+      ref.invalidate(missionsForMapStreamProvider(missionMap.id));
+      ref.invalidate(missionMapStreamProvider(missionMap.strategyId));
       ref.invalidate(currentUserProvider);
       
       missionTitleController.dispose();
@@ -640,7 +665,7 @@ class _MissionMapPageState extends ConsumerState<MissionMapPage> {
     }
   }
 
-  Future<void> _deleteMissionMap(UserMissionMap missionMap) async {
+  Future<void> _deleteMissionMap(MissionMap missionMap) async {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
@@ -670,12 +695,12 @@ class _MissionMapPageState extends ConsumerState<MissionMapPage> {
 
     try {
       final firestoreService = ref.read(firestoreServiceProvider);
-      final user = ref.read(currentUserProvider).value;
-      if (user == null) throw Exception('User not found');
 
-      await firestoreService.deleteUserMissionMap(missionMap.id, missionMap.strategyId);
+      // Delete the mission map (which will cascade delete all mission documents)
+      await firestoreService.deleteMissionMap(missionMap.id, missionMap.strategyId);
       
-      ref.invalidate(strategyMissionMapStreamProvider(missionMap.strategyId));
+      ref.invalidate(missionMapStreamProvider(missionMap.strategyId));
+      ref.invalidate(missionsForMapStreamProvider(missionMap.id));
       ref.invalidate(currentUserProvider);
       
       setState(() => _isDeleting = false);
@@ -740,7 +765,7 @@ class _MissionMapPageState extends ConsumerState<MissionMapPage> {
       );
     }
 
-    final missionMapAsync = ref.watch(strategyMissionMapStreamProvider(activeStrategy.id));
+    final missionMapAsync = ref.watch(missionMapStreamProvider(activeStrategy.id));
 
     return missionMapAsync.when(
       data: (missionMap) {
@@ -898,7 +923,18 @@ class _MissionMapPageState extends ConsumerState<MissionMapPage> {
 
               // Main content
               Expanded(
-                child: _buildMissionMapView(missionMap),
+                child: Consumer(
+                  builder: (context, ref, child) {
+                    final missionsAsync = ref.watch(missionsForMapStreamProvider(missionMap.id));
+                    return missionsAsync.when(
+                      data: (missions) => _buildMissionMapView(missionMap, missions),
+                      loading: () => const Center(child: CircularProgressIndicator()),
+                      error: (error, stack) => Center(
+                        child: Text('Error loading missions: $error'),
+                      ),
+                    );
+                  },
+                ),
               ),
             ],
           ),
@@ -1076,7 +1112,7 @@ class _MissionMapPageState extends ConsumerState<MissionMapPage> {
     );
   }
 
-  Widget _buildMissionMapView(UserMissionMap missionMap) {
+  Widget _buildMissionMapView(MissionMap missionMap, List<MissionDocument> missions) {
     final currentIndex = missionMap.currentMissionIndex ?? 0;
     final isComplete = missionMap.isComplete;
 
@@ -1188,7 +1224,7 @@ class _MissionMapPageState extends ConsumerState<MissionMapPage> {
                   ),
                   const SizedBox(height: 16),
                   Text(
-                    missionMap.missions[currentIndex].mission,
+                    missions[currentIndex].mission,
                     style: const TextStyle(
                       fontSize: 22,
                       fontWeight: FontWeight.bold,
@@ -1197,7 +1233,7 @@ class _MissionMapPageState extends ConsumerState<MissionMapPage> {
                   ),
                   const SizedBox(height: 12),
                   Text(
-                    missionMap.missions[currentIndex].focus,
+                    missions[currentIndex].focus,
                     style: const TextStyle(
                       fontSize: 16,
                       color: Colors.white,
@@ -1260,7 +1296,7 @@ class _MissionMapPageState extends ConsumerState<MissionMapPage> {
           const SizedBox(height: 32),
 
           // Visual timeline bar
-          _buildVisualTimeline(missionMap),
+          _buildVisualTimeline(missionMap, missions),
 
           const SizedBox(height: 32),
 
@@ -1277,7 +1313,7 @@ class _MissionMapPageState extends ConsumerState<MissionMapPage> {
                 ),
               ),
               IconButton(
-                onPressed: () => _showAddMissionDialog(missionMap),
+                onPressed: () => _showAddMissionDialog(missionMap, missions),
                 icon: const Icon(Icons.add_circle),
                 tooltip: 'Add Mission',
                 iconSize: 28,
@@ -1290,10 +1326,10 @@ class _MissionMapPageState extends ConsumerState<MissionMapPage> {
           ListView.separated(
             shrinkWrap: true,
             physics: const NeverScrollableScrollPhysics(),
-            itemCount: missionMap.missions.length,
+            itemCount: missions.length,
             separatorBuilder: (context, index) => _buildTimelineConnector(),
             itemBuilder: (context, index) {
-              final mission = missionMap.missions[index];
+              final mission = missions[index];
               final isCurrent = index == currentIndex;
               final isCompleted = index < currentIndex;
               final isFuture = index > currentIndex;
@@ -1302,6 +1338,7 @@ class _MissionMapPageState extends ConsumerState<MissionMapPage> {
                 mission,
                 index,
                 missionMap,
+                missions,
                 isCurrent: isCurrent,
                 isCompleted: isCompleted,
                 isFuture: isFuture,
@@ -1313,14 +1350,14 @@ class _MissionMapPageState extends ConsumerState<MissionMapPage> {
     );
   }
 
-  Widget _buildVisualTimeline(UserMissionMap missionMap) {
+  Widget _buildVisualTimeline(MissionMap missionMap, List<MissionDocument> missions) {
     if (missionMap.strategyStartDate == null) {
       return const SizedBox.shrink();
     }
 
     // Calculate total duration and individual mission positions
     int totalMonths = 0;
-    for (var mission in missionMap.missions) {
+    for (var mission in missions) {
       totalMonths += mission.durationMonths;
     }
 
@@ -1354,9 +1391,9 @@ class _MissionMapPageState extends ConsumerState<MissionMapPage> {
                     // Mission rectangles with labels
                     Row(
                       children: [
-                        for (int i = 0; i < missionMap.missions.length; i++) ...[
+                        for (int i = 0; i < missions.length; i++) ...[
                           Expanded(
-                            flex: missionMap.missions[i].durationMonths,
+                            flex: missions[i].durationMonths,
                             child: Column(
                               children: [
                                 // Circled number label
@@ -1387,7 +1424,7 @@ class _MissionMapPageState extends ConsumerState<MissionMapPage> {
                                 Expanded(
                                   child: Container(
                                     margin: EdgeInsets.only(
-                                      right: i < missionMap.missions.length - 1 ? 4 : 0,
+                                      right: i < missions.length - 1 ? 4 : 0,
                                     ),
                                     decoration: BoxDecoration(
                                       color: i == missionMap.currentMissionIndex
@@ -1497,9 +1534,10 @@ class _MissionMapPageState extends ConsumerState<MissionMapPage> {
   }
 
   Widget _buildMissionCard(
-    Mission mission,
+    MissionDocument mission,
     int index,
-    UserMissionMap missionMap, {
+    MissionMap missionMap,
+    List<MissionDocument> missions, {
     required bool isCurrent,
     required bool isCompleted,
     required bool isFuture,
@@ -1622,10 +1660,10 @@ class _MissionMapPageState extends ConsumerState<MissionMapPage> {
                         tooltip: 'Edit Mission',
                         color: AppTheme.primary,
                       ),
-                      if (missionMap.missions.length > 1)
+                      if (missions.length > 1)
                         IconButton(
                           icon: const Icon(Icons.delete_outline, size: 18),
-                          onPressed: () => _deleteMission(missionMap, index),
+                          onPressed: () => _deleteMission(missionMap, missions, index),
                           tooltip: 'Delete Mission',
                           color: AppTheme.error,
                         ),
@@ -1642,7 +1680,7 @@ class _MissionMapPageState extends ConsumerState<MissionMapPage> {
                     ),
                     const SizedBox(width: 4),
                     Text(
-                      '${_formatMonthYear(_calculateMissionStartDate(missionMap, index))} - ${_formatMonthYear(_calculateMissionEndDate(missionMap, index))}',
+                      '${_formatMonthYear(_calculateMissionStartDate(missionMap, missions, index))} - ${_formatMonthYear(_calculateMissionEndDate(missionMap, missions, index))}',
                       style: TextStyle(
                         fontSize: 13,
                         color: statusColor,
@@ -1726,7 +1764,7 @@ class _MissionMapPageState extends ConsumerState<MissionMapPage> {
                       ),
                       const SizedBox(width: 8),
                       ElevatedButton(
-                        onPressed: _isSaving ? null : () => _saveMission(missionMap, index),
+                        onPressed: _isSaving ? null : () => _saveMission(missionMap, missions, index),
                         child: _isSaving
                             ? const SizedBox(
                                 width: 16,

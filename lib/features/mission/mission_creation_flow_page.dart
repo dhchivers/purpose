@@ -7,7 +7,8 @@ import 'package:purpose/core/services/gemini_provider.dart';
 import 'package:purpose/core/services/strategy_provider.dart';
 import 'package:purpose/core/services/strategy_context_provider.dart';
 import 'package:purpose/core/models/mission_creation_session.dart';
-import 'package:purpose/core/models/user_mission_map.dart';
+import 'package:purpose/core/models/mission_map.dart';
+import 'package:purpose/core/models/mission_document.dart';
 
 /// Page for creating a mission map through guided prompts
 class MissionCreationFlowPage extends ConsumerStatefulWidget {
@@ -269,20 +270,38 @@ class _MissionCreationFlowPageState extends ConsumerState<MissionCreationFlowPag
       if (user == null) throw Exception('User not found');
 
       final firestoreService = ref.read(firestoreServiceProvider);
+      
+      final now = DateTime.now();
+      final missionMapId = now.millisecondsSinceEpoch.toString();
 
-      // Create UserMissionMap
-      final missionMap = UserMissionMap(
-        id: DateTime.now().millisecondsSinceEpoch.toString(),
-        userId: user.uid,
+      // Create MissionMap (metadata only - no embedded missions)
+      final missionMap = MissionMap(
+        id: missionMapId,
         strategyId: _session!.strategyId,
-        missions: _generatedMissions!,
         sessionId: _session!.id,
         currentMissionIndex: 0, // Start at first mission
-        createdAt: DateTime.now(),
-        updatedAt: DateTime.now(),
+        totalMissions: _generatedMissions!.length,
+        strategyStartDate: null, // User can set this later
+        createdAt: now,
+        updatedAt: now,
       );
 
-      await firestoreService.saveUserMissionMap(missionMap);
+      // Save mission map first
+      await firestoreService.saveMissionMap(missionMap);
+
+      // Create and save individual mission documents
+      for (int i = 0; i < _generatedMissions!.length; i++) {
+        final mission = _generatedMissions![i];
+        final missionId = '${missionMapId}_$i';
+        final missionDoc = MissionDocument.fromMission(
+          id: missionId,
+          missionMapId: missionMapId,
+          strategyId: _session!.strategyId,
+          sequenceNumber: i,
+          mission: mission,
+        );
+        await firestoreService.saveMissionDocument(missionDoc);
+      }
 
       // Invalidate user cache to refresh dashboard
       ref.invalidate(currentUserProvider);
