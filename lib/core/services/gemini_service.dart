@@ -1474,4 +1474,100 @@ Generate the mission map now.
       }
     ];
   }
+
+  /// Generate a goal suggestion for a specific mission
+  /// Takes into account the mission context and existing goals
+  Future<Map<String, dynamic>> generateGoalSuggestion({
+    required String missionTitle,
+    required String missionFocus,
+    required String structuralShift,
+    required String capabilityRequired,
+    required List<Map<String, dynamic>> existingGoals,
+  }) async {
+    final prompt = _buildGoalSuggestionPrompt(
+      missionTitle: missionTitle,
+      missionFocus: missionFocus,
+      structuralShift: structuralShift,
+      capabilityRequired: capabilityRequired,
+      existingGoals: existingGoals,
+    );
+
+    try {
+      final response = await _makeOpenAIRequest(
+        model: AIConfig.proModel,
+        messages: [
+          {
+            'role': 'user',
+            'content': prompt,
+          },
+        ],
+        temperature: 0.7,
+        maxTokens: 800,
+        responseFormat: {'type': 'json_object'},
+      );
+
+      final content = _extractContent(response);
+      return jsonDecode(content) as Map<String, dynamic>;
+    } catch (e) {
+      print('Error generating goal suggestion: $e');
+      rethrow;
+    }
+  }
+
+  /// Build the prompt for goal suggestion
+  String _buildGoalSuggestionPrompt({
+    required String missionTitle,
+    required String missionFocus,
+    required String structuralShift,
+    required String capabilityRequired,
+    required List<Map<String, dynamic>> existingGoals,
+  }) {
+    final existingGoalsText = existingGoals.isEmpty
+        ? 'No existing goals yet.'
+        : existingGoals.map((g) {
+            final achieved = g['achieved'] == true ? '✓ Achieved' : '○ Not yet achieved';
+            return '- ${g['title']}: ${g['description']} [$achieved]';
+          }).join('\n');
+
+    return '''
+You are a strategic goal planning assistant. Your task is to suggest ONE specific, actionable goal for the following mission.
+
+MISSION CONTEXT:
+Title: $missionTitle
+Focus: $missionFocus
+Structural Shift Required: $structuralShift
+Capability Required: $capabilityRequired
+
+EXISTING GOALS FOR THIS MISSION:
+$existingGoalsText
+
+INSTRUCTIONS:
+1. Suggest ONE new goal that is:
+   - Specific and clearly defined
+   - Achievable within the mission's scope
+   - Directly relevant to the mission's focus and structural shift
+   - Different from existing goals (avoid duplication)
+   - A key milestone toward completing this mission
+
+2. The goal should be strategic and outcome-focused
+
+3. DO NOT include:
+   - Measurable requirements (those belong in objectives)
+   - Time constraints or deadlines (those belong in objectives)
+   - Budget estimates
+   - Implementation details
+
+4. Focus on WHAT should be achieved, not HOW or WHEN
+
+5. Respond with valid JSON in this format:
+{
+  "title": "Clear, concise goal title (5-10 words)",
+  "description": "Detailed description of what this goal aims to achieve and why it matters for this mission (2-3 sentences)",
+  "reasoning": "Brief explanation of why this goal is important for this mission right now (1-2 sentences)"
 }
+
+Think strategically about what key milestone would most advance this mission toward its focus and structural shift.
+''';
+  }
+}
+

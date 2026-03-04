@@ -88,6 +88,60 @@ class FirestoreService {
     return data;
   }
 
+  /// Helper methods to safely extract fields from Firestore data (handles JavaScript objects on web)
+  static String _getStringField(dynamic data, String field) {
+    try {
+      final value = data[field];
+      return value?.toString() ?? '';
+    } catch (e) {
+      print('⚠️ Error getting field $field: $e');
+      return '';
+    }
+  }
+
+  static double _getDoubleField(dynamic data, String field, double defaultValue) {
+    try {
+      final value = data[field];
+      if (value == null) return defaultValue;
+      if (value is num) return value.toDouble();
+      if (value is String) return double.tryParse(value) ?? defaultValue;
+      return defaultValue;
+    } catch (e) {
+      print('⚠️ Error getting field $field: $e');
+      return defaultValue;
+    }
+  }
+
+  static bool _getBoolField(dynamic data, String field, bool defaultValue) {
+    try {
+      final value = data[field];
+      if (value == null) return defaultValue;
+      if (value is bool) return value;
+      if (value is String) return value.toLowerCase() == 'true';
+      return defaultValue;
+    } catch (e) {
+      print('⚠️ Error getting field $field: $e');
+      return defaultValue;
+    }
+  }
+
+  static DateTime? _getDateTimeField(dynamic data, String field) {
+    try {
+      final value = data[field];
+      if (value == null) return null;
+      if (value is Timestamp) return value.toDate();
+      if (value is String) return DateTime.parse(value);
+      if (value is int) {
+        // Timestamp as milliseconds
+        return DateTime.fromMillisecondsSinceEpoch(value, isUtc: true);
+      }
+      return null;
+    } catch (e) {
+      print('⚠️ Error getting date field $field: $e');
+      return null;
+    }
+  }
+
   // ========== USER OPERATIONS ==========
 
   /// Create or update a user profile with retry logic
@@ -2300,10 +2354,28 @@ class FirestoreService {
         return null;
       }
 
-      final docData = doc.data() as Map<String, dynamic>;
-      docData['id'] = doc.id;
-      final data = _convertTimestampsToStrings(docData) as Map<String, dynamic>;
-      return Goal.fromJson(data);
+      final data = doc.data();
+      if (data == null) {
+        print('⚠️ Null data for goal: $goalId');
+        return null;
+      }
+
+      // Manually construct Goal to avoid json_serializable issues with JavaScript objects
+      return Goal(
+        id: doc.id,
+        missionId: _getStringField(data, 'missionId'),
+        strategyId: _getStringField(data, 'strategyId'),
+        title: _getStringField(data, 'title'),
+        description: _getStringField(data, 'description'),
+        budgetMonetary: _getDoubleField(data, 'budgetMonetary', 0.0),
+        budgetTime: _getDoubleField(data, 'budgetTime', 0.0),
+        actualMonetary: _getDoubleField(data, 'actualMonetary', 0.0),
+        actualTime: _getDoubleField(data, 'actualTime', 0.0),
+        achieved: _getBoolField(data, 'achieved', false),
+        dateAchieved: _getDateTimeField(data, 'dateAchieved'),
+        dateCreated: _getDateTimeField(data, 'dateCreated') ?? DateTime.now(),
+        updatedAt: _getDateTimeField(data, 'updatedAt') ?? DateTime.now(),
+      );
     } catch (e) {
       print('❌ Error getting goal $goalId: $e');
       rethrow;
@@ -2320,10 +2392,33 @@ class FirestoreService {
 
       final goals = <Goal>[];
       for (var doc in querySnapshot.docs) {
-        final docData = doc.data() as Map<String, dynamic>;
-        docData['id'] = doc.id;
-        final data = _convertTimestampsToStrings(docData) as Map<String, dynamic>;
-        goals.add(Goal.fromJson(data));
+        try {
+          final data = doc.data();
+          if (data == null) {
+            print('⚠️ Null data for goal document: ${doc.id}');
+            continue;
+          }
+          // Manually construct Goal to avoid json_serializable issues with JavaScript objects
+          final goal = Goal(
+            id: doc.id,
+            missionId: _getStringField(data, 'missionId'),
+            strategyId: _getStringField(data, 'strategyId'),
+            title: _getStringField(data, 'title'),
+            description: _getStringField(data, 'description'),
+            budgetMonetary: _getDoubleField(data, 'budgetMonetary', 0.0),
+            budgetTime: _getDoubleField(data, 'budgetTime', 0.0),
+            actualMonetary: _getDoubleField(data, 'actualMonetary', 0.0),
+            actualTime: _getDoubleField(data, 'actualTime', 0.0),
+            achieved: _getBoolField(data, 'achieved', false),
+            dateAchieved: _getDateTimeField(data, 'dateAchieved'),
+            dateCreated: _getDateTimeField(data, 'dateCreated') ?? DateTime.now(),
+            updatedAt: _getDateTimeField(data, 'updatedAt') ?? DateTime.now(),
+          );
+          goals.add(goal);
+        } catch (e) {
+          print('❌ Error parsing goal ${doc.id}: $e');
+          continue;
+        }
       }
 
       return goals;
@@ -2342,10 +2437,35 @@ class FirestoreService {
         .map((snapshot) {
       final goals = <Goal>[];
       for (var doc in snapshot.docs) {
-        final docData = doc.data() as Map<String, dynamic>;
-        docData['id'] = doc.id;
-        final data = _convertTimestampsToStrings(docData) as Map<String, dynamic>;
-        goals.add(Goal.fromJson(data));
+        try {
+          final data = doc.data();
+          if (data == null) {
+            print('⚠️ Null data for goal document: ${doc.id}');
+            continue;
+          }
+          
+          // Manually construct Goal to avoid json_serializable issues with JavaScript objects
+          final goal = Goal(
+            id: doc.id,
+            missionId: _getStringField(data, 'missionId'),
+            strategyId: _getStringField(data, 'strategyId'),
+            title: _getStringField(data, 'title'),
+            description: _getStringField(data, 'description'),
+            budgetMonetary: _getDoubleField(data, 'budgetMonetary', 0.0),
+            budgetTime: _getDoubleField(data, 'budgetTime', 0.0),
+            actualMonetary: _getDoubleField(data, 'actualMonetary', 0.0),
+            actualTime: _getDoubleField(data, 'actualTime', 0.0),
+            achieved: _getBoolField(data, 'achieved', false),
+            dateAchieved: _getDateTimeField(data, 'dateAchieved'),
+            dateCreated: _getDateTimeField(data, 'dateCreated') ?? DateTime.now(),
+            updatedAt: _getDateTimeField(data, 'updatedAt') ?? DateTime.now(),
+          );
+          goals.add(goal);
+        } catch (e) {
+          print('❌ Error parsing goal ${doc.id}: $e');
+          // Skip this goal and continue with others
+          continue;
+        }
       }
       return goals;
     }).handleError((error) {
@@ -2415,10 +2535,29 @@ class FirestoreService {
         return null;
       }
 
-      final docData = doc.data() as Map<String, dynamic>;
-      docData['id'] = doc.id;
-      final data = _convertTimestampsToStrings(docData) as Map<String, dynamic>;
-      return Objective.fromJson(data);
+      final data = doc.data();
+      if (data == null) {
+        print('⚠️ Null data for objective: $objectiveId');
+        return null;
+      }
+
+      // Manually construct Objective to avoid json_serializable issues with JavaScript objects
+      return Objective(
+        id: doc.id,
+        goalId: _getStringField(data, 'goalId'),
+        missionId: _getStringField(data, 'missionId'),
+        strategyId: _getStringField(data, 'strategyId'),
+        title: _getStringField(data, 'title'),
+        description: _getStringField(data, 'description'),
+        measurableRequirement: _getStringField(data, 'measurableRequirement'),
+        dueDate: _getDateTimeField(data, 'dueDate'),
+        costMonetary: _getDoubleField(data, 'costMonetary', 0.0),
+        costTime: _getDoubleField(data, 'costTime', 0.0),
+        achieved: _getBoolField(data, 'achieved', false),
+        dateAchieved: _getDateTimeField(data, 'dateAchieved'),
+        dateCreated: _getDateTimeField(data, 'dateCreated') ?? DateTime.now(),
+        updatedAt: _getDateTimeField(data, 'updatedAt') ?? DateTime.now(),
+      );
     } catch (e) {
       print('❌ Error getting objective $objectiveId: $e');
       rethrow;
@@ -2435,10 +2574,34 @@ class FirestoreService {
 
       final objectives = <Objective>[];
       for (var doc in querySnapshot.docs) {
-        final docData = doc.data() as Map<String, dynamic>;
-        docData['id'] = doc.id;
-        final data = _convertTimestampsToStrings(docData) as Map<String, dynamic>;
-        objectives.add(Objective.fromJson(data));
+        try {
+          final data = doc.data();
+          if (data == null) {
+            print('⚠️ Null data for objective document: ${doc.id}');
+            continue;
+          }
+          // Manually construct Objective to avoid json_serializable issues with JavaScript objects
+          final objective = Objective(
+            id: doc.id,
+            goalId: _getStringField(data, 'goalId'),
+            missionId: _getStringField(data, 'missionId'),
+            strategyId: _getStringField(data, 'strategyId'),
+            title: _getStringField(data, 'title'),
+            description: _getStringField(data, 'description'),
+            measurableRequirement: _getStringField(data, 'measurableRequirement'),
+            dueDate: _getDateTimeField(data, 'dueDate'),
+            costMonetary: _getDoubleField(data, 'costMonetary', 0.0),
+            costTime: _getDoubleField(data, 'costTime', 0.0),
+            achieved: _getBoolField(data, 'achieved', false),
+            dateAchieved: _getDateTimeField(data, 'dateAchieved'),
+            dateCreated: _getDateTimeField(data, 'dateCreated') ?? DateTime.now(),
+            updatedAt: _getDateTimeField(data, 'updatedAt') ?? DateTime.now(),
+          );
+          objectives.add(objective);
+        } catch (e) {
+          print('❌ Error parsing objective ${doc.id}: $e');
+          continue;
+        }
       }
 
       return objectives;
@@ -2457,10 +2620,36 @@ class FirestoreService {
         .map((snapshot) {
       final objectives = <Objective>[];
       for (var doc in snapshot.docs) {
-        final docData = doc.data() as Map<String, dynamic>;
-        docData['id'] = doc.id;
-        final data = _convertTimestampsToStrings(docData) as Map<String, dynamic>;
-        objectives.add(Objective.fromJson(data));
+        try {
+          final data = doc.data();
+          if (data == null) {
+            print('⚠️ Null data for objective document: ${doc.id}');
+            continue;
+          }
+          
+          // Manually construct Objective to avoid json_serializable issues with JavaScript objects
+          final objective = Objective(
+            id: doc.id,
+            goalId: _getStringField(data, 'goalId'),
+            missionId: _getStringField(data, 'missionId'),
+            strategyId: _getStringField(data, 'strategyId'),
+            title: _getStringField(data, 'title'),
+            description: _getStringField(data, 'description'),
+            measurableRequirement: _getStringField(data, 'measurableRequirement'),
+            dueDate: _getDateTimeField(data, 'dueDate'),
+            costMonetary: _getDoubleField(data, 'costMonetary', 0.0),
+            costTime: _getDoubleField(data, 'costTime', 0.0),
+            achieved: _getBoolField(data, 'achieved', false),
+            dateAchieved: _getDateTimeField(data, 'dateAchieved'),
+            dateCreated: _getDateTimeField(data, 'dateCreated') ?? DateTime.now(),
+            updatedAt: _getDateTimeField(data, 'updatedAt') ?? DateTime.now(),
+          );
+          objectives.add(objective);
+        } catch (e) {
+          print('❌ Error parsing objective ${doc.id}: $e');
+          // Skip this objective and continue with others
+          continue;
+        }
       }
       return objectives;
     }).handleError((error) {
