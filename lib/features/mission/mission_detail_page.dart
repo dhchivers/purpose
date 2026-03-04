@@ -4,11 +4,13 @@ import 'package:go_router/go_router.dart';
 import 'package:purpose/core/models/mission_document.dart';
 import 'package:purpose/core/models/mission_creation_session.dart';
 import 'package:purpose/core/models/goal.dart';
+import 'package:purpose/core/models/objective.dart';
 import 'package:purpose/core/services/firestore_provider.dart';
 import 'package:purpose/core/services/goal_provider.dart';
 import 'package:purpose/core/services/gemini_provider.dart';
 import 'package:purpose/core/theme/app_theme.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:intl/intl.dart';
 
 /// Provider for a specific mission document
 final missionDocumentProvider =
@@ -449,6 +451,8 @@ class _GoalsSection extends ConsumerWidget {
                   final goal = goals[index];
                   return _GoalCard(
                     goal: goal,
+                    missionId: missionId,
+                    strategyId: strategyId,
                     onEdit: () => _showGoalDialog(context, ref, goal),
                     onDelete: () => _confirmDelete(context, ref, goal),
                   );
@@ -538,28 +542,39 @@ class _GoalsSection extends ConsumerWidget {
 }
 
 /// Goal Card Widget
-class _GoalCard extends ConsumerWidget {
+class _GoalCard extends ConsumerStatefulWidget {
   final Goal goal;
+  final String missionId;
+  final String strategyId;
   final VoidCallback onEdit;
   final VoidCallback onDelete;
 
   const _GoalCard({
     required this.goal,
+    required this.missionId,
+    required this.strategyId,
     required this.onEdit,
     required this.onDelete,
   });
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final objectivesAsync = ref.watch(objectivesForGoalStreamProvider(goal.id));
+  ConsumerState<_GoalCard> createState() => _GoalCardState();
+}
+
+class _GoalCardState extends ConsumerState<_GoalCard> {
+  bool _isExpanded = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final objectivesAsync = ref.watch(objectivesForGoalStreamProvider(widget.goal.id));
 
     return Container(
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(12),
         border: Border.all(
-          color: goal.achieved ? AppTheme.success : AppTheme.grayLight,
-          width: goal.achieved ? 2 : 1,
+          color: widget.goal.achieved ? AppTheme.success : AppTheme.grayLight,
+          width: widget.goal.achieved ? 2 : 1,
         ),
         boxShadow: [
           BoxShadow(
@@ -583,7 +598,7 @@ class _GoalCard extends ConsumerWidget {
                     children: [
                       Row(
                         children: [
-                          if (goal.achieved)
+                          if (widget.goal.achieved)
                             Container(
                               padding: const EdgeInsets.symmetric(
                                 horizontal: 8,
@@ -615,9 +630,9 @@ class _GoalCard extends ConsumerWidget {
                             ),
                         ],
                       ),
-                      if (goal.achieved) const SizedBox(height: 8),
+                      if (widget.goal.achieved) const SizedBox(height: 8),
                       Text(
-                        goal.title,
+                        widget.goal.title,
                         style: const TextStyle(
                           fontSize: 18,
                           fontWeight: FontWeight.bold,
@@ -626,7 +641,7 @@ class _GoalCard extends ConsumerWidget {
                       ),
                       const SizedBox(height: 8),
                       Text(
-                        goal.description,
+                        widget.goal.description,
                         style: TextStyle(
                           fontSize: 14,
                           color: AppTheme.grayMedium,
@@ -640,13 +655,13 @@ class _GoalCard extends ConsumerWidget {
                 Row(
                   children: [
                     IconButton(
-                      onPressed: onEdit,
+                      onPressed: widget.onEdit,
                       icon: Icon(Icons.edit_outlined, size: 20),
                       color: AppTheme.primary,
                       tooltip: 'Edit Goal',
                     ),
                     IconButton(
-                      onPressed: onDelete,
+                      onPressed: widget.onDelete,
                       icon: Icon(Icons.delete_outline, size: 20),
                       color: AppTheme.error,
                       tooltip: 'Delete Goal',
@@ -663,15 +678,15 @@ class _GoalCard extends ConsumerWidget {
               children: [
                 _buildInfoChip(
                   icon: Icons.attach_money,
-                  label: 'Budget: \$${goal.budgetMonetary.toStringAsFixed(0)} / \$${goal.actualMonetary.toStringAsFixed(0)}',
-                  color: goal.budgetVarianceMonetary >= 0 
+                  label: 'Budget: \$${widget.goal.budgetMonetary.toStringAsFixed(0)} / \$${widget.goal.actualMonetary.toStringAsFixed(0)}',
+                  color: widget.goal.budgetVarianceMonetary >= 0 
                     ? AppTheme.success 
                     : AppTheme.error,
                 ),
                 _buildInfoChip(
                   icon: Icons.schedule,
-                  label: 'Time: ${goal.budgetTime.toStringAsFixed(0)}h / ${goal.actualTime.toStringAsFixed(0)}h',
-                  color: goal.budgetVarianceTime >= 0 
+                  label: 'Time: ${widget.goal.budgetTime.toStringAsFixed(0)}h / ${widget.goal.actualTime.toStringAsFixed(0)}h',
+                  color: widget.goal.budgetVarianceTime >= 0 
                     ? AppTheme.success 
                     : AppTheme.error,
                 ),
@@ -697,10 +712,172 @@ class _GoalCard extends ConsumerWidget {
                 ),
               ],
             ),
+            const SizedBox(height: 12),
+            // Expand/Collapse Button Row
+            Row(
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: [
+                TextButton.icon(
+                  onPressed: () => setState(() => _isExpanded = !_isExpanded),
+                  icon: Icon(
+                    _isExpanded ? Icons.expand_less : Icons.expand_more,
+                    size: 18,
+                  ),
+                  label: Text(_isExpanded ? 'Hide Objectives' : 'Show Objectives'),
+                  style: TextButton.styleFrom(
+                    foregroundColor: AppTheme.primary,
+                  ),
+                ),
+              ],
+            ),
+            // Expandable Objectives Section
+            if (_isExpanded) ...[
+              const SizedBox(height: 8),
+              Container(
+                decoration: BoxDecoration(
+                  color: AppTheme.grayLight.withOpacity(0.3),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                padding: const EdgeInsets.all(12),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text(
+                          'Objectives',
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.bold,
+                            color: AppTheme.graphite,
+                          ),
+                        ),
+                        TextButton.icon(
+                          onPressed: () => _showObjectiveDialog(context, null),
+                          icon: Icon(Icons.add, size: 18),
+                          label: const Text('Add Objective'),
+                          style: TextButton.styleFrom(
+                            foregroundColor: AppTheme.primary,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+                    objectivesAsync.when(
+                      data: (objectives) {
+                        if (objectives.isEmpty) {
+                          return Center(
+                            child: Padding(
+                              padding: const EdgeInsets.all(16),
+                              child: Text(
+                                'No objectives yet. Add one to get started!',
+                                style: TextStyle(
+                                  color: AppTheme.grayMedium,
+                                  fontStyle: FontStyle.italic,
+                                ),
+                              ),
+                            ),
+                          );
+                        }
+                        return Column(
+                          children: objectives
+                              .map((objective) => Padding(
+                                    padding: const EdgeInsets.only(bottom: 8),
+                                    child: _ObjectiveCard(
+                                      objective: objective,
+                                      onEdit: () => _showObjectiveDialog(context, objective),
+                                      onDelete: () => _confirmDeleteObjective(context, objective),
+                                    ),
+                                  ))
+                              .toList(),
+                        );
+                      },
+                      loading: () => Center(
+                        child: Padding(
+                          padding: const EdgeInsets.all(16),
+                          child: CircularProgressIndicator(),
+                        ),
+                      ),
+                      error: (error, stack) => Center(
+                        child: Padding(
+                          padding: const EdgeInsets.all(16),
+                          child: Text(
+                            'Error loading objectives',
+                            style: TextStyle(color: AppTheme.error),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
           ],
         ),
       ),
     );
+  }
+
+  void _showObjectiveDialog(BuildContext context, Objective? objective) {
+    showDialog(
+      context: context,
+      builder: (context) => _ObjectiveDialog(
+        goalId: widget.goal.id,
+        missionId: widget.missionId,
+        strategyId: widget.strategyId,
+        objective: objective,
+      ),
+    );
+  }
+
+  Future<void> _confirmDeleteObjective(BuildContext context, Objective objective) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Delete Objective'),
+        content: Text('Are you sure you want to delete "${objective.title}"?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppTheme.error,
+              foregroundColor: Colors.white,
+            ),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true && context.mounted) {
+      try {
+        final firestoreService = ref.read(firestoreServiceProvider);
+        await firestoreService.deleteObjective(objective.id);
+        
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Objective "${objective.title}" deleted'),
+              backgroundColor: AppTheme.success,
+            ),
+          );
+        }
+      } catch (e) {
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Error deleting objective: $e'),
+              backgroundColor: AppTheme.error,
+            ),
+          );
+        }
+      }
+    }
   }
 
   Widget _buildInfoChip({
@@ -731,6 +908,721 @@ class _GoalCard extends ConsumerWidget {
         ],
       ),
     );
+  }
+}
+
+/// Objective Card Widget
+class _ObjectiveCard extends StatelessWidget {
+  final Objective objective;
+  final VoidCallback onEdit;
+  final VoidCallback onDelete;
+
+  const _ObjectiveCard({
+    required this.objective,
+    required this.onEdit,
+    required this.onDelete,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final dateFormat = DateFormat('MMM d, yyyy');
+    final isOverdue = objective.isOverdue;
+    
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(
+          color: objective.achieved 
+            ? AppTheme.success 
+            : (isOverdue ? AppTheme.error : AppTheme.grayLight),
+          width: objective.achieved || isOverdue ? 1.5 : 1,
+        ),
+      ),
+      padding: const EdgeInsets.all(12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        if (objective.achieved)
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 6,
+                              vertical: 2,
+                            ),
+                            decoration: BoxDecoration(
+                              color: AppTheme.success.withOpacity(0.1),
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(
+                                  Icons.check_circle,
+                                  size: 12,
+                                  color: AppTheme.success,
+                                ),
+                                const SizedBox(width: 4),
+                                Text(
+                                  'Done',
+                                  style: TextStyle(
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.w600,
+                                    color: AppTheme.success,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        if (isOverdue)
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 6,
+                              vertical: 2,
+                            ),
+                            decoration: BoxDecoration(
+                              color: AppTheme.error.withOpacity(0.1),
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(
+                                  Icons.warning,
+                                  size: 12,
+                                  color: AppTheme.error,
+                                ),
+                                const SizedBox(width: 4),
+                                Text(
+                                  'Overdue',
+                                  style: TextStyle(
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.w600,
+                                    color: AppTheme.error,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                      ],
+                    ),
+                    if (objective.achieved || isOverdue) const SizedBox(height: 6),
+                    Text(
+                      objective.title,
+                      style: const TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.bold,
+                        color: AppTheme.graphite,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      objective.description,
+                      style: TextStyle(
+                        fontSize: 13,
+                        color: AppTheme.grayMedium,
+                        height: 1.3,
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 4,
+                      ),
+                      decoration: BoxDecoration(
+                        color: AppTheme.primary.withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(6),
+                      ),
+                      child: Text(
+                        '📊 ${objective.measurableRequirement}',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: AppTheme.primary,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 8),
+              Row(
+                children: [
+                  IconButton(
+                    onPressed: onEdit,
+                    icon: Icon(Icons.edit_outlined, size: 18),
+                    color: AppTheme.primary,
+                    tooltip: 'Edit Objective',
+                    padding: EdgeInsets.all(4),
+                    constraints: BoxConstraints(),
+                  ),
+                  IconButton(
+                    onPressed: onDelete,
+                    icon: Icon(Icons.delete_outline, size: 18),
+                    color: AppTheme.error,
+                    tooltip: 'Delete Objective',
+                    padding: EdgeInsets.all(4),
+                    constraints: BoxConstraints(),
+                  ),
+                ],
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Wrap(
+            spacing: 8,
+            runSpacing: 4,
+            children: [
+              if (objective.dueDate != null)
+                _buildDetailChip(
+                  icon: Icons.calendar_today,
+                  label: 'Due: ${dateFormat.format(objective.dueDate!)}',
+                  color: isOverdue ? AppTheme.error : AppTheme.grayMedium,
+                ),
+              if (objective.costMonetary > 0)
+                _buildDetailChip(
+                  icon: Icons.attach_money,
+                  label: '\$${objective.costMonetary.toStringAsFixed(0)}',
+                  color: AppTheme.grayMedium,
+                ),
+              if (objective.costTime > 0)
+                _buildDetailChip(
+                  icon: Icons.schedule,
+                  label: '${objective.costTime.toStringAsFixed(0)}h',
+                  color: AppTheme.grayMedium,
+                ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDetailChip({
+    required IconData icon,
+    required String label,
+    required Color color,
+  }) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.1),
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 11, color: color),
+          const SizedBox(width: 4),
+          Text(
+            label,
+            style: TextStyle(
+              fontSize: 11,
+              color: color,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Objective Add/Edit Dialog
+class _ObjectiveDialog extends ConsumerStatefulWidget {
+  final String goalId;
+  final String missionId;
+  final String strategyId;
+  final Objective? objective;
+
+  const _ObjectiveDialog({
+    required this.goalId,
+    required this.missionId,
+    required this.strategyId,
+    this.objective,
+  });
+
+  @override
+  ConsumerState<_ObjectiveDialog> createState() => _ObjectiveDialogState();
+}
+
+class _ObjectiveDialogState extends ConsumerState<_ObjectiveDialog> {
+  late final TextEditingController _titleController;
+  late final TextEditingController _descriptionController;
+  late final TextEditingController _measurableRequirementController;
+  late final TextEditingController _costMonetaryController;
+  late final TextEditingController _costTimeController;
+  final _formKey = GlobalKey<FormState>();
+  DateTime? _dueDate;
+  bool _isLoadingSuggestion = false;
+  Map<String, dynamic>? _aiSuggestion;
+
+  @override
+  void initState() {
+    super.initState();
+    _titleController = TextEditingController(text: widget.objective?.title ?? '');
+    _descriptionController = TextEditingController(text: widget.objective?.description ?? '');
+    _measurableRequirementController = TextEditingController(
+      text: widget.objective?.measurableRequirement ?? '',
+    );
+    _costMonetaryController = TextEditingController(
+      text: widget.objective?.costMonetary != null && widget.objective!.costMonetary > 0
+          ? widget.objective!.costMonetary.toString()
+          : '',
+    );
+    _costTimeController = TextEditingController(
+      text: widget.objective?.costTime != null && widget.objective!.costTime > 0
+          ? widget.objective!.costTime.toString()
+          : '',
+    );
+    _dueDate = widget.objective?.dueDate;
+  }
+
+  @override
+  void dispose() {
+    _titleController.dispose();
+    _descriptionController.dispose();
+    _measurableRequirementController.dispose();
+    _costMonetaryController.dispose();
+    _costTimeController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final isEditing = widget.objective != null;
+    final dateFormat = DateFormat('MMM d, yyyy');
+
+    return AlertDialog(
+      title: Text(isEditing ? 'Edit Objective' : 'Add Objective'),
+      content: SizedBox(
+        width: 500, // Same width as goal dialog
+        child: SingleChildScrollView(
+          child: Form(
+            key: _formKey,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+              // Objective Agent Button
+              if (!isEditing)
+                Container(
+                  width: double.infinity,
+                  margin: const EdgeInsets.only(bottom: 16),
+                  child: OutlinedButton.icon(
+                    onPressed: _isLoadingSuggestion ? null : _askObjectiveAgent,
+                    icon: _isLoadingSuggestion
+                        ? SizedBox(
+                            width: 16,
+                            height: 16,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              valueColor: AlwaysStoppedAnimation<Color>(
+                                AppTheme.primaryLight,
+                              ),
+                            ),
+                          )
+                        : Icon(
+                            Icons.auto_awesome,
+                            size: 20,
+                            color: AppTheme.primaryLight,
+                          ),
+                    label: Text(
+                      _isLoadingSuggestion
+                          ? 'Thinking...'
+                          : 'Ask Objective Agent for Suggestions',
+                    ),
+                    style: OutlinedButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 14,
+                      ),
+                      side: BorderSide(
+                        color: AppTheme.primaryLight.withOpacity(0.5),
+                        width: 1.5,
+                      ),
+                      foregroundColor: AppTheme.primaryLight,
+                    ),
+                  ),
+                ),
+              // AI Suggestion Display
+              if (!isEditing && _aiSuggestion != null)
+                Container(
+                  width: double.infinity,
+                  margin: const EdgeInsets.only(bottom: 16),
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: AppTheme.primaryLight.withOpacity(0.05),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(
+                      color: AppTheme.primaryLight.withOpacity(0.3),
+                    ),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Icon(
+                            Icons.lightbulb_outline,
+                            size: 20,
+                            color: AppTheme.primaryLight,
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              'AI Suggestion',
+                              style: TextStyle(
+                                fontSize: 14,
+                                fontWeight: FontWeight.bold,
+                                color: AppTheme.primaryLight,
+                              ),
+                            ),
+                          ),
+                          IconButton(
+                            icon: const Icon(Icons.close, size: 18),
+                            onPressed: () {
+                              setState(() {
+                                _aiSuggestion = null;
+                              });
+                            },
+                            tooltip: 'Dismiss suggestion',
+                            padding: EdgeInsets.zero,
+                            constraints: const BoxConstraints(),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 12),
+                      Text(
+                        _aiSuggestion!['title'] ?? '',
+                        style: const TextStyle(
+                          fontSize: 15,
+                          fontWeight: FontWeight.w600,
+                          color: AppTheme.graphite,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        _aiSuggestion!['description'] ?? '',
+                        style: TextStyle(
+                          fontSize: 13,
+                          color: AppTheme.grayMedium,
+                          height: 1.4,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Container(
+                        padding: const EdgeInsets.all(8),
+                        decoration: BoxDecoration(
+                          color: AppTheme.primary.withOpacity(0.1),
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                        child: Row(
+                          children: [
+                            Icon(
+                              Icons.track_changes,
+                              size: 16,
+                              color: AppTheme.primary,
+                            ),
+                            const SizedBox(width: 6),
+                            Expanded(
+                              child: Text(
+                                _aiSuggestion!['measurableRequirement'] ?? '',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  color: AppTheme.primary,
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      if (_aiSuggestion!['reasoning'] != null) ...[
+                        const SizedBox(height: 8),
+                        Text(
+                          '💡 ${_aiSuggestion!['reasoning']}',
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontStyle: FontStyle.italic,
+                            color: AppTheme.grayMedium,
+                          ),
+                        ),
+                      ],
+                      const SizedBox(height: 12),
+                      SizedBox(
+                        width: double.infinity,
+                        child: ElevatedButton(
+                          onPressed: _applySuggestion,
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: AppTheme.primaryLight,
+                            foregroundColor: Colors.white,
+                            padding: const EdgeInsets.symmetric(vertical: 12),
+                          ),
+                          child: const Text('Use This Suggestion'),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              TextFormField(
+                controller: _titleController,
+                decoration: const InputDecoration(
+                  labelText: 'Title',
+                  hintText: 'Enter objective title',
+                  border: OutlineInputBorder(),
+                ),
+                validator: (value) {
+                  if (value == null || value.trim().isEmpty) {
+                    return 'Please enter a title';
+                  }
+                  return null;
+                },
+              ),
+              const SizedBox(height: 16),
+              TextFormField(
+                controller: _descriptionController,
+                decoration: const InputDecoration(
+                  labelText: 'Description',
+                  hintText: 'Enter objective description',
+                  border: OutlineInputBorder(),
+                ),
+                maxLines: 3,
+                validator: (value) {
+                  if (value == null || value.trim().isEmpty) {
+                    return 'Please enter a description';
+                  }
+                  return null;
+                },
+              ),
+              const SizedBox(height: 16),
+              TextFormField(
+                controller: _measurableRequirementController,
+                decoration: const InputDecoration(
+                  labelText: 'Measurable Requirement',
+                  hintText: 'e.g., "Increase sales by 20%"',
+                  border: OutlineInputBorder(),
+                ),
+                maxLines: 2,
+                validator: (value) {
+                  if (value == null || value.trim().isEmpty) {
+                    return 'Please enter a measurable requirement';
+                  }
+                  return null;
+                },
+              ),
+              const SizedBox(height: 16),
+              InkWell(
+                onTap: () async {
+                  final date = await showDatePicker(
+                    context: context,
+                    initialDate: _dueDate ?? DateTime.now(),
+                    firstDate: DateTime.now(),
+                    lastDate: DateTime.now().add(const Duration(days: 3650)),
+                  );
+                  if (date != null) {
+                    setState(() => _dueDate = date);
+                  }
+                },
+                child: InputDecorator(
+                  decoration: const InputDecoration(
+                    labelText: 'Due Date (Optional)',
+                    border: OutlineInputBorder(),
+                    suffixIcon: Icon(Icons.calendar_today),
+                  ),
+                  child: Text(
+                    _dueDate != null ? dateFormat.format(_dueDate!) : 'Select a date',
+                    style: TextStyle(
+                      color: _dueDate != null ? Colors.black : Colors.grey,
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 16),
+              Row(
+                children: [
+                  Expanded(
+                    child: TextFormField(
+                      controller: _costMonetaryController,
+                      decoration: const InputDecoration(
+                        labelText: 'Cost \$ (Optional)',
+                        hintText: '0',
+                        border: OutlineInputBorder(),
+                        prefixText: '\$ ',
+                      ),
+                      keyboardType: TextInputType.number,
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: TextFormField(
+                      controller: _costTimeController,
+                      decoration: const InputDecoration(
+                        labelText: 'Time Hours (Optional)',
+                        hintText: '0',
+                        border: OutlineInputBorder(),
+                        suffixText: 'h',
+                      ),
+                      keyboardType: TextInputType.number,
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('Cancel'),
+        ),
+        ElevatedButton(
+          onPressed: _saveObjective,
+          style: ElevatedButton.styleFrom(
+            backgroundColor: AppTheme.primary,
+            foregroundColor: Colors.white,
+          ),
+          child: Text(isEditing ? 'Update' : 'Create'),
+        ),
+      ],
+    );
+  }
+
+  Future<void> _askObjectiveAgent() async {
+    setState(() => _isLoadingSuggestion = true);
+    
+    try {
+      // Get mission document
+      final firestoreService = ref.read(firestoreServiceProvider);
+      final mission = await firestoreService.getMissionDocument(widget.missionId);
+      
+      if (mission == null) {
+        throw Exception('Mission not found');
+      }
+
+      // Get goal to understand context
+      final goal = await firestoreService.getGoal(widget.goalId);
+      
+      if (goal == null) {
+        throw Exception('Goal not found');
+      }
+
+      // Get existing objectives for this goal
+      final existingObjectives = await firestoreService.getObjectivesForGoal(widget.goalId);
+      final objectivesList = existingObjectives.map((obj) => {
+        'title': obj.title,
+        'description': obj.description,
+        'measurableRequirement': obj.measurableRequirement,
+        'achieved': obj.achieved,
+      }).toList();
+
+      // Call Gemini service
+      final geminiService = await ref.read(geminiServiceProvider.future);
+      final suggestion = await geminiService.generateObjectiveSuggestion(
+        missionTitle: mission.mission,
+        missionFocus: mission.focus,
+        goalTitle: goal.title,
+        goalDescription: goal.description,
+        existingObjectives: objectivesList,
+      );
+
+      if (mounted) {
+        setState(() {
+          _aiSuggestion = suggestion;
+          _isLoadingSuggestion = false;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => _isLoadingSuggestion = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error getting suggestion: $e'),
+            backgroundColor: AppTheme.error,
+          ),
+        );
+      }
+    }
+  }
+
+  void _applySuggestion() {
+    if (_aiSuggestion == null) return;
+    
+    _titleController.text = _aiSuggestion!['title'] ?? '';
+    _descriptionController.text = _aiSuggestion!['description'] ?? '';
+    _measurableRequirementController.text = _aiSuggestion!['measurableRequirement'] ?? '';
+    
+    setState(() {
+      _aiSuggestion = null;
+    });
+    
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: const Text('✅ Suggestion applied!'),
+        backgroundColor: AppTheme.success,
+        duration: const Duration(seconds: 2),
+      ),
+    );
+  }
+
+  Future<void> _saveObjective() async {
+    if (!_formKey.currentState!.validate()) return;
+
+    try {
+      final firestoreService = ref.read(firestoreServiceProvider);
+      final objectiveId = widget.objective?.id ?? 
+        FirebaseFirestore.instance.collection('objectives').doc().id;
+
+      final objective = Objective(
+        id: objectiveId,
+        goalId: widget.goalId,
+        missionId: widget.missionId,
+        strategyId: widget.strategyId,
+        title: _titleController.text.trim(),
+        description: _descriptionController.text.trim(),
+        measurableRequirement: _measurableRequirementController.text.trim(),
+        dueDate: _dueDate,
+        costMonetary: double.tryParse(_costMonetaryController.text) ?? 0.0,
+        costTime: double.tryParse(_costTimeController.text) ?? 0.0,
+        // Preserve existing values when editing
+        achieved: widget.objective?.achieved ?? false,
+        dateAchieved: widget.objective?.dateAchieved,
+        dateCreated: widget.objective?.dateCreated ?? DateTime.now(),
+        updatedAt: DateTime.now(),
+      );
+
+      await firestoreService.saveObjective(objective);
+
+      if (mounted) {
+        Navigator.of(context).pop();
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('✅ Objective ${widget.objective != null ? "updated" : "created"}'),
+            backgroundColor: AppTheme.success,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error saving objective: $e'),
+            backgroundColor: AppTheme.error,
+          ),
+        );
+      }
+    }
   }
 }
 
