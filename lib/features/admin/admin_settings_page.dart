@@ -153,6 +153,16 @@ class AdminSettingsPage extends ConsumerWidget {
                 ),
                 const SizedBox(height: 12),
 
+                // Mission Data Migration (Testing)
+                _buildAdminTile(
+                  context: context,
+                  icon: Icons.cloud_sync,
+                  title: 'Mission Data Migration',
+                  subtitle: '⚠️ Test migration to new structure',
+                  onTap: () => context.go('/admin/migration-test'),
+                ),
+                const SizedBox(height: 12),
+
                 // User Management
                 _buildAdminTile(
                   context: context,

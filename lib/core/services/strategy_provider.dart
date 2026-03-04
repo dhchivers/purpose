@@ -54,6 +54,8 @@ import 'package:purpose/core/models/user_strategy.dart';
 import 'package:purpose/core/models/user_value.dart';
 import 'package:purpose/core/models/user_vision.dart';
 import 'package:purpose/core/models/user_mission_map.dart';
+import 'package:purpose/core/models/mission_map.dart';
+import 'package:purpose/core/models/mission_document.dart';
 import 'package:purpose/core/services/firestore_provider.dart';
 import 'package:purpose/core/services/auth_provider.dart';
 
@@ -145,6 +147,51 @@ final strategyMissionMapProvider = FutureProvider.family<UserMissionMap?, String
 final strategyMissionMapStreamProvider = StreamProvider.family<UserMissionMap?, String>((ref, strategyId) {
   final firestoreService = ref.watch(firestoreServiceProvider);
   return firestoreService.userMissionMapStream(strategyId);
+});
+
+// ========== NEW REFACTORED MISSION STRUCTURE ==========
+
+/// Provider for refactored mission map (metadata only)
+final missionMapProvider = FutureProvider.family<MissionMap?, String>((ref, strategyId) async {
+  final firestoreService = ref.watch(firestoreServiceProvider);
+  return firestoreService.getMissionMap(strategyId);
+});
+
+/// Provider for refactored mission map (stream - real-time updates)
+final missionMapStreamProvider = StreamProvider.family<MissionMap?, String>((ref, strategyId) {
+  final firestoreService = ref.watch(firestoreServiceProvider);
+  return firestoreService.missionMapStream(strategyId);
+});
+
+/// Provider for all missions for a given mission map
+final missionsForMapProvider = FutureProvider.family<List<MissionDocument>, String>((ref, missionMapId) async {
+  final firestoreService = ref.watch(firestoreServiceProvider);
+  return firestoreService.getMissionsForMap(missionMapId);
+});
+
+/// Provider for all missions for a given mission map (stream - real-time updates)
+final missionsForMapStreamProvider = StreamProvider.family<List<MissionDocument>, String>((ref, missionMapId) {
+  final firestoreService = ref.watch(firestoreServiceProvider);
+  return firestoreService.missionsForMapStream(missionMapId);
+});
+
+/// Provider for current mission based on strategy
+final currentMissionForStrategyProvider = FutureProvider.family<MissionDocument?, String>((ref, strategyId) async {
+  // Get the mission map
+  final missionMap = await ref.watch(missionMapProvider(strategyId).future);
+  if (missionMap == null) return null;
+  
+  // Get all missions for that map
+  final missions = await ref.watch(missionsForMapProvider(missionMap.id).future);
+  if (missions.isEmpty) return null;
+  
+  // Return the current mission based on currentMissionIndex
+  final currentIndex = missionMap.currentMissionIndex ?? 0;
+  if (currentIndex < missions.length) {
+    return missions[currentIndex];
+  }
+  
+  return null;
 });
 
 // ========== BACKWARD COMPATIBILITY PROVIDERS (DEPRECATED) ==========

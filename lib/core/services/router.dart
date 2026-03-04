@@ -11,6 +11,7 @@ import 'package:purpose/features/admin/admin_modules_page.dart';
 import 'package:purpose/features/admin/admin_module_detail_page.dart';
 import 'package:purpose/features/admin/admin_values_seeds_page.dart';
 import 'package:purpose/features/admin/admin_strategy_types_page.dart';
+import 'package:purpose/features/admin/migration_test_page.dart';
 import 'package:purpose/features/purpose/purpose_modules_page.dart';
 import 'package:purpose/features/purpose/module_questionnaire_page.dart';
 import 'package:purpose/features/purpose/identity_analysis_page.dart';
@@ -21,6 +22,7 @@ import 'package:purpose/features/vision/vision_page.dart';
 import 'package:purpose/features/vision/vision_creation_flow_page.dart';
 import 'package:purpose/features/mission/mission_map_page.dart';
 import 'package:purpose/features/mission/mission_creation_flow_page.dart';
+import 'package:purpose/features/mission/mission_detail_page.dart';
 import 'package:purpose/core/constants/app_constants.dart';
 
 /// Provider for GoRouter configuration
@@ -112,6 +114,11 @@ final routerProvider = Provider<GoRouter>((ref) {
         builder: (context, state) => const AdminStrategyTypesPage(),
       ),
       GoRoute(
+        path: '/admin/migration-test',
+        name: 'admin-migration-test',
+        builder: (context, state) => const MigrationTestPage(),
+      ),
+      GoRoute(
         path: '/purpose',
         name: 'purpose',
         builder: (context, state) => const PurposeModulesPage(),
@@ -166,6 +173,14 @@ final routerProvider = Provider<GoRouter>((ref) {
         path: '/mission/create',
         name: 'mission-create',
         builder: (context, state) => const MissionCreationFlowPage(),
+      ),
+      GoRoute(
+        path: '/mission/:id',
+        name: 'mission-detail',
+        builder: (context, state) {
+          final missionId = state.pathParameters['id']!;
+          return MissionDetailPage(missionId: missionId);
+        },
       ),
     ],
     errorBuilder: (context, state) => Scaffold(

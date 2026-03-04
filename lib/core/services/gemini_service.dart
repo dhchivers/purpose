@@ -1474,4 +1474,205 @@ Generate the mission map now.
       }
     ];
   }
+
+  /// Generate a goal suggestion for a specific mission
+  /// Takes into account the mission context and existing goals
+  Future<Map<String, dynamic>> generateGoalSuggestion({
+    required String missionTitle,
+    required String missionFocus,
+    required String structuralShift,
+    required String capabilityRequired,
+    required List<Map<String, dynamic>> existingGoals,
+  }) async {
+    final prompt = _buildGoalSuggestionPrompt(
+      missionTitle: missionTitle,
+      missionFocus: missionFocus,
+      structuralShift: structuralShift,
+      capabilityRequired: capabilityRequired,
+      existingGoals: existingGoals,
+    );
+
+    try {
+      final response = await _makeOpenAIRequest(
+        model: AIConfig.proModel,
+        messages: [
+          {
+            'role': 'user',
+            'content': prompt,
+          },
+        ],
+        temperature: 0.7,
+        maxTokens: 800,
+        responseFormat: {'type': 'json_object'},
+      );
+
+      final content = _extractContent(response);
+      return jsonDecode(content) as Map<String, dynamic>;
+    } catch (e) {
+      print('Error generating goal suggestion: $e');
+      rethrow;
+    }
+  }
+
+  /// Build the prompt for goal suggestion
+  String _buildGoalSuggestionPrompt({
+    required String missionTitle,
+    required String missionFocus,
+    required String structuralShift,
+    required String capabilityRequired,
+    required List<Map<String, dynamic>> existingGoals,
+  }) {
+    final existingGoalsText = existingGoals.isEmpty
+        ? 'No existing goals yet.'
+        : existingGoals.map((g) {
+            final achieved = g['achieved'] == true ? '✓ Achieved' : '○ Not yet achieved';
+            return '- ${g['title']}: ${g['description']} [$achieved]';
+          }).join('\n');
+
+    return '''
+You are a strategic goal planning assistant. Your task is to suggest ONE specific, actionable goal for the following mission.
+
+MISSION CONTEXT:
+Title: $missionTitle
+Focus: $missionFocus
+Structural Shift Required: $structuralShift
+Capability Required: $capabilityRequired
+
+EXISTING GOALS FOR THIS MISSION:
+$existingGoalsText
+
+INSTRUCTIONS:
+1. Suggest ONE new goal that is:
+   - Specific and clearly defined
+   - Achievable within the mission's scope
+   - Directly relevant to the mission's focus and structural shift
+   - Different from existing goals (avoid duplication)
+   - A key milestone toward completing this mission
+
+2. The goal should be strategic and outcome-focused
+
+3. DO NOT include:
+   - Measurable requirements (those belong in objectives)
+   - Time constraints or deadlines (those belong in objectives)
+   - Budget estimates
+   - Implementation details
+
+4. Focus on WHAT should be achieved, not HOW or WHEN
+
+5. Respond with valid JSON in this format:
+{
+  "title": "Clear, concise goal title (5-10 words)",
+  "description": "Detailed description of what this goal aims to achieve and why it matters for this mission (2-3 sentences)",
+  "reasoning": "Brief explanation of why this goal is important for this mission right now (1-2 sentences)"
+}
+
+Think strategically about what key milestone would most advance this mission toward its focus and structural shift.
+''';
+  }
+
+  /// Generate a single objective suggestion for a goal
+  Future<Map<String, dynamic>> generateObjectiveSuggestion({
+    required String missionTitle,
+    required String missionFocus,
+    required String goalTitle,
+    required String goalDescription,
+    required List<Map<String, dynamic>> existingObjectives,
+  }) async {
+    try {
+      final prompt = _buildObjectiveSuggestionPrompt(
+        missionTitle: missionTitle,
+        missionFocus: missionFocus,
+        goalTitle: goalTitle,
+        goalDescription: goalDescription,
+        existingObjectives: existingObjectives,
+      );
+
+      final response = await _makeOpenAIRequest(
+        model: AIConfig.proModel,
+        messages: [
+          {
+            'role': 'user',
+            'content': prompt,
+          },
+        ],
+        temperature: 0.7,
+        maxTokens: 800,
+        responseFormat: {'type': 'json_object'},
+      );
+
+      final content = _extractContent(response);
+      return jsonDecode(content) as Map<String, dynamic>;
+    } catch (e) {
+      print('Error generating objective suggestion: $e');
+      rethrow;
+    }
+  }
+
+  /// Build the prompt for objective suggestion
+  String _buildObjectiveSuggestionPrompt({
+    required String missionTitle,
+    required String missionFocus,
+    required String goalTitle,
+    required String goalDescription,
+    required List<Map<String, dynamic>> existingObjectives,
+  }) {
+    final existingObjectivesText = existingObjectives.isEmpty
+        ? 'No existing objectives yet.'
+        : existingObjectives.map((o) {
+            final achieved = o['achieved'] == true ? '✓ Achieved' : '○ Not yet achieved';
+            return '- ${o['title']}: ${o['description']}\n  Measurable: ${o['measurableRequirement']} [$achieved]';
+          }).join('\n');
+
+    return '''
+You are a tactical planning assistant. Your task is to suggest ONE specific, measurable objective for the following goal.
+
+MISSION CONTEXT:
+Title: $missionTitle
+Focus: $missionFocus
+
+GOAL CONTEXT:
+Title: $goalTitle
+Description: $goalDescription
+
+EXISTING OBJECTIVES FOR THIS GOAL:
+$existingObjectivesText
+
+INSTRUCTIONS:
+1. Suggest ONE new objective that is:
+   - Specific and actionable
+   - Directly contributes to achieving the goal
+   - Measurable with clear success criteria
+   - Different from existing objectives (avoid duplication)
+   - A concrete step toward completing this goal
+
+2. The objective should be tactical and action-focused
+
+3. MUST include:
+   - A clear, measurable requirement (the metric/criteria for success)
+   - A specific description of what needs to be done
+   - How achievement will be measured or verified
+
+4. DO NOT include:
+   - Due dates or time constraints (user will add these)
+   - Cost estimates (user will add these)
+   - Time/hour estimates (user will add these)
+   - Vague or subjective measures
+
+5. The measurable requirement should be:
+   - Quantifiable where possible (numbers, percentages, specific outcomes)
+   - Verifiable (can be checked objectively)
+   - Closely aligned with the description
+   - Clear enough that anyone could determine if it's achieved
+
+6. Respond with valid JSON in this format:
+{
+  "title": "Clear, action-oriented objective title (5-10 words)",
+  "description": "Detailed description of what needs to be done and what achievement looks like (2-3 sentences)",
+  "measurableRequirement": "Specific, quantifiable metric or criteria that defines success (e.g., 'Increase conversion rate from 2% to 5%', 'Complete onboarding for 50 users', 'Reduce load time to under 2 seconds')",
+  "reasoning": "Brief explanation of why this objective is important for achieving the goal (1-2 sentences)"
+}
+
+Focus on creating a measurable requirement that directly corresponds to the objective's description and provides clear success criteria.
+''';
+  }
 }

@@ -14,8 +14,12 @@ import 'package:purpose/core/models/vision_creation_session.dart';
 import 'package:purpose/core/models/user_vision.dart';
 import 'package:purpose/core/models/mission_creation_session.dart';
 import 'package:purpose/core/models/user_mission_map.dart';
+import 'package:purpose/core/models/mission_map.dart';
+import 'package:purpose/core/models/mission_document.dart';
 import 'package:purpose/core/models/user_strategy.dart';
 import 'package:purpose/core/models/strategy_type.dart';
+import 'package:purpose/core/models/goal.dart';
+import 'package:purpose/core/models/objective.dart';
 import 'package:purpose/core/constants/app_constants.dart';
 
 /// Service for managing Firestore database operations
@@ -50,6 +54,14 @@ class FirestoreService {
       _db.collection('mission_creation_sessions');
   CollectionReference get _userMissionMapsCollection =>
       _db.collection('user_mission_maps');
+  CollectionReference get _missionMapsCollection =>
+      _db.collection('mission_maps');
+  CollectionReference get _missionsCollection =>
+      _db.collection('missions');
+  CollectionReference get _goalsCollection =>
+      _db.collection('goals');
+  CollectionReference get _objectivesCollection =>
+      _db.collection('objectives');
 
   /// Helper to convert all Timestamp objects to ISO strings to avoid Int64 issues on web
   /// Also converts integer milliseconds (from migration scripts) to ISO strings
@@ -74,6 +86,60 @@ class FirestoreService {
       return data.map((item) => _convertTimestampsToStrings(item)).toList();
     }
     return data;
+  }
+
+  /// Helper methods to safely extract fields from Firestore data (handles JavaScript objects on web)
+  static String _getStringField(dynamic data, String field) {
+    try {
+      final value = data[field];
+      return value?.toString() ?? '';
+    } catch (e) {
+      print('⚠️ Error getting field $field: $e');
+      return '';
+    }
+  }
+
+  static double _getDoubleField(dynamic data, String field, double defaultValue) {
+    try {
+      final value = data[field];
+      if (value == null) return defaultValue;
+      if (value is num) return value.toDouble();
+      if (value is String) return double.tryParse(value) ?? defaultValue;
+      return defaultValue;
+    } catch (e) {
+      print('⚠️ Error getting field $field: $e');
+      return defaultValue;
+    }
+  }
+
+  static bool _getBoolField(dynamic data, String field, bool defaultValue) {
+    try {
+      final value = data[field];
+      if (value == null) return defaultValue;
+      if (value is bool) return value;
+      if (value is String) return value.toLowerCase() == 'true';
+      return defaultValue;
+    } catch (e) {
+      print('⚠️ Error getting field $field: $e');
+      return defaultValue;
+    }
+  }
+
+  static DateTime? _getDateTimeField(dynamic data, String field) {
+    try {
+      final value = data[field];
+      if (value == null) return null;
+      if (value is Timestamp) return value.toDate();
+      if (value is String) return DateTime.parse(value);
+      if (value is int) {
+        // Timestamp as milliseconds
+        return DateTime.fromMillisecondsSinceEpoch(value, isUtc: true);
+      }
+      return null;
+    } catch (e) {
+      print('⚠️ Error getting date field $field: $e');
+      return null;
+    }
   }
 
   // ========== USER OPERATIONS ==========
@@ -2049,6 +2115,605 @@ class FirestoreService {
       rethrow;
     }
   }
+
+  // ============================================================================
+  // NEW MISSION MAP STRUCTURE (Refactored)
+  // Mission Maps and Missions are now separate collections
+  // ============================================================================
+
+  /// Save a mission map (metadata only)
+  Future<void> saveMissionMap(MissionMap missionMap) async {
+    try {
+      final data = _convertTimestampsToStrings(missionMap.toJson()) as Map<String, dynamic>;
+      await _missionMapsCollection.doc(missionMap.id).set(data);
+      print('✅ Saved mission map: ${missionMap.id}');
+
+      // Update strategy to indicate it has a mission map
+      await _userStrategiesCollection.doc(missionMap.strategyId).update({
+        'hasMissionMap': true,
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+    } catch (e) {
+      print('❌ Error saving mission map: $e');
+      rethrow;
+    }
+  }
+
+  /// Get a mission map by strategy ID
+  Future<MissionMap?> getMissionMap(String strategyId) async {
+    try {
+      final querySnapshot = await _missionMapsCollection
+          .where('strategyId', isEqualTo: strategyId)
+          .orderBy('createdAt', descending: true)
+          .limit(1)
+          .get();
+
+      if (querySnapshot.docs.isEmpty) {
+        print('ℹ️ No mission map found for strategy: $strategyId');
+        return null;
+      }
+
+      final docData = querySnapshot.docs.first.data() as Map<String, dynamic>;
+      docData['id'] = querySnapshot.docs.first.id;
+
+      // Convert Timestamps to ISO strings
+      final data = _convertTimestampsToStrings(docData) as Map<String, dynamic>;
+
+      return MissionMap.fromJson(data);
+    } catch (e) {
+      print('❌ Error getting mission map for strategy $strategyId: $e');
+      rethrow;
+    }
+  }
+
+  /// Stream mission map updates
+  Stream<MissionMap?> missionMapStream(String strategyId) {
+    return _missionMapsCollection
+        .where('strategyId', isEqualTo: strategyId)
+        .orderBy('createdAt', descending: true)
+        .limit(1)
+        .snapshots()
+        .map((snapshot) {
+      if (snapshot.docs.isEmpty) return null;
+
+      final docData = snapshot.docs.first.data() as Map<String, dynamic>;
+      docData['id'] = snapshot.docs.first.id;
+      final data = _convertTimestampsToStrings(docData) as Map<String, dynamic>;
+      return MissionMap.fromJson(data);
+    }).handleError((error) {
+      print('❌ Error in missionMapStream for strategyId=$strategyId: $error');
+      return null;
+    });
+  }
+
+  /// Update a mission map
+  Future<void> updateMissionMap(MissionMap missionMap) async {
+    try {
+      final data = _convertTimestampsToStrings(missionMap.toJson()) as Map<String, dynamic>;
+      data['updatedAt'] = FieldValue.serverTimestamp();
+      await _missionMapsCollection.doc(missionMap.id).set(data);
+      print('✅ Updated mission map: ${missionMap.id}');
+    } catch (e) {
+      print('❌ Error updating mission map: $e');
+      rethrow;
+    }
+  }
+
+  /// Delete a mission map and all its missions
+  Future<void> deleteMissionMap(String missionMapId, String strategyId) async {
+    try {
+      // Delete the mission map
+      await _missionMapsCollection.doc(missionMapId).delete();
+      
+      // Delete all associated missions
+      final missionsSnapshot = await _missionsCollection
+          .where('missionMapId', isEqualTo: missionMapId)
+          .get();
+      
+      final batch = _db.batch();
+      for (var doc in missionsSnapshot.docs) {
+        batch.delete(doc.reference);
+      }
+      await batch.commit();
+
+      print('✅ Deleted mission map and ${missionsSnapshot.docs.length} missions: $missionMapId');
+
+      // Update strategy document
+      await _userStrategiesCollection.doc(strategyId).update({
+        'hasMissionMap': false,
+        'currentMission': null,
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+    } catch (e) {
+      print('❌ Error deleting mission map: $e');
+      rethrow;
+    }
+  }
+
+  /// Save a mission document
+  Future<void> saveMissionDocument(MissionDocument mission) async {
+    try {
+      final data = _convertTimestampsToStrings(mission.toJson()) as Map<String, dynamic>;
+      await _missionsCollection.doc(mission.id).set(data);
+      print('✅ Saved mission document: ${mission.id}');
+    } catch (e) {
+      print('❌ Error saving mission document: $e');
+      rethrow;
+    }
+  }
+
+  /// Get all missions for a mission map (ordered by sequence)
+  Future<List<MissionDocument>> getMissionsForMap(String missionMapId) async {
+    try {
+      final querySnapshot = await _missionsCollection
+          .where('missionMapId', isEqualTo: missionMapId)
+          .orderBy('sequenceNumber')
+          .get();
+
+      final missions = <MissionDocument>[];
+      for (var doc in querySnapshot.docs) {
+        final docData = doc.data() as Map<String, dynamic>;
+        docData['id'] = doc.id;
+        final data = _convertTimestampsToStrings(docData) as Map<String, dynamic>;
+        missions.add(MissionDocument.fromJson(data));
+      }
+
+      return missions;
+    } catch (e) {
+      print('❌ Error getting missions for map $missionMapId: $e');
+      rethrow;
+    }
+  }
+
+  /// Stream missions for a mission map
+  Stream<List<MissionDocument>> missionsForMapStream(String missionMapId) {
+    return _missionsCollection
+        .where('missionMapId', isEqualTo: missionMapId)
+        .orderBy('sequenceNumber')
+        .snapshots()
+        .map((snapshot) {
+      final missions = <MissionDocument>[];
+      for (var doc in snapshot.docs) {
+        final docData = doc.data() as Map<String, dynamic>;
+        docData['id'] = doc.id;
+        final data = _convertTimestampsToStrings(docData) as Map<String, dynamic>;
+        missions.add(MissionDocument.fromJson(data));
+      }
+      return missions;
+    }).handleError((error) {
+      print('❌ Error in missionsForMapStream for missionMapId=$missionMapId: $error');
+      return <MissionDocument>[];
+    });
+  }
+
+  /// Get a specific mission document
+  Future<MissionDocument?> getMissionDocument(String missionId) async {
+    try {
+      final doc = await _missionsCollection.doc(missionId).get();
+      
+      if (!doc.exists) {
+        print('ℹ️ Mission document not found: $missionId');
+        return null;
+      }
+
+      final docData = doc.data() as Map<String, dynamic>;
+      docData['id'] = doc.id;
+      final data = _convertTimestampsToStrings(docData) as Map<String, dynamic>;
+      return MissionDocument.fromJson(data);
+    } catch (e) {
+      print('❌ Error getting mission document $missionId: $e');
+      rethrow;
+    }
+  }
+
+  /// Update a mission document
+  Future<void> updateMissionDocument(MissionDocument mission) async {
+    try {
+      final data = _convertTimestampsToStrings(mission.toJson()) as Map<String, dynamic>;
+      data['updatedAt'] = FieldValue.serverTimestamp();
+      await _missionsCollection.doc(mission.id).set(data);
+      print('✅ Updated mission document: ${mission.id}');
+    } catch (e) {
+      print('❌ Error updating mission document: $e');
+      rethrow;
+    }
+  }
+
+  /// Delete a mission document
+  Future<void> deleteMissionDocument(String missionId) async {
+    try {
+      await _missionsCollection.doc(missionId).delete();
+      print('✅ Deleted mission document: $missionId');
+    } catch (e) {
+      print('❌ Error deleting mission document: $e');
+      rethrow;
+    }
+  }
+
+  // ========== GOAL OPERATIONS ==========
+
+  /// Save a goal
+  Future<void> saveGoal(Goal goal) async {
+    try {
+      final data = _convertTimestampsToStrings(goal.toJson()) as Map<String, dynamic>;
+      await _goalsCollection.doc(goal.id).set(data);
+      print('✅ Saved goal: ${goal.id}');
+    } catch (e) {
+      print('❌ Error saving goal: $e');
+      rethrow;
+    }
+  }
+
+  /// Get a specific goal
+  Future<Goal?> getGoal(String goalId) async {
+    try {
+      final doc = await _goalsCollection.doc(goalId).get();
+      
+      if (!doc.exists) {
+        print('ℹ️ Goal not found: $goalId');
+        return null;
+      }
+
+      final data = doc.data();
+      if (data == null) {
+        print('⚠️ Null data for goal: $goalId');
+        return null;
+      }
+
+      // Manually construct Goal to avoid json_serializable issues with JavaScript objects
+      return Goal(
+        id: doc.id,
+        missionId: _getStringField(data, 'missionId'),
+        strategyId: _getStringField(data, 'strategyId'),
+        title: _getStringField(data, 'title'),
+        description: _getStringField(data, 'description'),
+        budgetMonetary: _getDoubleField(data, 'budgetMonetary', 0.0),
+        budgetTime: _getDoubleField(data, 'budgetTime', 0.0),
+        actualMonetary: _getDoubleField(data, 'actualMonetary', 0.0),
+        actualTime: _getDoubleField(data, 'actualTime', 0.0),
+        achieved: _getBoolField(data, 'achieved', false),
+        dateAchieved: _getDateTimeField(data, 'dateAchieved'),
+        dateCreated: _getDateTimeField(data, 'dateCreated') ?? DateTime.now(),
+        updatedAt: _getDateTimeField(data, 'updatedAt') ?? DateTime.now(),
+      );
+    } catch (e) {
+      print('❌ Error getting goal $goalId: $e');
+      rethrow;
+    }
+  }
+
+  /// Get all goals for a mission
+  Future<List<Goal>> getGoalsForMission(String missionId) async {
+    try {
+      final querySnapshot = await _goalsCollection
+          .where('missionId', isEqualTo: missionId)
+          .orderBy('dateCreated')
+          .get();
+
+      final goals = <Goal>[];
+      for (var doc in querySnapshot.docs) {
+        try {
+          final data = doc.data();
+          if (data == null) {
+            print('⚠️ Null data for goal document: ${doc.id}');
+            continue;
+          }
+          // Manually construct Goal to avoid json_serializable issues with JavaScript objects
+          final goal = Goal(
+            id: doc.id,
+            missionId: _getStringField(data, 'missionId'),
+            strategyId: _getStringField(data, 'strategyId'),
+            title: _getStringField(data, 'title'),
+            description: _getStringField(data, 'description'),
+            budgetMonetary: _getDoubleField(data, 'budgetMonetary', 0.0),
+            budgetTime: _getDoubleField(data, 'budgetTime', 0.0),
+            actualMonetary: _getDoubleField(data, 'actualMonetary', 0.0),
+            actualTime: _getDoubleField(data, 'actualTime', 0.0),
+            achieved: _getBoolField(data, 'achieved', false),
+            dateAchieved: _getDateTimeField(data, 'dateAchieved'),
+            dateCreated: _getDateTimeField(data, 'dateCreated') ?? DateTime.now(),
+            updatedAt: _getDateTimeField(data, 'updatedAt') ?? DateTime.now(),
+          );
+          goals.add(goal);
+        } catch (e) {
+          print('❌ Error parsing goal ${doc.id}: $e');
+          continue;
+        }
+      }
+
+      return goals;
+    } catch (e) {
+      print('❌ Error getting goals for mission $missionId: $e');
+      rethrow;
+    }
+  }
+
+  /// Stream goals for a mission
+  Stream<List<Goal>> goalsForMissionStream(String missionId) {
+    return _goalsCollection
+        .where('missionId', isEqualTo: missionId)
+        .orderBy('dateCreated')
+        .snapshots()
+        .map((snapshot) {
+      final goals = <Goal>[];
+      for (var doc in snapshot.docs) {
+        try {
+          final data = doc.data();
+          if (data == null) {
+            print('⚠️ Null data for goal document: ${doc.id}');
+            continue;
+          }
+          
+          // Manually construct Goal to avoid json_serializable issues with JavaScript objects
+          final goal = Goal(
+            id: doc.id,
+            missionId: _getStringField(data, 'missionId'),
+            strategyId: _getStringField(data, 'strategyId'),
+            title: _getStringField(data, 'title'),
+            description: _getStringField(data, 'description'),
+            budgetMonetary: _getDoubleField(data, 'budgetMonetary', 0.0),
+            budgetTime: _getDoubleField(data, 'budgetTime', 0.0),
+            actualMonetary: _getDoubleField(data, 'actualMonetary', 0.0),
+            actualTime: _getDoubleField(data, 'actualTime', 0.0),
+            achieved: _getBoolField(data, 'achieved', false),
+            dateAchieved: _getDateTimeField(data, 'dateAchieved'),
+            dateCreated: _getDateTimeField(data, 'dateCreated') ?? DateTime.now(),
+            updatedAt: _getDateTimeField(data, 'updatedAt') ?? DateTime.now(),
+          );
+          goals.add(goal);
+        } catch (e) {
+          print('❌ Error parsing goal ${doc.id}: $e');
+          // Skip this goal and continue with others
+          continue;
+        }
+      }
+      return goals;
+    }).handleError((error) {
+      print('❌ Error in goalsForMissionStream for missionId=$missionId: $error');
+      return <Goal>[];
+    });
+  }
+
+  /// Update a goal
+  Future<void> updateGoal(Goal goal) async {
+    try {
+      final data = _convertTimestampsToStrings(goal.toJson()) as Map<String, dynamic>;
+      data['updatedAt'] = FieldValue.serverTimestamp();
+      await _goalsCollection.doc(goal.id).set(data);
+      print('✅ Updated goal: ${goal.id}');
+    } catch (e) {
+      print('❌ Error updating goal: $e');
+      rethrow;
+    }
+  }
+
+  /// Delete a goal (and all its objectives)
+  Future<void> deleteGoal(String goalId) async {
+    try {
+      // Delete all objectives for this goal
+      final objectivesSnapshot = await _objectivesCollection
+          .where('goalId', isEqualTo: goalId)
+          .get();
+      
+      final batch = _db.batch();
+      for (var doc in objectivesSnapshot.docs) {
+        batch.delete(doc.reference);
+      }
+      
+      // Delete the goal
+      batch.delete(_goalsCollection.doc(goalId));
+      
+      await batch.commit();
+      print('✅ Deleted goal and ${objectivesSnapshot.docs.length} objectives: $goalId');
+    } catch (e) {
+      print('❌ Error deleting goal: $e');
+      rethrow;
+    }
+  }
+
+  // ========== OBJECTIVE OPERATIONS ==========
+
+  /// Save an objective
+  Future<void> saveObjective(Objective objective) async {
+    try {
+      final data = _convertTimestampsToStrings(objective.toJson()) as Map<String, dynamic>;
+      await _objectivesCollection.doc(objective.id).set(data);
+      print('✅ Saved objective: ${objective.id}');
+    } catch (e) {
+      print('❌ Error saving objective: $e');
+      rethrow;
+    }
+  }
+
+  /// Get a specific objective
+  Future<Objective?> getObjective(String objectiveId) async {
+    try {
+      final doc = await _objectivesCollection.doc(objectiveId).get();
+      
+      if (!doc.exists) {
+        print('ℹ️ Objective not found: $objectiveId');
+        return null;
+      }
+
+      final data = doc.data();
+      if (data == null) {
+        print('⚠️ Null data for objective: $objectiveId');
+        return null;
+      }
+
+      // Manually construct Objective to avoid json_serializable issues with JavaScript objects
+      return Objective(
+        id: doc.id,
+        goalId: _getStringField(data, 'goalId'),
+        missionId: _getStringField(data, 'missionId'),
+        strategyId: _getStringField(data, 'strategyId'),
+        title: _getStringField(data, 'title'),
+        description: _getStringField(data, 'description'),
+        measurableRequirement: _getStringField(data, 'measurableRequirement'),
+        dueDate: _getDateTimeField(data, 'dueDate'),
+        costMonetary: _getDoubleField(data, 'costMonetary', 0.0),
+        costTime: _getDoubleField(data, 'costTime', 0.0),
+        achieved: _getBoolField(data, 'achieved', false),
+        dateAchieved: _getDateTimeField(data, 'dateAchieved'),
+        dateCreated: _getDateTimeField(data, 'dateCreated') ?? DateTime.now(),
+        updatedAt: _getDateTimeField(data, 'updatedAt') ?? DateTime.now(),
+      );
+    } catch (e) {
+      print('❌ Error getting objective $objectiveId: $e');
+      rethrow;
+    }
+  }
+
+  /// Get all objectives for a goal
+  Future<List<Objective>> getObjectivesForGoal(String goalId) async {
+    try {
+      final querySnapshot = await _objectivesCollection
+          .where('goalId', isEqualTo: goalId)
+          .orderBy('dateCreated')
+          .get();
+
+      final objectives = <Objective>[];
+      for (var doc in querySnapshot.docs) {
+        try {
+          final data = doc.data();
+          if (data == null) {
+            print('⚠️ Null data for objective document: ${doc.id}');
+            continue;
+          }
+          // Manually construct Objective to avoid json_serializable issues with JavaScript objects
+          final objective = Objective(
+            id: doc.id,
+            goalId: _getStringField(data, 'goalId'),
+            missionId: _getStringField(data, 'missionId'),
+            strategyId: _getStringField(data, 'strategyId'),
+            title: _getStringField(data, 'title'),
+            description: _getStringField(data, 'description'),
+            measurableRequirement: _getStringField(data, 'measurableRequirement'),
+            dueDate: _getDateTimeField(data, 'dueDate'),
+            costMonetary: _getDoubleField(data, 'costMonetary', 0.0),
+            costTime: _getDoubleField(data, 'costTime', 0.0),
+            achieved: _getBoolField(data, 'achieved', false),
+            dateAchieved: _getDateTimeField(data, 'dateAchieved'),
+            dateCreated: _getDateTimeField(data, 'dateCreated') ?? DateTime.now(),
+            updatedAt: _getDateTimeField(data, 'updatedAt') ?? DateTime.now(),
+          );
+          objectives.add(objective);
+        } catch (e) {
+          print('❌ Error parsing objective ${doc.id}: $e');
+          continue;
+        }
+      }
+
+      return objectives;
+    } catch (e) {
+      print('❌ Error getting objectives for goal $goalId: $e');
+      rethrow;
+    }
+  }
+
+  /// Stream objectives for a goal
+  Stream<List<Objective>> objectivesForGoalStream(String goalId) {
+    return _objectivesCollection
+        .where('goalId', isEqualTo: goalId)
+        .orderBy('dateCreated')
+        .snapshots()
+        .map((snapshot) {
+      final objectives = <Objective>[];
+      for (var doc in snapshot.docs) {
+        try {
+          final data = doc.data();
+          if (data == null) {
+            print('⚠️ Null data for objective document: ${doc.id}');
+            continue;
+          }
+          
+          // Manually construct Objective to avoid json_serializable issues with JavaScript objects
+          final objective = Objective(
+            id: doc.id,
+            goalId: _getStringField(data, 'goalId'),
+            missionId: _getStringField(data, 'missionId'),
+            strategyId: _getStringField(data, 'strategyId'),
+            title: _getStringField(data, 'title'),
+            description: _getStringField(data, 'description'),
+            measurableRequirement: _getStringField(data, 'measurableRequirement'),
+            dueDate: _getDateTimeField(data, 'dueDate'),
+            costMonetary: _getDoubleField(data, 'costMonetary', 0.0),
+            costTime: _getDoubleField(data, 'costTime', 0.0),
+            achieved: _getBoolField(data, 'achieved', false),
+            dateAchieved: _getDateTimeField(data, 'dateAchieved'),
+            dateCreated: _getDateTimeField(data, 'dateCreated') ?? DateTime.now(),
+            updatedAt: _getDateTimeField(data, 'updatedAt') ?? DateTime.now(),
+          );
+          objectives.add(objective);
+        } catch (e) {
+          print('❌ Error parsing objective ${doc.id}: $e');
+          // Skip this objective and continue with others
+          continue;
+        }
+      }
+      return objectives;
+    }).handleError((error) {
+      print('❌ Error in objectivesForGoalStream for goalId=$goalId: $error');
+      return <Objective>[];
+    });
+  }
+
+  /// Update an objective
+  Future<void> updateObjective(Objective objective) async {
+    try {
+      final data = _convertTimestampsToStrings(objective.toJson()) as Map<String, dynamic>;
+      data['updatedAt'] = FieldValue.serverTimestamp();
+      await _objectivesCollection.doc(objective.id).set(data);
+      print('✅ Updated objective: ${objective.id}');
+    } catch (e) {
+      print('❌ Error updating objective: $e');
+      rethrow;
+    }
+  }
+
+  /// Delete an objective
+  Future<void> deleteObjective(String objectiveId) async {
+    try {
+      await _objectivesCollection.doc(objectiveId).delete();
+      print('✅ Deleted objective: $objectiveId');
+    } catch (e) {
+      print('❌ Error deleting objective: $e');
+      rethrow;
+    }
+  }
+
+  /// Advance to next mission (new structure)
+  Future<void> advanceToNextMissionNew(String strategyId) async {
+    try {
+      final missionMap = await getMissionMap(strategyId);
+      if (missionMap == null) {
+        throw Exception('No mission map found for strategy');
+      }
+
+      final currentIndex = missionMap.currentMissionIndex ?? 0;
+      final nextIndex = currentIndex + 1;
+
+      if (nextIndex >= missionMap.totalMissions) {
+        print('⚠️ Strategy is already on the last mission');
+        return;
+      }
+
+      final updatedMap = missionMap.copyWith(
+        currentMissionIndex: nextIndex,
+        updatedAt: DateTime.now(),
+      );
+
+      await updateMissionMap(updatedMap);
+      print('✅ Advanced strategy to mission ${nextIndex + 1}');
+    } catch (e) {
+      print('❌ Error advancing to next mission: $e');
+      rethrow;
+    }
+  }
+
+  // ============================================================================
+  // END NEW MISSION MAP STRUCTURE
+  // ============================================================================
 
   // ========== DENORMALIZATION HELPERS ==========
 
