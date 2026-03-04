@@ -105,6 +105,36 @@ class _MissionMapPageState extends ConsumerState<MissionMapPage> {
     return '${months[date.month - 1]} ${date.year}';
   }
 
+  // Format date as separate lines for timeline
+  Widget _buildTimelineDate(DateTime? date) {
+    if (date == null) return const SizedBox.shrink();
+    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+                    'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(
+          months[date.month - 1],
+          style: const TextStyle(
+            fontSize: 10,
+            color: AppTheme.grayMedium,
+            fontWeight: FontWeight.w600,
+            height: 1.0,
+          ),
+        ),
+        Text(
+          '${date.year}',
+          style: const TextStyle(
+            fontSize: 10,
+            color: AppTheme.grayMedium,
+            fontWeight: FontWeight.w500,
+            height: 1.0,
+          ),
+        ),
+      ],
+    );
+  }
+
   Future<void> _updateStrategyStartDate(MissionMap missionMap, DateTime newDate) async {
     try {
       final firestoreService = ref.read(firestoreServiceProvider);
@@ -910,7 +940,7 @@ class _MissionMapPageState extends ConsumerState<MissionMapPage> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     const Text(
-                      'Mission',
+                      'Mission Map',
                       style: TextStyle(
                         fontSize: 24,
                         fontWeight: FontWeight.bold,
@@ -1363,6 +1393,12 @@ class _MissionMapPageState extends ConsumerState<MissionMapPage> {
 
     if (totalMonths == 0) return const SizedBox.shrink();
 
+    // Calculate cumulative positions for date labels
+    final List<int> cumulativeMonths = [0];
+    for (int i = 0; i < missions.length; i++) {
+      cumulativeMonths.add(cumulativeMonths[i] + missions[i].durationMonths);
+    }
+
     // Calculate current date position
     final now = DateTime.now();
     final startDate = missionMap.strategyStartDate!;
@@ -1370,7 +1406,7 @@ class _MissionMapPageState extends ConsumerState<MissionMapPage> {
     final currentDatePosition = monthsSinceStart / totalMonths;
 
     return Container(
-      padding: const EdgeInsets.all(24),
+      padding: const EdgeInsets.only(left: 20, right: 20, top: 12, bottom: 36),
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(12),
@@ -1384,80 +1420,138 @@ class _MissionMapPageState extends ConsumerState<MissionMapPage> {
               final availableWidth = constraints.maxWidth;
 
               return SizedBox(
-                height: 104, // Increased to accommodate Today label below
+                height: 90, // Reduced height without circled numbers
                 child: Stack(
                   clipBehavior: Clip.none,
                   children: [
+                    // Date labels at top
+                    ...[
+                      for (int i = 0; i <= missions.length; i++)
+                        Positioned(
+                          left: availableWidth * (cumulativeMonths[i] / totalMonths) - 15,
+                          top: 4, // Position just above the bars
+                          child: _buildTimelineDate(
+                            DateTime(
+                              startDate.year,
+                              startDate.month + cumulativeMonths[i],
+                              1,
+                            ),
+                          ),
+                        ),
+                    ],
                     // Mission rectangles with labels
-                    Row(
+                    Positioned(
+                      top: 26, // Position below date labels
+                      left: 0,
+                      right: 0,
+                      bottom: 0,
+                      child: Row(
                       children: [
                         for (int i = 0; i < missions.length; i++) ...[
                           Expanded(
                             flex: missions[i].durationMonths,
-                            child: Column(
-                              children: [
-                                // Circled number label
-                                Container(
-                                  width: 32,
-                                  height: 32,
-                                  decoration: BoxDecoration(
-                                    color: i == missionMap.currentMissionIndex
-                                        ? AppTheme.primary
-                                        : i < (missionMap.currentMissionIndex ?? 0)
-                                            ? AppTheme.success
-                                            : AppTheme.grayMedium,
-                                    shape: BoxShape.circle,
-                                  ),
-                                  child: Center(
-                                    child: Text(
-                                      '${i + 1}',
-                                      style: const TextStyle(
-                                        color: Colors.white,
-                                        fontSize: 14,
-                                        fontWeight: FontWeight.bold,
-                                      ),
-                                    ),
-                                  ),
+                            child: Container(
+                              margin: EdgeInsets.only(
+                                right: i < missions.length - 1 ? 4 : 0,
+                              ),
+                              decoration: BoxDecoration(
+                                color: i == missionMap.currentMissionIndex
+                                    ? AppTheme.primary.withOpacity(0.2)
+                                    : i < (missionMap.currentMissionIndex ?? 0)
+                                        ? AppTheme.success.withOpacity(0.2)
+                                        : AppTheme.grayMedium.withOpacity(0.2),
+                                borderRadius: BorderRadius.circular(8),
+                                border: Border.all(
+                                  color: i == missionMap.currentMissionIndex
+                                      ? AppTheme.primary
+                                      : i < (missionMap.currentMissionIndex ?? 0)
+                                          ? AppTheme.success
+                                          : AppTheme.grayMedium,
+                                  width: 2,
                                 ),
-                                const SizedBox(height: 8),
-                                // Rounded rectangle for mission
-                                Expanded(
-                                  child: Container(
-                                    margin: EdgeInsets.only(
-                                      right: i < missions.length - 1 ? 4 : 0,
+                              ),
+                                    child: LayoutBuilder(
+                                      builder: (context, constraints) {
+                                        // Calculate appropriate font size based on bar width
+                                        final barWidth = constraints.maxWidth;
+                                        final barHeight = constraints.maxHeight;
+                                        final missionTitle = missions[i].mission;
+                                        
+                                        // Estimate characters that can fit
+                                        // Rough estimate: 7 pixels per character at base font size
+                                        final maxCharsPerLine = (barWidth - 8) / 7;
+                                        final estimatedLines = (missionTitle.length / maxCharsPerLine).ceil();
+                                        
+                                        // Calculate font size to fit (with minimum and maximum)
+                                        double fontSize = 11;
+                                        if (barWidth < 80) {
+                                          fontSize = 8;
+                                        } else if (barWidth < 120) {
+                                          fontSize = 9;
+                                        } else if (barWidth < 160) {
+                                          fontSize = 10;
+                                        } else if (barWidth >= 200) {
+                                          fontSize = 12;
+                                        }
+                                        
+                                        // Reduce font size if we have many lines
+                                        if (estimatedLines > 3 && barHeight < 50) {
+                                          fontSize = fontSize * 0.85;
+                                        }
+                                        
+                                        return Padding(
+                                          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
+                                          child: Align(
+                                            alignment: Alignment.topCenter,
+                                            child: InkWell(
+                                              onTap: () {
+                                                context.go('/mission/${missions[i].id}');
+                                              },
+                                              borderRadius: BorderRadius.circular(4),
+                                              child: Padding(
+                                                padding: const EdgeInsets.all(2),
+                                                child: Text(
+                                                  missionTitle,
+                                                  textAlign: TextAlign.center,
+                                                  maxLines: 4,
+                                                  overflow: TextOverflow.ellipsis,
+                                                  style: TextStyle(
+                                                    fontSize: fontSize,
+                                                    fontWeight: FontWeight.w600,
+                                                    color: i == missionMap.currentMissionIndex
+                                                        ? AppTheme.primary
+                                                        : i < (missionMap.currentMissionIndex ?? 0)
+                                                            ? AppTheme.success.withOpacity(0.9)
+                                                            : AppTheme.grayMedium,
+                                                    height: 1.2,
+                                                    decoration: TextDecoration.underline,
+                                                    decorationColor: (i == missionMap.currentMissionIndex
+                                                        ? AppTheme.primary
+                                                        : i < (missionMap.currentMissionIndex ?? 0)
+                                                            ? AppTheme.success.withOpacity(0.9)
+                                                            : AppTheme.grayMedium).withOpacity(0.3),
+                                                  ),
+                                                ),
+                                              ),
+                                            ),
+                                          ),
+                                        );
+                                      },
                                     ),
-                                    decoration: BoxDecoration(
-                                      color: i == missionMap.currentMissionIndex
-                                          ? AppTheme.primary.withOpacity(0.2)
-                                          : i < (missionMap.currentMissionIndex ?? 0)
-                                              ? AppTheme.success.withOpacity(0.2)
-                                              : AppTheme.grayMedium.withOpacity(0.2),
-                                      borderRadius: BorderRadius.circular(8),
-                                      border: Border.all(
-                                        color: i == missionMap.currentMissionIndex
-                                            ? AppTheme.primary
-                                            : i < (missionMap.currentMissionIndex ?? 0)
-                                                ? AppTheme.success
-                                                : AppTheme.grayMedium,
-                                        width: 2,
-                                      ),
-                                    ),
-                                  ),
-                                ),
-                              ],
                             ),
                           ),
                         ],
                       ],
+                      ),
                     ),
-                    // Current date indicator line
+                    // Current date indicator line (20% of bar height from bottom)
                     if (currentDatePosition >= 0 && currentDatePosition <= 1)
                       Positioned(
                         left: availableWidth * currentDatePosition,
-                        top: 40, // Start after circled numbers (32px height + 8px spacing)
-                        bottom: 0,
+                        top: 77, // Adjusted for new height (90 total - 13px line = 77)
                         child: Container(
                           width: 2,
+                          height: 13, // 20% of bar height (64px * 0.2)
                           color: AppTheme.error,
                         ),
                       ),
@@ -1488,34 +1582,6 @@ class _MissionMapPageState extends ConsumerState<MissionMapPage> {
                 ),
               );
             },
-          ),
-          const SizedBox(height: 12),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Text(
-                _formatMonthYear(missionMap.strategyStartDate),
-                style: const TextStyle(
-                  fontSize: 12,
-                  color: AppTheme.grayMedium,
-                  fontWeight: FontWeight.w500,
-                ),
-              ),
-              Text(
-                _formatMonthYear(
-                  DateTime(
-                    startDate.year,
-                    startDate.month + totalMonths,
-                    1,
-                  ),
-                ),
-                style: const TextStyle(
-                  fontSize: 12,
-                  color: AppTheme.grayMedium,
-                  fontWeight: FontWeight.w500,
-                ),
-              ),
-            ],
           ),
         ],
       ),
