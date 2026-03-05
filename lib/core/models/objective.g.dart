@@ -6,6 +6,18 @@ part of 'objective.dart';
 // JsonSerializableGenerator
 // **************************************************************************
 
+LogEntry _$LogEntryFromJson(Map<String, dynamic> json) => LogEntry(
+  timestamp: DateTime.parse(json['timestamp'] as String),
+  message: json['message'] as String,
+  author: json['author'] as String,
+);
+
+Map<String, dynamic> _$LogEntryToJson(LogEntry instance) => <String, dynamic>{
+  'timestamp': instance.timestamp.toIso8601String(),
+  'message': instance.message,
+  'author': instance.author,
+};
+
 Objective _$ObjectiveFromJson(Map<String, dynamic> json) => Objective(
   id: json['id'] as String,
   goalId: json['goalId'] as String,
@@ -19,6 +31,13 @@ Objective _$ObjectiveFromJson(Map<String, dynamic> json) => Objective(
       : DateTime.parse(json['dueDate'] as String),
   costMonetary: (json['costMonetary'] as num?)?.toDouble() ?? 0.0,
   costTime: (json['costTime'] as num?)?.toDouble() ?? 0.0,
+  spendMonetary: (json['spendMonetary'] as num?)?.toDouble() ?? 0.0,
+  spendTime: (json['spendTime'] as num?)?.toDouble() ?? 0.0,
+  log:
+      (json['log'] as List<dynamic>?)
+          ?.map((e) => LogEntry.fromJson(e as Map<String, dynamic>))
+          .toList() ??
+      const [],
   achieved: json['achieved'] as bool? ?? false,
   dateAchieved: json['dateAchieved'] == null
       ? null
@@ -38,6 +57,9 @@ Map<String, dynamic> _$ObjectiveToJson(Objective instance) => <String, dynamic>{
   'dueDate': instance.dueDate?.toIso8601String(),
   'costMonetary': instance.costMonetary,
   'costTime': instance.costTime,
+  'spendMonetary': instance.spendMonetary,
+  'spendTime': instance.spendTime,
+  'log': instance.log.map((e) => e.toJson()).toList(),
   'achieved': instance.achieved,
   'dateAchieved': instance.dateAchieved?.toIso8601String(),
   'dateCreated': instance.dateCreated.toIso8601String(),

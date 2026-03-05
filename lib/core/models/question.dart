@@ -51,10 +51,10 @@ class Question {
   final bool? allowMultipleSelections;
 
   /// Minimum value for scale questions (null for other types)
-  final int? scaleMin;
+  final double? scaleMin;
 
   /// Maximum value for scale questions (null for other types)
-  final int? scaleMax;
+  final double? scaleMax;
 
   /// Labels for scale endpoints (e.g., ["Not at all", "Extremely"])
   final List<String>? scaleLabels;
@@ -124,8 +124,8 @@ class Question {
     QuestionType? questionType,
     List<String>? options,
     bool? allowMultipleSelections,
-    int? scaleMin,
-    int? scaleMax,
+    double? scaleMin,
+    double? scaleMax,
     List<String>? scaleLabels,
     int? answerCharacterLimit,
     int? order,

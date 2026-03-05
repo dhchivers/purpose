@@ -13,7 +13,7 @@ UserAnswer _$UserAnswerFromJson(Map<String, dynamic> json) => UserAnswer(
   questionId: json['questionId'] as String,
   questionModuleId: json['questionModuleId'] as String,
   textAnswer: json['textAnswer'] as String?,
-  numericAnswer: (json['numericAnswer'] as num?)?.toInt(),
+  numericAnswer: (json['numericAnswer'] as num?)?.toDouble(),
   selectedOption: json['selectedOption'] as String?,
   booleanAnswer: json['booleanAnswer'] as bool?,
   notes: json['notes'] as String?,

@@ -20,6 +20,7 @@ import 'package:purpose/core/models/user_strategy.dart';
 import 'package:purpose/core/models/strategy_type.dart';
 import 'package:purpose/core/models/goal.dart';
 import 'package:purpose/core/models/objective.dart';
+import 'package:purpose/core/models/user_comment.dart';
 import 'package:purpose/core/constants/app_constants.dart';
 
 /// Service for managing Firestore database operations
@@ -62,6 +63,8 @@ class FirestoreService {
       _db.collection('goals');
   CollectionReference get _objectivesCollection =>
       _db.collection('objectives');
+  CollectionReference get _userCommentsCollection =>
+      _db.collection('user_comments');
 
   /// Helper to convert all Timestamp objects to ISO strings to avoid Int64 issues on web
   /// Also converts integer milliseconds (from migration scripts) to ISO strings
@@ -139,6 +142,32 @@ class FirestoreService {
     } catch (e) {
       print('⚠️ Error getting date field $field: $e');
       return null;
+    }
+  }
+
+  static List<LogEntry> _getLogEntries(dynamic data, String field) {
+    try {
+      final value = data[field];
+      if (value == null) return [];
+      if (value is! List) return [];
+      
+      return value.map((item) {
+        try {
+          if (item is! Map) return null;
+          final map = item as Map<String, dynamic>;
+          return LogEntry(
+            timestamp: _getDateTimeField(map, 'timestamp') ?? DateTime.now(),
+            message: _getStringField(map, 'message'),
+            author: _getStringField(map, 'author'),
+          );
+        } catch (e) {
+          print('⚠️ Error parsing log entry: $e');
+          return null;
+        }
+      }).whereType<LogEntry>().toList();
+    } catch (e) {
+      print('⚠️ Error parsing log entries for field $field: $e');
+      return [];
     }
   }
 
@@ -2409,6 +2438,7 @@ class FirestoreService {
             budgetTime: _getDoubleField(data, 'budgetTime', 0.0),
             actualMonetary: _getDoubleField(data, 'actualMonetary', 0.0),
             actualTime: _getDoubleField(data, 'actualTime', 0.0),
+            log: _getLogEntries(data, 'log'),
             achieved: _getBoolField(data, 'achieved', false),
             dateAchieved: _getDateTimeField(data, 'dateAchieved'),
             dateCreated: _getDateTimeField(data, 'dateCreated') ?? DateTime.now(),
@@ -2455,6 +2485,7 @@ class FirestoreService {
             budgetTime: _getDoubleField(data, 'budgetTime', 0.0),
             actualMonetary: _getDoubleField(data, 'actualMonetary', 0.0),
             actualTime: _getDoubleField(data, 'actualTime', 0.0),
+            log: _getLogEntries(data, 'log'),
             achieved: _getBoolField(data, 'achieved', false),
             dateAchieved: _getDateTimeField(data, 'dateAchieved'),
             dateCreated: _getDateTimeField(data, 'dateCreated') ?? DateTime.now(),
@@ -2509,6 +2540,53 @@ class FirestoreService {
       print('❌ Error deleting goal: $e');
       rethrow;
     }
+  }
+
+  /// Stream goals for a strategy (real-time updates)
+  Stream<List<Goal>> goalsForStrategyStream(String strategyId) {
+    return _goalsCollection
+        .where('strategyId', isEqualTo: strategyId)
+        .orderBy('dateCreated')
+        .snapshots()
+        .map((snapshot) {
+      final goals = <Goal>[];
+      for (var doc in snapshot.docs) {
+        try {
+          final data = doc.data();
+          if (data == null) {
+            print('⚠️ Null data for goal document: ${doc.id}');
+            continue;
+          }
+          
+          // Manually construct Goal to avoid json_serializable issues with JavaScript objects
+          final goal = Goal(
+            id: doc.id,
+            missionId: _getStringField(data, 'missionId'),
+            strategyId: _getStringField(data, 'strategyId'),
+            title: _getStringField(data, 'title'),
+            description: _getStringField(data, 'description'),
+            budgetMonetary: _getDoubleField(data, 'budgetMonetary', 0.0),
+            budgetTime: _getDoubleField(data, 'budgetTime', 0.0),
+            actualMonetary: _getDoubleField(data, 'actualMonetary', 0.0),
+            actualTime: _getDoubleField(data, 'actualTime', 0.0),
+            log: _getLogEntries(data, 'log'),
+            achieved: _getBoolField(data, 'achieved', false),
+            dateAchieved: _getDateTimeField(data, 'dateAchieved'),
+            dateCreated: _getDateTimeField(data, 'dateCreated') ?? DateTime.now(),
+            updatedAt: _getDateTimeField(data, 'updatedAt') ?? DateTime.now(),
+          );
+          goals.add(goal);
+        } catch (e) {
+          print('❌ Error parsing goal ${doc.id}: $e');
+          // Skip this goal and continue with others
+          continue;
+        }
+      }
+      return goals;
+    }).handleError((error) {
+      print('❌ Error in goalsForStrategyStream for strategyId=$strategyId: $error');
+      return <Goal>[];
+    });
   }
 
   // ========== OBJECTIVE OPERATIONS ==========
@@ -2639,6 +2717,9 @@ class FirestoreService {
             dueDate: _getDateTimeField(data, 'dueDate'),
             costMonetary: _getDoubleField(data, 'costMonetary', 0.0),
             costTime: _getDoubleField(data, 'costTime', 0.0),
+            spendMonetary: _getDoubleField(data, 'spendMonetary', 0.0),
+            spendTime: _getDoubleField(data, 'spendTime', 0.0),
+            log: _getLogEntries(data, 'log'),
             achieved: _getBoolField(data, 'achieved', false),
             dateAchieved: _getDateTimeField(data, 'dateAchieved'),
             dateCreated: _getDateTimeField(data, 'dateCreated') ?? DateTime.now(),
@@ -2862,6 +2943,241 @@ class FirestoreService {
       print('✅ Synced ${strategies.length} strategies for user: $userId');
     } catch (e) {
       print('❌ Error syncing user strategy denormalized fields: $e');
+      rethrow;
+    }
+  }
+
+  // ========== USER COMMENTS METHODS ==========
+
+  /// Save a user comment
+  Future<void> saveUserComment(UserComment comment) async {
+    try {
+      final data = _convertTimestampsToStrings(comment.toJson()) as Map<String, dynamic>;
+      await _userCommentsCollection.doc(comment.id).set(data);
+      print('✅ Saved user comment: ${comment.id}');
+    } catch (e) {
+      print('❌ Error saving user comment: $e');
+      rethrow;
+    }
+  }
+
+  /// Get a specific comment
+  Future<UserComment?> getUserComment(String commentId) async {
+    try {
+      final doc = await _userCommentsCollection.doc(commentId).get();
+      
+      if (!doc.exists) {
+        print('ℹ️ Comment not found: $commentId');
+        return null;
+      }
+
+      final data = doc.data();
+      if (data == null) {
+        print('⚠️ Null data for comment: $commentId');
+        return null;
+      }
+
+      return UserComment(
+        id: doc.id,
+        userId: _getStringField(data, 'userId'),
+        entityId: _getStringField(data, 'entityId'),
+        entityType: _getStringField(data, 'entityType'),
+        commentText: _getStringField(data, 'commentText'),
+        parentCommentId: _getStringField(data, 'parentCommentId').isEmpty 
+            ? null 
+            : _getStringField(data, 'parentCommentId'),
+        createdAt: _getDateTimeField(data, 'createdAt') ?? DateTime.now(),
+        updatedAt: _getDateTimeField(data, 'updatedAt') ?? DateTime.now(),
+      );
+    } catch (e) {
+      print('❌ Error getting comment $commentId: $e');
+      rethrow;
+    }
+  }
+
+  /// Get all comments for a specific entity
+  Future<List<UserComment>> getCommentsForEntity(String entityId, String entityType) async {
+    try {
+      final querySnapshot = await _userCommentsCollection
+          .where('entityId', isEqualTo: entityId)
+          .where('entityType', isEqualTo: entityType)
+          .orderBy('createdAt', descending: true)
+          .get();
+
+      final comments = <UserComment>[];
+      for (var doc in querySnapshot.docs) {
+        try {
+          final data = doc.data();
+          if (data == null) {
+            print('⚠️ Null data for comment document: ${doc.id}');
+            continue;
+          }
+          
+          final comment = UserComment(
+            id: doc.id,
+            userId: _getStringField(data, 'userId'),
+            entityId: _getStringField(data, 'entityId'),
+            entityType: _getStringField(data, 'entityType'),
+            commentText: _getStringField(data, 'commentText'),
+            parentCommentId: _getStringField(data, 'parentCommentId').isEmpty 
+                ? null 
+                : _getStringField(data, 'parentCommentId'),
+            createdAt: _getDateTimeField(data, 'createdAt') ?? DateTime.now(),
+            updatedAt: _getDateTimeField(data, 'updatedAt') ?? DateTime.now(),
+          );
+          comments.add(comment);
+        } catch (e) {
+          print('❌ Error parsing comment ${doc.id}: $e');
+          continue;
+        }
+      }
+
+      return comments;
+    } catch (e) {
+      print('❌ Error getting comments for entity $entityId: $e');
+      rethrow;
+    }
+  }
+
+  /// Stream comments for a specific entity
+  Stream<List<UserComment>> commentsForEntityStream(String entityId, String entityType) {
+    return _userCommentsCollection
+        .where('entityId', isEqualTo: entityId)
+        .where('entityType', isEqualTo: entityType)
+        .orderBy('createdAt', descending: true)
+        .snapshots()
+        .map((snapshot) {
+      final comments = <UserComment>[];
+      for (var doc in snapshot.docs) {
+        try {
+          final data = doc.data();
+          if (data == null) {
+            print('⚠️ Null data for comment document: ${doc.id}');
+            continue;
+          }
+
+          final comment = UserComment(
+            id: doc.id,
+            userId: _getStringField(data, 'userId'),
+            entityId: _getStringField(data, 'entityId'),
+            entityType: _getStringField(data, 'entityType'),
+            commentText: _getStringField(data, 'commentText'),
+            parentCommentId: _getStringField(data, 'parentCommentId').isEmpty 
+                ? null 
+                : _getStringField(data, 'parentCommentId'),
+            createdAt: _getDateTimeField(data, 'createdAt') ?? DateTime.now(),
+            updatedAt: _getDateTimeField(data, 'updatedAt') ?? DateTime.now(),
+          );
+          comments.add(comment);
+        } catch (e) {
+          print('❌ Error parsing comment ${doc.id}: $e');
+          continue;
+        }
+      }
+      return comments;
+    });
+  }
+
+  /// Get replies to a specific comment
+  Future<List<UserComment>> getRepliesForComment(String parentCommentId) async {
+    try {
+      final querySnapshot = await _userCommentsCollection
+          .where('parentCommentId', isEqualTo: parentCommentId)
+          .orderBy('createdAt')
+          .get();
+
+      final comments = <UserComment>[];
+      for (var doc in querySnapshot.docs) {
+        try {
+          final data = doc.data();
+          if (data == null) {
+            print('⚠️ Null data for comment document: ${doc.id}');
+            continue;
+          }
+          
+          final comment = UserComment(
+            id: doc.id,
+            userId: _getStringField(data, 'userId'),
+            entityId: _getStringField(data, 'entityId'),
+            entityType: _getStringField(data, 'entityType'),
+            commentText: _getStringField(data, 'commentText'),
+            parentCommentId: _getStringField(data, 'parentCommentId').isEmpty 
+                ? null 
+                : _getStringField(data, 'parentCommentId'),
+            createdAt: _getDateTimeField(data, 'createdAt') ?? DateTime.now(),
+            updatedAt: _getDateTimeField(data, 'updatedAt') ?? DateTime.now(),
+          );
+          comments.add(comment);
+        } catch (e) {
+          print('❌ Error parsing comment ${doc.id}: $e');
+          continue;
+        }
+      }
+
+      return comments;
+    } catch (e) {
+      print('❌ Error getting replies for comment $parentCommentId: $e');
+      rethrow;
+    }
+  }
+
+  /// Get all comments by a specific user
+  Future<List<UserComment>> getCommentsByUser(String userId) async {
+    try {
+      final querySnapshot = await _userCommentsCollection
+          .where('userId', isEqualTo: userId)
+          .orderBy('createdAt', descending: true)
+          .get();
+
+      final comments = <UserComment>[];
+      for (var doc in querySnapshot.docs) {
+        try {
+          final data = doc.data();
+          if (data == null) {
+            print('⚠️ Null data for comment document: ${doc.id}');
+            continue;
+          }
+          
+          final comment = UserComment(
+            id: doc.id,
+            userId: _getStringField(data, 'userId'),
+            entityId: _getStringField(data, 'entityId'),
+            entityType: _getStringField(data, 'entityType'),
+            commentText: _getStringField(data, 'commentText'),
+            parentCommentId: _getStringField(data, 'parentCommentId').isEmpty 
+                ? null 
+                : _getStringField(data, 'parentCommentId'),
+            createdAt: _getDateTimeField(data, 'createdAt') ?? DateTime.now(),
+            updatedAt: _getDateTimeField(data, 'updatedAt') ?? DateTime.now(),
+          );
+          comments.add(comment);
+        } catch (e) {
+          print('❌ Error parsing comment ${doc.id}: $e');
+          continue;
+        }
+      }
+
+      return comments;
+    } catch (e) {
+      print('❌ Error getting comments for user $userId: $e');
+      rethrow;
+    }
+  }
+
+  /// Delete a user comment
+  Future<void> deleteUserComment(String commentId) async {
+    try {
+      // First, delete all replies to this comment
+      final replies = await getRepliesForComment(commentId);
+      for (final reply in replies) {
+        await _userCommentsCollection.doc(reply.id).delete();
+      }
+      
+      // Then delete the comment itself
+      await _userCommentsCollection.doc(commentId).delete();
+      print('✅ Deleted comment and ${replies.length} replies: $commentId');
+    } catch (e) {
+      print('❌ Error deleting comment: $e');
       rethrow;
     }
   }

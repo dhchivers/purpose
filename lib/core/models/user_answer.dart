@@ -24,7 +24,7 @@ class UserAnswer {
   final String? textAnswer;
 
   /// The user's numeric answer (for scale questions)
-  final int? numericAnswer;
+  final double? numericAnswer;
 
   /// The user's selected option (for multiple choice)
   final String? selectedOption;
@@ -91,7 +91,7 @@ class UserAnswer {
     String? questionId,
     String? questionModuleId,
     String? textAnswer,
-    int? numericAnswer,
+    double? numericAnswer,
     String? selectedOption,
     bool? booleanAnswer,
     String? notes,

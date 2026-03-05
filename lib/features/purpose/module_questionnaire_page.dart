@@ -71,7 +71,7 @@ class _ModuleQuestionnairePageState
   // Controllers for different question types
   final _textController = TextEditingController();
   String? _selectedOption;
-  int? _scaleValue;
+  double? _scaleValue;
   bool? _booleanValue;
   List<String> _selectedMultipleOptions = [];
 
@@ -523,7 +523,7 @@ class _ModuleQuestionnairePageState
                     ),
                   ),
                 Text(
-                  _scaleValue?.toString() ?? 'Select',
+                  _scaleValue?.toStringAsFixed(1) ?? 'Select',
                   style: const TextStyle(
                     fontSize: 24,
                     fontWeight: FontWeight.bold,
@@ -547,11 +547,11 @@ class _ModuleQuestionnairePageState
               value: (_scaleValue ?? min).toDouble(),
               min: min.toDouble(),
               max: max.toDouble(),
-              divisions: max - min,
-              label: _scaleValue?.toString(),
+              divisions: ((max - min) * 10).toInt(),
+              label: _scaleValue?.toStringAsFixed(1),
               onChanged: (value) {
                 setState(() {
-                  _scaleValue = value.toInt();
+                  _scaleValue = (value * 10).roundToDouble() / 10;
                 });
               },
             ),
@@ -562,17 +562,20 @@ class _ModuleQuestionnairePageState
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: List.generate(
-                  max - min + 1,
-                  (index) => Text(
-                    '${min + index}',
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: Colors.grey[600],
-                      fontWeight: _scaleValue == min + index 
-                          ? FontWeight.bold 
-                          : FontWeight.normal,
-                    ),
-                  ),
+                  (max - min).toInt() + 1,
+                  (index) {
+                    final value = min + index;
+                    return Text(
+                      value.toStringAsFixed(1),
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: Colors.grey[600],
+                        fontWeight: _scaleValue != null && (_scaleValue! - value).abs() < 0.01
+                            ? FontWeight.bold 
+                            : FontWeight.normal,
+                      ),
+                    );
+                  },
                 ),
               ),
             ),

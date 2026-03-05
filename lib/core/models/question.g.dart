@@ -16,8 +16,8 @@ Question _$QuestionFromJson(Map<String, dynamic> json) => Question(
       ?.map((e) => e as String)
       .toList(),
   allowMultipleSelections: json['allowMultipleSelections'] as bool?,
-  scaleMin: (json['scaleMin'] as num?)?.toInt(),
-  scaleMax: (json['scaleMax'] as num?)?.toInt(),
+  scaleMin: (json['scaleMin'] as num?)?.toDouble(),
+  scaleMax: (json['scaleMax'] as num?)?.toDouble(),
   scaleLabels: (json['scaleLabels'] as List<dynamic>?)
       ?.map((e) => e as String)
       .toList(),

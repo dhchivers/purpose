@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:purpose/core/models/goal.dart';
 import 'package:purpose/core/services/auth_provider.dart';
 import 'package:purpose/core/services/strategy_provider.dart';
 import 'package:purpose/core/services/strategy_context_provider.dart';
+import 'package:purpose/core/services/goal_provider.dart';
 import 'package:purpose/shared/widgets/strategy_selector.dart';
 import 'package:intl/intl.dart';
 
@@ -319,11 +321,11 @@ class DashboardPage extends ConsumerWidget {
                       ),
                 ),
                 const SizedBox(height: 16),
-                // Two column layout: Left (Purpose/Vision/Mission) and Right (Values/Goals)
+                // Two column layout: Left (Purpose/Vision/Mission/Values) and Right (Goals)
                 Row(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    // Left Column: Purpose, Vision, Mission
+                    // Left Column: Purpose, Vision, Mission, Values
                     Expanded(
                       flex: 1,
                       child: Column(
@@ -452,15 +454,7 @@ class DashboardPage extends ConsumerWidget {
                               );
                             },
                           ),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    // Right Column: Values and Goals
-                    Expanded(
-                      flex: 1,
-                      child: Column(
-                        children: [
+                          const SizedBox(height: 12),
                           // Load and display user values
                           Consumer(
                             builder: (context, ref, child) {
@@ -500,9 +494,33 @@ class DashboardPage extends ConsumerWidget {
                               );
                             },
                           ),
-                          const SizedBox(height: 12),
-                          _GoalsCard(
-                            value: '${user.goalIds?.length ?? 0}',
+                        ],
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    // Right Column: Goals
+                    Expanded(
+                      flex: 1,
+                      child: Column(
+                        children: [
+                          Consumer(
+                            builder: (context, ref, child) {
+                              final activeStrategy = ref.watch(activeStrategyProvider);
+                              
+                              if (activeStrategy == null) {
+                                return const _GoalsCard(goals: []);
+                              }
+                              
+                              final goalsAsync = ref.watch(activeGoalsForStrategyProvider(activeStrategy.id));
+                              return goalsAsync.when(
+                                data: (goals) => _GoalsCard(goals: goals),
+                                loading: () => const _GoalsCard(goals: []),
+                                error: (error, stack) {
+                                  print('❌ Error loading goals on dashboard: $error');
+                                  return const _GoalsCard(goals: []);
+                                },
+                              );
+                            },
                           ),
                         ],
                       ),
@@ -748,53 +766,184 @@ class _ValuesCard extends StatelessWidget {
   }
 }
 
-class _GoalsCard extends StatelessWidget {
-  final String value;
+class _GoalsCard extends ConsumerWidget {
+  final List<Goal> goals;
 
   const _GoalsCard({
-    required this.value,
+    required this.goals,
   });
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    // Get mission ID for navigation from goals (since they have missionId)
+    // or fallback to mission map page if no goals
+    final activeStrategy = ref.watch(activeStrategyProvider);
+    String? currentMissionId;
+    bool canNavigate = false;
+    
+    if (goals.isNotEmpty) {
+      // Use missionId from first goal (all goals in this list are for current mission)
+      currentMissionId = goals.first.missionId;
+      canNavigate = true;
+    } else if (activeStrategy != null) {
+      // No goals, but can navigate to mission map page
+      canNavigate = true;
+    }
+    
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(16.0),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Row(
-              children: [
-                const Icon(Icons.checklist, size: 32, color: Color(0xFF1E6BFF)),
-                const SizedBox(width: 8),
-                Text(
-                  'Goals',
-                  style: Theme.of(context).textTheme.bodySmall,
-                ),
-              ],
-            ),
-            const SizedBox(height: 32),
-            Center(
-              child: Column(
+            InkWell(
+              onTap: canNavigate
+                ? () {
+                    if (currentMissionId != null) {
+                      context.go('/mission/$currentMissionId');
+                    } else {
+                      context.go('/mission');
+                    }
+                  }
+                : null,
+              child: Row(
                 children: [
+                  const Icon(Icons.checklist, size: 32, color: Color(0xFF1E6BFF)),
+                  const SizedBox(width: 8),
                   Text(
-                    value,
-                    style: Theme.of(context).textTheme.displayMedium?.copyWith(
-                          fontWeight: FontWeight.bold,
-                          color: const Color(0xFF1E6BFF),
-                        ),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    value == '0' ? 'No goals yet' : 'Goals set',
-                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                          color: Colors.grey,
-                        ),
+                    'Goals',
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      decoration: canNavigate ? TextDecoration.underline : null,
+                    ),
                   ),
                 ],
               ),
             ),
+            const SizedBox(height: 12),
+            if (goals.isEmpty)
+              Center(
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 24),
+                  child: Text(
+                    'No active goals',
+                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                          color: Colors.grey,
+                        ),
+                  ),
+                ),
+              )
+            else
+              ...goals.map((goal) => _GoalItem(goal: goal)),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+class _GoalItem extends ConsumerWidget {
+  final Goal goal;
+
+  const _GoalItem({required this.goal});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final objectivesAsync = ref.watch(objectivesForGoalStreamProvider(goal.id));
+
+    return objectivesAsync.when(
+      data: (objectives) {
+        final achieved = objectives.where((obj) => obj.achieved).length;
+        final total = objectives.length;
+        
+        return Padding(
+          padding: const EdgeInsets.only(bottom: 8),
+          child: Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: Colors.grey.shade50,
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: Colors.grey.shade200),
+            ),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    goal.title,
+                    style: const TextStyle(
+                      fontWeight: FontWeight.w600,
+                      fontSize: 14,
+                    ),
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Text(
+                  'Objectives Completed: $achieved/$total',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: Colors.grey.shade700,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+      loading: () => Padding(
+        padding: const EdgeInsets.only(bottom: 8),
+        child: Container(
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: Colors.grey.shade50,
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(color: Colors.grey.shade200),
+          ),
+          child: Row(
+            children: [
+              Expanded(
+                child: Text(
+                  goal.title,
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w600,
+                    fontSize: 14,
+                  ),
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              const SizedBox(width: 8),
+              Text(
+                'Objectives Completed: ...',
+                style: TextStyle(
+                  fontSize: 12,
+                  color: Colors.grey.shade700,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+      error: (error, stack) => Padding(
+        padding: const EdgeInsets.only(bottom: 8),
+        child: Container(
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: Colors.grey.shade50,
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(color: Colors.grey.shade200),
+          ),
+          child: Text(
+            goal.title,
+            style: const TextStyle(
+              fontWeight: FontWeight.w600,
+              fontSize: 14,
+            ),
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+          ),
         ),
       ),
     );

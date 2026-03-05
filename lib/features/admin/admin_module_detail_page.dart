@@ -930,10 +930,10 @@ class _CreateQuestionDialogState extends State<_CreateQuestionDialog> {
             ? int.parse(_characterLimitController.text)
             : null,
         scaleMin: _selectedQuestionType == QuestionType.scale
-            ? int.parse(_scaleMinController.text)
+            ? double.parse(_scaleMinController.text)
             : null,
         scaleMax: _selectedQuestionType == QuestionType.scale
-            ? int.parse(_scaleMaxController.text)
+            ? double.parse(_scaleMaxController.text)
             : null,
         scaleLabels: scaleLabels,
         order: int.parse(_orderController.text),
@@ -1451,10 +1451,10 @@ class _EditQuestionDialogState extends State<_EditQuestionDialog> {
             ? int.parse(_characterLimitController.text)
             : null,
         scaleMin: _selectedQuestionType == QuestionType.scale
-            ? int.parse(_scaleMinController.text)
+            ? double.parse(_scaleMinController.text)
             : null,
         scaleMax: _selectedQuestionType == QuestionType.scale
-            ? int.parse(_scaleMaxController.text)
+            ? double.parse(_scaleMaxController.text)
             : null,
         scaleLabels: scaleLabels,
         order: int.parse(_orderController.text),

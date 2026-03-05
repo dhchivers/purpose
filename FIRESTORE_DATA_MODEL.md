@@ -24,8 +24,11 @@ Firestore Database
 ├── user_answers/                   # User responses
 │   └── {answerId}/                 # Document per answer
 │
-└── identity_synthesis_results/     # AI identity analysis results
-    └── {resultId}/                 # Document per synthesis
+├── identity_synthesis_results/     # AI identity analysis results
+│   └── {resultId}/                 # Document per synthesis
+│
+└── user_comments/                  # User feedback and journal entries
+    └── {commentId}/                # Document per comment
 ```
 
 ---
@@ -557,6 +560,148 @@ service cloud.firestore {
   }
 }
 ```
+
+---
+
+## 6. User Comments Collection
+
+**Collection**: `user_comments`  
+**Purpose**: Store user feedback, journal entries, and threaded comments on various entities
+
+### UserComment Structure
+
+```dart
+{
+  id: string,                               // Unique comment ID
+  userId: string,                           // User who created the comment
+  entityId: string,                         // ID of entity being commented on
+  entityType: string,                       // Type: 'goal', 'objective', 'mission', 'journal'
+  commentText: string,                      // The comment content
+  parentCommentId: string?,                 // For threaded replies (null for top-level)
+  createdAt: Timestamp,                     // Creation timestamp
+  updatedAt: Timestamp                      // Last update timestamp
+}
+```
+
+### Entity Types
+
+- **goal** - Comments/feedback on goals
+- **objective** - Comments/feedback on objectives
+- **mission** - Comments/feedback on missions
+- **journal** - Personal journal entries
+- Additional types can be added as needed
+
+### Composite Indexes
+
+Required indexes (configured in `firestore.indexes.json`):
+
+1. **Entity Comments** - Query comments by entity
+   ```
+   entityId (ASC) + entityType (ASC) + createdAt (DESC)
+   ```
+
+2. **Reply Threading** - Query replies to a comment
+   ```
+   parentCommentId (ASC) + createdAt (ASC)
+   ```
+
+3. **User Activity** - Query user's comments
+   ```
+   userId (ASC) + createdAt (DESC)
+   ```
+
+### Example Comment Document
+
+```json
+{
+  "id": "comment_abc123",
+  "userId": "user_xyz789",
+  "entityId": "goal_def456",
+  "entityType": "goal",
+  "commentText": "Making great progress on this goal!",
+  "parentCommentId": null,
+  "createdAt": "2026-03-05T14:30:00Z",
+  "updatedAt": "2026-03-05T14:30:00Z"
+}
+```
+
+### Example Reply Document
+
+```json
+{
+  "id": "comment_ghi789",
+  "userId": "user_xyz789",
+  "entityId": "goal_def456",
+  "entityType": "goal",
+  "commentText": "Update: Completed the first milestone!",
+  "parentCommentId": "comment_abc123",
+  "createdAt": "2026-03-06T09:15:00Z",
+  "updatedAt": "2026-03-06T09:15:00Z"
+}
+```
+
+### Service Methods
+
+Located in `FirestoreService`:
+
+```dart
+// Save a comment
+Future<void> saveUserComment(UserComment comment)
+
+// Get all comments for an entity
+Future<List<UserComment>> getCommentsForEntity(
+  String entityId, 
+  String entityType
+)
+
+// Stream comments (real-time updates)
+Stream<List<UserComment>> commentsForEntityStream(
+  String entityId, 
+  String entityType
+)
+
+// Get replies to a comment
+Future<List<UserComment>> getRepliesForComment(String parentCommentId)
+
+// Get all comments by a user
+Future<List<UserComment>> getCommentsByUser(String userId)
+
+// Delete comment (and all replies)
+Future<void> deleteUserComment(String commentId)
+```
+
+### Usage Example
+
+```dart
+// Create a feedback comment on a goal
+final comment = UserComment(
+  id: FirebaseFirestore.instance.collection('user_comments').doc().id,
+  userId: currentUser.uid,
+  entityId: goalId,
+  entityType: 'goal',
+  commentText: 'This goal aligns perfectly with my vision!',
+  parentCommentId: null,
+  createdAt: DateTime.now(),
+  updatedAt: DateTime.now(),
+);
+
+await firestoreService.saveUserComment(comment);
+
+// Get comments for a goal with real-time updates
+final commentsStream = firestoreService.commentsForEntityStream(
+  goalId, 
+  'goal'
+);
+```
+
+### Integration Points
+
+- **Goals/Objectives**: Feedback button opens comment dialog
+- **Journal**: entityType='journal' with entityId=userId for personal entries
+- **Mission Documents**: Collect thoughts and reflections on missions
+- **Threaded Discussions**: parentCommentId enables reply chains
+
+For detailed documentation, see [USER_COMMENTS.md](USER_COMMENTS.md).
 
 ---
 

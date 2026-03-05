@@ -23,6 +23,14 @@ final goalsForMissionStreamProvider = StreamProvider.family<List<Goal>, String>(
   return firestoreService.goalsForMissionStream(missionId);
 });
 
+/// Provider for all active (not achieved) goals for a strategy (Stream - real-time updates)
+final activeGoalsForStrategyProvider = StreamProvider.family<List<Goal>, String>((ref, strategyId) {
+  final firestoreService = ref.watch(firestoreServiceProvider);
+  return firestoreService.goalsForStrategyStream(strategyId).map((goals) {
+    return goals.where((goal) => !goal.achieved).toList();
+  });
+});
+
 // ========== OBJECTIVE PROVIDERS ==========
 
 /// Provider for a specific objective by ID (Future)

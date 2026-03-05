@@ -1,4 +1,5 @@
 import 'package:json_annotation/json_annotation.dart';
+import 'package:purpose/core/models/objective.dart';
 
 part 'goal.g.dart';
 
@@ -15,6 +16,7 @@ class Goal {
   final double budgetTime; // Budget in hours/days
   final double actualMonetary; // Actual spent in monetary units
   final double actualTime; // Actual time spent in hours/days
+  final List<LogEntry> log; // Activity log entries
   final bool achieved; // Completion status
   final DateTime? dateAchieved; // When the goal was achieved (null if not achieved)
   final DateTime dateCreated;
@@ -30,6 +32,7 @@ class Goal {
     this.budgetTime = 0.0,
     this.actualMonetary = 0.0,
     this.actualTime = 0.0,
+    this.log = const [],
     this.achieved = false,
     this.dateAchieved,
     required this.dateCreated,
@@ -50,6 +53,7 @@ class Goal {
     double? budgetTime,
     double? actualMonetary,
     double? actualTime,
+    List<LogEntry>? log,
     bool? achieved,
     DateTime? dateAchieved,
     DateTime? dateCreated,
@@ -65,6 +69,7 @@ class Goal {
       budgetTime: budgetTime ?? this.budgetTime,
       actualMonetary: actualMonetary ?? this.actualMonetary,
       actualTime: actualTime ?? this.actualTime,
+      log: log ?? this.log,
       achieved: achieved ?? this.achieved,
       dateAchieved: dateAchieved ?? this.dateAchieved,
       dateCreated: dateCreated ?? this.dateCreated,

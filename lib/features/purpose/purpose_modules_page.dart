@@ -10,6 +10,7 @@ import 'package:purpose/core/services/auth_provider.dart';
 import 'package:purpose/core/services/strategy_context_provider.dart';
 import 'package:purpose/core/theme/app_theme.dart';
 import 'package:purpose/features/admin/admin_strategy_types_page.dart';
+import 'identity_analysis_page.dart';
 
 /// Provider for streaming Purpose modules
 final purposeModulesProvider = StreamProvider<List<QuestionModule>>((ref) {
@@ -297,92 +298,113 @@ class PurposeModulesPage extends ConsumerWidget {
                 );
               }
 
-              return Column(
-                children: [
-                  // Header section
-                  Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.all(24),
-                    decoration: const BoxDecoration(
-                      color: AppTheme.primary,
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const Text(
-                          'Purpose',
-                          style: TextStyle(
-                            fontSize: 24,
-                            fontWeight: FontWeight.bold,
-                            color: Colors.white,
+              return SingleChildScrollView(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // SECTION 1: Purpose Statement
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(24),
+                      decoration: const BoxDecoration(
+                        color: AppTheme.primary,
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text(
+                            'Your Purpose',
+                            style: TextStyle(
+                              fontSize: 20,
+                              fontWeight: FontWeight.w600,
+                              color: Colors.white70,
+                            ),
                           ),
-                        ),
-                      ],
+                          const SizedBox(height: 12),
+                          Text(
+                            activeStrategy.purpose ?? 'Complete the modules below to discover your purpose.',
+                            style: const TextStyle(
+                              fontSize: 26,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.white,
+                              height: 1.3,
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
-                  ),
 
-                  // Modules list
-                  Expanded(
-                    child: ListView.builder(
-                      padding: const EdgeInsets.all(16),
-                      itemCount: filteredModules.length,
-                      itemBuilder: (context, index) {
-                        final module = filteredModules[index];
-                        
-                        return _ModuleCard(
-                          module: module,
-                          userId: user.uid,
-                          strategyId: activeStrategy.id,
+                    const SizedBox(height: 24),
+
+                    // SECTION 2: Module Cards (Horizontal)
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 16),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text(
+                            'Question Modules',
+                            style: TextStyle(
+                              fontSize: 18,
+                              fontWeight: FontWeight.bold,
+                              color: AppTheme.graphite,
+                            ),
+                          ),
+                          const SizedBox(height: 12),
+                          SizedBox(
+                            height: 200,
+                            child: ListView.builder(
+                              scrollDirection: Axis.horizontal,
+                              itemCount: filteredModules.length,
+                              itemBuilder: (context, index) {
+                                final module = filteredModules[index];
+                                return Padding(
+                                  padding: EdgeInsets.only(
+                                    right: index < filteredModules.length - 1 ? 12 : 0,
+                                  ),
+                                  child: _CompactModuleCard(
+                                    module: module,
+                                    moduleNumber: index + 1,
+                                    userId: user.uid,
+                                    strategyId: activeStrategy.id,
+                                  ),
+                                );
+                              },
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+
+                    const SizedBox(height: 32),
+
+                    // SECTION 3: Integrated Identity Analysis
+                    Consumer(
+                      builder: (context, ref, child) {
+                        final allCompleteAsync = ref.watch(
+                          allPurposeModulesCompleteProvider((
+                            userId: user.uid, 
+                            strategyId: activeStrategy.id,
+                            strategyTypeId: activeStrategy.strategyTypeId,
+                          )),
+                        );
+
+                        return allCompleteAsync.when(
+                          data: (isComplete) {
+                            if (!isComplete) return const SizedBox.shrink();
+
+                            return _IntegratedIdentitySection(
+                              userId: user.uid,
+                              strategyId: activeStrategy.id,
+                            );
+                          },
+                          loading: () => const SizedBox.shrink(),
+                          error: (_, __) => const SizedBox.shrink(),
                         );
                       },
                     ),
-                  ),
-
-                  // Analysis button
-                  Consumer(
-                    builder: (context, ref, child) {
-                      final allCompleteAsync = ref.watch(
-                        allPurposeModulesCompleteProvider((
-                          userId: user.uid, 
-                          strategyId: activeStrategy.id,
-                          strategyTypeId: activeStrategy.strategyTypeId,
-                        )),
-                      );
-
-                      return allCompleteAsync.when(
-                        data: (isComplete) {
-                          if (!isComplete) return const SizedBox.shrink();
-
-                          return Container(
-                            width: double.infinity,
-                            padding: const EdgeInsets.all(16),
-                            decoration: BoxDecoration(
-                              color: AppTheme.primaryTintLight,
-                              border: Border(
-                                top: BorderSide(color: AppTheme.primaryLight),
-                              ),
-                            ),
-                            child: ElevatedButton.icon(
-                              onPressed: () => context.go('/purpose/analysis'),
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: AppTheme.primary,
-                                foregroundColor: Colors.white,
-                                padding: const EdgeInsets.symmetric(vertical: 16),
-                              ),
-                              icon: const Icon(Icons.analytics),
-                              label: const Text(
-                                'View Identity Analysis',
-                                style: TextStyle(fontSize: 16),
-                              ),
-                            ),
-                          );
-                        },
-                        loading: () => const SizedBox.shrink(),
-                        error: (_, __) => const SizedBox.shrink(),
-                      );
-                    },
-                  ),
-                ],
+                  ],
+                ),
               );
             },
             loading: () => const Center(child: CircularProgressIndicator()),
@@ -410,168 +432,275 @@ class PurposeModulesPage extends ConsumerWidget {
   }
 }
 
-/// Module card widget with completion status
-class _ModuleCard extends ConsumerWidget {
+/// Compact horizontal module card for the new layout
+class _CompactModuleCard extends ConsumerWidget {
   final QuestionModule module;
+  final int moduleNumber;
   final String userId;
   final String strategyId;
 
-  const _ModuleCard({
+  const _CompactModuleCard({
     required this.module,
+    required this.moduleNumber,
     required this.userId,
     required this.strategyId,
   });
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    // print('🃏 _ModuleCard build: module=${module.name}, strategyId=$strategyId');
-    
     final completionAsync = ref.watch(moduleCompletionProvider(
       (userId: userId, strategyId: strategyId, moduleId: module.id),
     ));
+    
+    final questionCountAsync = ref.watch(moduleQuestionCountProvider(module.id));
 
     return completionAsync.when(
       data: (isCompleted) {
-        // print('  ✅ Module ${module.name}: isCompleted=$isCompleted');
-        return Card(
-          margin: const EdgeInsets.only(bottom: 16),
-          elevation: isCompleted ? 1 : 2,
-          child: InkWell(
-            onTap: () => context.go('/purpose/module/${module.id}'),
-            borderRadius: BorderRadius.circular(12),
-            child: Container(
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(12),
-                border: isCompleted
-                    ? Border.all(color: Colors.green.shade300, width: 2)
-                    : null,
+        return SizedBox(
+          width: 280,
+          child: Card(
+            elevation: 2,
+            child: InkWell(
+              onTap: () => context.go('/purpose/module/${module.id}'),
+              borderRadius: BorderRadius.circular(12),
+              child: Container(
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(12),
+                  border: isCompleted
+                      ? Border.all(color: Colors.green.shade300, width: 2)
+                      : null,
+                ),
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      // Header row with number/check and re-run icon
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          // Badge
+                          Container(
+                            width: 40,
+                            height: 40,
+                            decoration: BoxDecoration(
+                              color: isCompleted
+                                  ? Colors.green.shade100
+                                  : AppTheme.primaryTintLight,
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: Center(
+                              child: isCompleted
+                                  ? Icon(
+                                      Icons.check_circle,
+                                      size: 24,
+                                      color: Colors.green.shade700,
+                                    )
+                                  : Text(
+                                      '$moduleNumber',
+                                      style: const TextStyle(
+                                        fontSize: 16,
+                                        fontWeight: FontWeight.bold,
+                                        color: AppTheme.primary,
+                                      ),
+                                    ),
+                            ),
+                          ),
+                          // Re-run icon button
+                          if (isCompleted)
+                            IconButton(
+                              icon: Icon(
+                                Icons.refresh,
+                                size: 20,
+                                color: Colors.grey.shade600,
+                              ),
+                              onPressed: () => context.go('/purpose/module/${module.id}'),
+                              tooltip: 'Re-run module',
+                              padding: EdgeInsets.zero,
+                              constraints: const BoxConstraints(),
+                            ),
+                        ],
+                      ),
+                      const SizedBox(height: 12),
+                      // Module title
+                      Text(
+                        module.name,
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                          color: isCompleted ? Colors.green.shade900 : AppTheme.graphite,
+                        ),
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      const Spacer(),
+                      // Bottom row with question count and completion chip
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          // Question count
+                          questionCountAsync.when(
+                            data: (count) => Row(
+                              children: [
+                                Icon(
+                                  Icons.quiz_outlined,
+                                  size: 14,
+                                  color: Colors.grey.shade600,
+                                ),
+                                const SizedBox(width: 4),
+                                Text(
+                                  '$count',
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    color: Colors.grey.shade600,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              ],
+                            ),
+                            loading: () => Row(
+                              children: [
+                                Icon(
+                                  Icons.quiz_outlined,
+                                  size: 14,
+                                  color: Colors.grey.shade600,
+                                ),
+                                const SizedBox(width: 4),
+                                Text(
+                                  '${module.totalQuestions}',
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    color: Colors.grey.shade600,
+                                  ),
+                                ),
+                              ],
+                            ),
+                            error: (_, __) => Row(
+                              children: [
+                                Icon(
+                                  Icons.quiz_outlined,
+                                  size: 14,
+                                  color: Colors.grey.shade600,
+                                ),
+                                const SizedBox(width: 4),
+                                Text(
+                                  '${module.totalQuestions}',
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    color: Colors.grey.shade600,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          // Completion chip
+                          if (isCompleted)
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 8,
+                                vertical: 4,
+                              ),
+                              decoration: BoxDecoration(
+                                color: Colors.green.shade100,
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              child: Text(
+                                'Completed',
+                                style: TextStyle(
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.bold,
+                                  color: Colors.green.shade700,
+                                ),
+                              ),
+                            ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
               ),
+            ),
+          ),
+        );
+      },
+      loading: () {
+        return SizedBox(
+          width: 280,
+          child: Card(
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                children: [
+                  Container(
+                    width: 40,
+                    height: 40,
+                    decoration: BoxDecoration(
+                      color: Colors.grey.shade200,
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: const Center(
+                      child: SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  Text(
+                    module.name,
+                    style: const TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                    ),
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
+      error: (_, __) {
+        return SizedBox(
+          width: 280,
+          child: Card(
+            child: InkWell(
+              onTap: () => context.go('/purpose/module/${module.id}'),
+              borderRadius: BorderRadius.circular(12),
               child: Padding(
                 padding: const EdgeInsets.all(16),
-                child: Row(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    // Order badge or completion checkmark
                     Container(
-                      width: 48,
-                      height: 48,
+                      width: 40,
+                      height: 40,
                       decoration: BoxDecoration(
-                        color: isCompleted
-                            ? Colors.green.shade100
-                            : AppTheme.primaryTintLight,
+                        color: AppTheme.primaryTintLight,
                         borderRadius: BorderRadius.circular(8),
                       ),
                       child: Center(
-                        child: isCompleted
-                            ? Icon(
-                                Icons.check_circle,
-                                size: 32,
-                                color: Colors.green.shade700,
-                              )
-                            : Text(
-                                '${module.order}',
-                                style: const TextStyle(
-                                  fontSize: 18,
-                                  fontWeight: FontWeight.w600,
-                                  color: AppTheme.primary,
-                                ),
-                              ),
+                        child: Text(
+                          '$moduleNumber',
+                          style: const TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.bold,
+                            color: AppTheme.primary,
+                          ),
+                        ),
                       ),
                     ),
-                    const SizedBox(width: 16),
-                    // Module info
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Row(
-                            children: [
-                              Expanded(
-                                child: Text(
-                                  module.name,
-                                  style: TextStyle(
-                                    fontSize: 18,
-                                    fontWeight: FontWeight.bold,
-                                    color: isCompleted
-                                        ? Colors.green.shade900
-                                        : null,
-                                  ),
-                                ),
-                              ),
-                              if (isCompleted)
-                                Container(
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 8,
-                                    vertical: 4,
-                                  ),
-                                  decoration: BoxDecoration(
-                                    color: Colors.green.shade100,
-                                    borderRadius: BorderRadius.circular(12),
-                                  ),
-                                  child: Text(
-                                    'Completed',
-                                    style: TextStyle(
-                                      fontSize: 11,
-                                      fontWeight: FontWeight.bold,
-                                      color: Colors.green.shade700,
-                                    ),
-                                  ),
-                                ),
-                            ],
-                          ),
-                          const SizedBox(height: 4),
-                          Text(
-                            module.description,
-                            style: TextStyle(
-                              fontSize: 14,
-                              color: Colors.grey[600],
-                            ),
-                          ),
-                          const SizedBox(height: 8),
-                          Consumer(
-                            builder: (context, ref, child) {
-                              final questionCountAsync = ref.watch(moduleQuestionCountProvider(module.id));
-                              return Row(
-                                children: [
-                                  Icon(
-                                    Icons.quiz_outlined,
-                                    size: 16,
-                                    color: Colors.grey[600],
-                                  ),
-                                  const SizedBox(width: 4),
-                                  questionCountAsync.when(
-                                    data: (count) => Text(
-                                      '$count questions',
-                                      style: TextStyle(
-                                        fontSize: 12,
-                                        color: Colors.grey[600],
-                                      ),
-                                    ),
-                                    loading: () => Text(
-                                      '${module.totalQuestions} questions',
-                                      style: TextStyle(
-                                        fontSize: 12,
-                                        color: Colors.grey[600],
-                                      ),
-                                    ),
-                                    error: (_, __) => Text(
-                                      '${module.totalQuestions} questions',
-                                      style: TextStyle(
-                                        fontSize: 12,
-                                        color: Colors.grey[600],
-                                      ),
-                                    ),
-                                  ),
-                                ],
-                              );
-                            },
-                          ),
-                        ],
+                    const SizedBox(height: 12),
+                    Text(
+                      module.name,
+                      style: const TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
                       ),
-                    ),
-                    Icon(
-                      isCompleted ? Icons.refresh : Icons.arrow_forward_ios,
-                      size: 20,
-                      color: isCompleted ? Colors.green : Colors.grey,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
                     ),
                   ],
                 ),
@@ -580,159 +709,221 @@ class _ModuleCard extends ConsumerWidget {
           ),
         );
       },
-      loading: () {
-        // print('  ⏳ Module ${module.name}: LOADING completion status');
-        return Card(
-        margin: const EdgeInsets.only(bottom: 16),
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Row(
+    );
+  }
+}
+
+/// Integrated Identity Analysis Section
+class _IntegratedIdentitySection extends ConsumerWidget {
+  final String userId;
+  final String strategyId;
+
+  const _IntegratedIdentitySection({
+    required this.userId,
+    required this.strategyId,
+  });
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    // Use the same provider from identity_analysis_page
+    final synthesisAsync = ref.watch(identitySynthesisResultProvider);
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(24),
+      decoration: BoxDecoration(
+        color: AppTheme.primaryTintLight,
+        border: Border(
+          top: BorderSide(color: AppTheme.primaryLight, width: 2),
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
             children: [
-              Container(
-                width: 48,
-                height: 48,
-                decoration: BoxDecoration(
-                  color: Colors.grey.shade200,
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: const Center(
-                  child: SizedBox(
-                    width: 24,
-                    height: 24,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  ),
-                ),
+              const Icon(
+                Icons.psychology,
+                color: AppTheme.primary,
+                size: 28,
               ),
-              const SizedBox(width: 16),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      module.name,
-                      style: const TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      module.description,
-                      style: TextStyle(
-                        fontSize: 14,
-                        color: Colors.grey[600],
-                      ),
-                    ),
-                  ],
+              const SizedBox(width: 12),
+              const Text(
+                'Integrated Identity Analysis',
+                style: TextStyle(
+                  fontSize: 22,
+                  fontWeight: FontWeight.bold,
+                  color: AppTheme.graphite,
                 ),
               ),
             ],
           ),
-        ),
-      );
-      },
-      error: (error, stack) {
-        // print('  ❌ Module ${module.name}: ERROR - $error');
-        return Card(
-        margin: const EdgeInsets.only(bottom: 16),
-        child: InkWell(
-          onTap: () => context.go('/purpose/module/${module.id}'),
-          borderRadius: BorderRadius.circular(12),
-          child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: Row(
-              children: [
-                Container(
-                  width: 48,
-                  height: 48,
-                  decoration: BoxDecoration(
-                    color: AppTheme.primaryTintLight,
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Center(
-                    child: Text(
-                      '${module.order}',
-                      style: const TextStyle(
-                        fontSize: 24,
-                        fontWeight: FontWeight.bold,
-                        color: AppTheme.primary,
+          const SizedBox(height: 16),
+          synthesisAsync.when(
+            data: (result) {
+              if (result == null) {
+                return Column(
+                  children: [
+                    const Text(
+                      'Analysis not yet available. Click below to generate.',
+                      style: TextStyle(fontSize: 14, color: Colors.grey),
+                    ),
+                    const SizedBox(height: 16),
+                    ElevatedButton.icon(
+                      onPressed: () => context.go('/purpose/analysis'),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: AppTheme.primary,
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 24,
+                          vertical: 16,
+                        ),
                       ),
+                      icon: const Icon(Icons.analytics),
+                      label: const Text('Generate Analysis'),
+                    ),
+                  ],
+                );
+              }
+
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // Integrated Identity
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: AppTheme.primaryLight),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          'Your Integrated Identity',
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w600,
+                            color: AppTheme.primary,
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        Text(
+                          result.integratedIdentity.summary,
+                          style: const TextStyle(
+                            fontSize: 15,
+                            height: 1.5,
+                            color: AppTheme.graphite,
+                          ),
+                        ),
+                      ],
                     ),
                   ),
-                ),
-                const SizedBox(width: 16),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        module.name,
-                        style: const TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.bold,
+                  const SizedBox(height: 16),
+                  
+                  // Tier Analysis Summary
+                  if (result.tierAnalysis.isNotEmpty) ...[
+                    const Text(
+                      'Analysis by Module',
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w600,
+                        color: AppTheme.graphite,
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    ...result.tierAnalysis.map((tier) => Padding(
+                      padding: const EdgeInsets.only(bottom: 12),
+                      child: Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: Colors.grey.shade300),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              tier.tierName,
+                              style: const TextStyle(
+                                fontSize: 14,
+                                fontWeight: FontWeight.bold,
+                                color: AppTheme.primary,
+                              ),
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              tier.summary,
+                              style: TextStyle(
+                                fontSize: 13,
+                                color: Colors.grey.shade700,
+                                height: 1.4,
+                              ),
+                            ),
+                          ],
                         ),
                       ),
-                      const SizedBox(height: 4),
-                      Text(
-                        module.description,
-                        style: TextStyle(
-                          fontSize: 14,
-                          color: Colors.grey[600],
+                    )),
+                  ],
+                  
+                  const SizedBox(height: 16),
+                  
+                  // View Full Analysis Button
+                  Center(
+                    child: ElevatedButton.icon(
+                      onPressed: () => context.go('/purpose/analysis'),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: AppTheme.primary,
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 24,
+                          vertical: 16,
                         ),
                       ),
-                      const SizedBox(height: 8),
-                      Consumer(
-                        builder: (context, ref, child) {
-                          final questionCountAsync = ref.watch(moduleQuestionCountProvider(module.id));
-                          return Row(
-                            children: [
-                              Icon(
-                                Icons.quiz_outlined,
-                                size: 16,
-                                color: Colors.grey[600],
-                              ),
-                              const SizedBox(width: 4),
-                              questionCountAsync.when(
-                                data: (count) => Text(
-                                  '$count questions',
-                                  style: TextStyle(
-                                    fontSize: 12,
-                                    color: Colors.grey[600],
-                                  ),
-                                ),
-                                loading: () => Text(
-                                  '${module.totalQuestions} questions',
-                                  style: TextStyle(
-                                    fontSize: 12,
-                                    color: Colors.grey[600],
-                                  ),
-                                ),
-                                error: (_, __) => Text(
-                                  '${module.totalQuestions} questions',
-                                  style: TextStyle(
-                                    fontSize: 12,
-                                    color: Colors.grey[600],
-                                  ),
-                                ),
-                              ),
-                            ],
-                          );
-                        },
-                      ),
-                    ],
+                      icon: const Icon(Icons.description),
+                      label: const Text('View Full Analysis'),
+                    ),
                   ),
-                ),
-                const Icon(
-                  Icons.arrow_forward_ios,
-                  size: 20,
-                  color: Colors.grey,
-                ),
-              ],
+                ],
+              );
+            },
+            loading: () => const Center(
+              child: Padding(
+                padding: EdgeInsets.all(32),
+                child: CircularProgressIndicator(),
+              ),
             ),
+            error: (error, stack) {
+              return Column(
+                children: [
+                  Text(
+                    'Error loading analysis: ${error.toString()}',
+                    style: const TextStyle(color: Colors.red),
+                  ),
+                  const SizedBox(height: 16),
+                  ElevatedButton.icon(
+                    onPressed: () => context.go('/purpose/analysis'),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppTheme.primary,
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 24,
+                        vertical: 16,
+                      ),
+                    ),
+                    icon: const Icon(Icons.analytics),
+                    label: const Text('View Identity Analysis'),
+                  ),
+                ],
+              );
+            },
           ),
-        ),
-      );
-      },
+        ],
+      ),
     );
   }
 }

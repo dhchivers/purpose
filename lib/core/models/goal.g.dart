@@ -16,6 +16,11 @@ Goal _$GoalFromJson(Map<String, dynamic> json) => Goal(
   budgetTime: (json['budgetTime'] as num?)?.toDouble() ?? 0.0,
   actualMonetary: (json['actualMonetary'] as num?)?.toDouble() ?? 0.0,
   actualTime: (json['actualTime'] as num?)?.toDouble() ?? 0.0,
+  log:
+      (json['log'] as List<dynamic>?)
+          ?.map((e) => LogEntry.fromJson(e as Map<String, dynamic>))
+          .toList() ??
+      const [],
   achieved: json['achieved'] as bool? ?? false,
   dateAchieved: json['dateAchieved'] == null
       ? null
@@ -34,6 +39,7 @@ Map<String, dynamic> _$GoalToJson(Goal instance) => <String, dynamic>{
   'budgetTime': instance.budgetTime,
   'actualMonetary': instance.actualMonetary,
   'actualTime': instance.actualTime,
+  'log': instance.log.map((e) => e.toJson()).toList(),
   'achieved': instance.achieved,
   'dateAchieved': instance.dateAchieved?.toIso8601String(),
   'dateCreated': instance.dateCreated.toIso8601String(),

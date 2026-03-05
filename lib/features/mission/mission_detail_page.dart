@@ -5,9 +5,13 @@ import 'package:purpose/core/models/mission_document.dart';
 import 'package:purpose/core/models/mission_creation_session.dart';
 import 'package:purpose/core/models/goal.dart';
 import 'package:purpose/core/models/objective.dart';
+import 'package:purpose/core/models/user_model.dart';
+import 'package:purpose/core/models/user_comment.dart';
 import 'package:purpose/core/services/firestore_provider.dart';
 import 'package:purpose/core/services/goal_provider.dart';
 import 'package:purpose/core/services/gemini_provider.dart';
+import 'package:purpose/core/services/auth_provider.dart';
+import 'package:purpose/core/services/user_comment_provider.dart';
 import 'package:purpose/core/theme/app_theme.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:intl/intl.dart';
@@ -68,50 +72,39 @@ class MissionDetailPage extends ConsumerWidget {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 12,
-                          vertical: 6,
-                        ),
-                        decoration: BoxDecoration(
-                          color: Colors.white.withOpacity(0.2),
-                          borderRadius: BorderRadius.circular(20),
-                        ),
-                        child: Text(
-                          'Mission ${mission.sequenceNumber + 1}',
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 14,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                      ),
-                      const SizedBox(height: 16),
-                      Text(
-                        mission.mission,
-                        style: const TextStyle(
-                          fontSize: 28,
-                          fontWeight: FontWeight.bold,
-                          color: Colors.white,
-                          height: 1.3,
-                        ),
-                      ),
-                      const SizedBox(height: 20),
-                      // Info chips row
-                      Wrap(
-                        spacing: 16,
-                        runSpacing: 8,
+                      // Mission title with info chips
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          _buildInfoChip(
-                            icon: Icons.schedule,
-                            label: mission.timeHorizon,
+                          Expanded(
+                            child: Text(
+                              mission.mission,
+                              style: const TextStyle(
+                                fontSize: 28,
+                                fontWeight: FontWeight.bold,
+                                color: Colors.white,
+                                height: 1.3,
+                              ),
+                            ),
                           ),
-                          _buildInfoChip(
-                            icon: Icons.calendar_month,
-                            label: '${mission.durationMonths} months',
+                          const SizedBox(width: 16),
+                          Wrap(
+                            spacing: 12,
+                            runSpacing: 8,
+                            crossAxisAlignment: WrapCrossAlignment.center,
+                            children: [
+                              _buildInfoChip(
+                                icon: Icons.schedule,
+                                label: mission.timeHorizon,
+                              ),
+                              _buildInfoChip(
+                                icon: Icons.calendar_month,
+                                label: '${mission.durationMonths} months',
+                              ),
+                              if (mission.riskLevel != null)
+                                _buildRiskChip(mission.riskLevel!),
+                            ],
                           ),
-                          if (mission.riskLevel != null)
-                            _buildRiskChip(mission.riskLevel!),
                         ],
                       ),
                       const SizedBox(height: 16),
@@ -288,8 +281,8 @@ class MissionDetailPage extends ConsumerWidget {
   }) {
     return Container(
       width: width,
-      height: 140,
-      padding: const EdgeInsets.all(12),
+      height: 98,
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
       decoration: BoxDecoration(
         color: Colors.white.withOpacity(0.95),
         borderRadius: BorderRadius.circular(8),
@@ -308,7 +301,7 @@ class MissionDetailPage extends ConsumerWidget {
           Row(
             children: [
               Container(
-                padding: const EdgeInsets.all(4),
+                padding: const EdgeInsets.all(3),
                 decoration: BoxDecoration(
                   color: color.withOpacity(0.15),
                   borderRadius: BorderRadius.circular(4),
@@ -334,7 +327,7 @@ class MissionDetailPage extends ConsumerWidget {
               ),
             ],
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: 6),
           Expanded(
             child: Text(
               content,
@@ -367,127 +360,137 @@ class _GoalsSection extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final goalsAsync = ref.watch(goalsForMissionStreamProvider(missionId));
 
-    return Padding(
-      padding: const EdgeInsets.all(24),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Icon(
-                Icons.flag,
-                color: AppTheme.primary,
-                size: 28,
-              ),
-              const SizedBox(width: 12),
-              Text(
-                'Goals',
-                style: const TextStyle(
-                  fontSize: 24,
-                  fontWeight: FontWeight.bold,
-                  color: AppTheme.graphite,
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // Main goals content
+        Expanded(
+          child: Padding(
+            padding: const EdgeInsets.all(24),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Icon(
+                      Icons.flag,
+                      color: AppTheme.primary,
+                      size: 28,
+                    ),
+                    const SizedBox(width: 12),
+                    Text(
+                      'Goals',
+                      style: const TextStyle(
+                        fontSize: 24,
+                        fontWeight: FontWeight.bold,
+                        color: AppTheme.graphite,
+                      ),
+                    ),
+                    const Spacer(),
+                    ElevatedButton.icon(
+                      onPressed: () => _showGoalDialog(context, ref, null),
+                      icon: const Icon(Icons.add, size: 18),
+                      label: const Text('Add Goal'),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: AppTheme.primary,
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 16,
+                          vertical: 12,
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
-              ),
-              const Spacer(),
-              ElevatedButton.icon(
-                onPressed: () => _showGoalDialog(context, ref, null),
-                icon: const Icon(Icons.add, size: 18),
-                label: const Text('Add Goal'),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: AppTheme.primary,
-                  foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 16,
-                    vertical: 12,
-                  ),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 16),
-          goalsAsync.when(
-            data: (goals) {
-              if (goals.isEmpty) {
-                return Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.all(48),
-                  decoration: BoxDecoration(
-                    color: AppTheme.grayLight.withOpacity(0.3),
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(
-                      color: AppTheme.grayLight,
-                      style: BorderStyle.solid,
+                const SizedBox(height: 16),
+                goalsAsync.when(
+                  data: (goals) {
+                    if (goals.isEmpty) {
+                      return Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.all(48),
+                        decoration: BoxDecoration(
+                          color: AppTheme.grayLight.withOpacity(0.3),
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(
+                            color: AppTheme.grayLight,
+                            style: BorderStyle.solid,
+                          ),
+                        ),
+                        child: Center(
+                          child: Column(
+                            children: [
+                              Icon(
+                                Icons.add_circle_outline,
+                                size: 48,
+                                color: AppTheme.grayMedium,
+                              ),
+                              const SizedBox(height: 16),
+                              Text(
+                                'No goals yet. Click "Add Goal" to get started.',
+                                style: TextStyle(
+                                  fontSize: 16,
+                                  color: AppTheme.grayMedium,
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      );
+                    }
+
+                    return ListView.separated(
+                      shrinkWrap: true,
+                      physics: const NeverScrollableScrollPhysics(),
+                      itemCount: goals.length,
+                      separatorBuilder: (context, index) => const SizedBox(height: 16),
+                      itemBuilder: (context, index) {
+                        final goal = goals[index];
+                        return _GoalCard(
+                          goal: goal,
+                          missionId: missionId,
+                          strategyId: strategyId,
+                          onEdit: () => _showGoalDialog(context, ref, goal),
+                          onDelete: () => _confirmDelete(context, ref, goal),
+                        );
+                      },
+                    );
+                  },
+                  loading: () => const Center(
+                    child: Padding(
+                      padding: EdgeInsets.all(24),
+                      child: CircularProgressIndicator(),
                     ),
                   ),
-                  child: Center(
-                    child: Column(
+                  error: (error, stack) => Container(
+                    padding: const EdgeInsets.all(24),
+                    decoration: BoxDecoration(
+                      color: AppTheme.error.withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: AppTheme.error),
+                    ),
+                    child: Row(
                       children: [
-                        Icon(
-                          Icons.add_circle_outline,
-                          size: 48,
-                          color: AppTheme.grayMedium,
-                        ),
-                        const SizedBox(height: 16),
-                        Text(
-                          'No goals yet. Click "Add Goal" to get started.',
-                          style: TextStyle(
-                            fontSize: 16,
-                            color: AppTheme.grayMedium,
-                            fontWeight: FontWeight.w500,
+                        Icon(Icons.error_outline, color: AppTheme.error),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Text(
+                            'Error loading goals: ${error.toString()}',
+                            style: TextStyle(color: AppTheme.error),
                           ),
                         ),
                       ],
                     ),
                   ),
-                );
-              }
-
-              return ListView.separated(
-                shrinkWrap: true,
-                physics: const NeverScrollableScrollPhysics(),
-                itemCount: goals.length,
-                separatorBuilder: (context, index) => const SizedBox(height: 16),
-                itemBuilder: (context, index) {
-                  final goal = goals[index];
-                  return _GoalCard(
-                    goal: goal,
-                    missionId: missionId,
-                    strategyId: strategyId,
-                    onEdit: () => _showGoalDialog(context, ref, goal),
-                    onDelete: () => _confirmDelete(context, ref, goal),
-                  );
-                },
-              );
-            },
-            loading: () => const Center(
-              child: Padding(
-                padding: EdgeInsets.all(24),
-                child: CircularProgressIndicator(),
-              ),
-            ),
-            error: (error, stack) => Container(
-              padding: const EdgeInsets.all(24),
-              decoration: BoxDecoration(
-                color: AppTheme.error.withOpacity(0.1),
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: AppTheme.error),
-              ),
-              child: Row(
-                children: [
-                  Icon(Icons.error_outline, color: AppTheme.error),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Text(
-                      'Error loading goals: ${error.toString()}',
-                      style: TextStyle(color: AppTheme.error),
-                    ),
-                  ),
-                ],
-              ),
+                ),
+              ],
             ),
           ),
-        ],
-      ),
+        ),
+        // Log sidebar
+        _LogSidebar(missionId: missionId),
+      ],
     );
   }
 
@@ -655,6 +658,21 @@ class _GoalCardState extends ConsumerState<_GoalCard> {
                 Row(
                   children: [
                     IconButton(
+                      onPressed: () {
+                        showDialog(
+                          context: context,
+                          builder: (context) => _FeedbackDialog(
+                            entityId: widget.goal.id,
+                            entityType: 'goal',
+                            entityTitle: widget.goal.title,
+                          ),
+                        );
+                      },
+                      icon: Icon(Icons.feedback_outlined, size: 20),
+                      color: AppTheme.grayMedium,
+                      tooltip: 'Provide Feedback',
+                    ),
+                    IconButton(
                       onPressed: widget.onEdit,
                       icon: Icon(Icons.edit_outlined, size: 20),
                       color: AppTheme.primary,
@@ -676,38 +694,66 @@ class _GoalCardState extends ConsumerState<_GoalCard> {
               spacing: 16,
               runSpacing: 8,
               children: [
-                _buildInfoChip(
-                  icon: Icons.attach_money,
-                  label: 'Budget: \$${widget.goal.budgetMonetary.toStringAsFixed(0)} / \$${widget.goal.actualMonetary.toStringAsFixed(0)}',
-                  color: widget.goal.budgetVarianceMonetary >= 0 
-                    ? AppTheme.success 
-                    : AppTheme.error,
-                ),
-                _buildInfoChip(
-                  icon: Icons.schedule,
-                  label: 'Time: ${widget.goal.budgetTime.toStringAsFixed(0)}h / ${widget.goal.actualTime.toStringAsFixed(0)}h',
-                  color: widget.goal.budgetVarianceTime >= 0 
-                    ? AppTheme.success 
-                    : AppTheme.error,
-                ),
+                // Calculate planned costs from objectives
                 objectivesAsync.when(
                   data: (objectives) {
+                    final plannedMonetary = objectives.fold<double>(
+                      0.0, 
+                      (sum, obj) => sum + obj.costMonetary,
+                    );
+                    final plannedTime = objectives.fold<double>(
+                      0.0, 
+                      (sum, obj) => sum + obj.costTime,
+                    );
                     final achieved = objectives.where((o) => o.achieved).length;
-                    return _buildInfoChip(
-                      icon: Icons.checklist,
-                      label: 'Objectives: $achieved/${objectives.length}',
-                      color: AppTheme.primary,
+                    
+                    return Wrap(
+                      spacing: 16,
+                      runSpacing: 8,
+                      children: [
+                        // Monetary chips - Green
+                        _buildInfoChip(
+                          icon: Icons.attach_money,
+                          label: 'Budgeted: \$${widget.goal.actualMonetary.toStringAsFixed(0)} / \$${widget.goal.budgetMonetary.toStringAsFixed(0)}',
+                          color: AppTheme.success,
+                        ),
+                        _buildInfoChip(
+                          icon: Icons.price_change,
+                          label: 'Planned: \$${plannedMonetary.toStringAsFixed(0)} / \$${widget.goal.budgetMonetary.toStringAsFixed(0)}',
+                          color: AppTheme.success,
+                        ),
+                        // Time chips - Blue
+                        _buildInfoChip(
+                          icon: Icons.schedule,
+                          label: 'Budgeted: ${widget.goal.actualTime.toStringAsFixed(0)}h / ${widget.goal.budgetTime.toStringAsFixed(0)}h',
+                          color: AppTheme.primary,
+                        ),
+                        _buildInfoChip(
+                          icon: Icons.access_time,
+                          label: 'Planned: ${plannedTime.toStringAsFixed(0)}h / ${widget.goal.budgetTime.toStringAsFixed(0)}h',
+                          color: AppTheme.primary,
+                        ),
+                        // Objectives count - Light grey with dark grey text
+                        _buildInfoChip(
+                          icon: Icons.checklist,
+                          label: 'Objectives: $achieved/${objectives.length}',
+                          color: AppTheme.grayLight,
+                          textColor: AppTheme.grayMedium,
+                        ),
+                      ],
                     );
                   },
                   loading: () => _buildInfoChip(
                     icon: Icons.checklist,
                     label: 'Objectives: ...',
-                    color: AppTheme.grayMedium,
+                    color: AppTheme.grayLight,
+                    textColor: AppTheme.grayMedium,
                   ),
                   error: (_, __) => _buildInfoChip(
                     icon: Icons.checklist,
                     label: 'Objectives: -',
-                    color: AppTheme.grayMedium,
+                    color: AppTheme.grayLight,
+                    textColor: AppTheme.grayMedium,
                   ),
                 ),
               ],
@@ -884,7 +930,9 @@ class _GoalCardState extends ConsumerState<_GoalCard> {
     required IconData icon,
     required String label,
     required Color color,
+    Color? textColor,
   }) {
+    final effectiveTextColor = textColor ?? color;
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
       decoration: BoxDecoration(
@@ -895,14 +943,14 @@ class _GoalCardState extends ConsumerState<_GoalCard> {
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(icon, size: 14, color: color),
+          Icon(icon, size: 14, color: effectiveTextColor),
           const SizedBox(width: 6),
           Text(
             label,
             style: TextStyle(
               fontSize: 12,
               fontWeight: FontWeight.w500,
-              color: color,
+              color: effectiveTextColor,
             ),
           ),
         ],
@@ -912,7 +960,7 @@ class _GoalCardState extends ConsumerState<_GoalCard> {
 }
 
 /// Objective Card Widget
-class _ObjectiveCard extends StatelessWidget {
+class _ObjectiveCard extends ConsumerWidget {
   final Objective objective;
   final VoidCallback onEdit;
   final VoidCallback onDelete;
@@ -924,7 +972,7 @@ class _ObjectiveCard extends StatelessWidget {
   });
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final dateFormat = DateFormat('MMM d, yyyy');
     final isOverdue = objective.isOverdue;
     
@@ -1058,6 +1106,23 @@ class _ObjectiveCard extends StatelessWidget {
               Row(
                 children: [
                   IconButton(
+                    onPressed: () {
+                      showDialog(
+                        context: context,
+                        builder: (context) => _FeedbackDialog(
+                          entityId: objective.id,
+                          entityType: 'objective',
+                          entityTitle: objective.title,
+                        ),
+                      );
+                    },
+                    icon: Icon(Icons.feedback_outlined, size: 18),
+                    color: AppTheme.grayMedium,
+                    tooltip: 'Provide Feedback',
+                    padding: EdgeInsets.all(4),
+                    constraints: BoxConstraints(),
+                  ),
+                  IconButton(
                     onPressed: onEdit,
                     icon: Icon(Icons.edit_outlined, size: 18),
                     color: AppTheme.primary,
@@ -1078,33 +1143,163 @@ class _ObjectiveCard extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 8),
-          Wrap(
-            spacing: 8,
-            runSpacing: 4,
+          Row(
             children: [
-              if (objective.dueDate != null)
-                _buildDetailChip(
-                  icon: Icons.calendar_today,
-                  label: 'Due: ${dateFormat.format(objective.dueDate!)}',
-                  color: isOverdue ? AppTheme.error : AppTheme.grayMedium,
+              Expanded(
+                child: Wrap(
+                  spacing: 8,
+                  runSpacing: 4,
+                  children: [
+                    if (objective.dueDate != null)
+                      _buildDetailChip(
+                        icon: Icons.calendar_today,
+                        label: 'Due: ${dateFormat.format(objective.dueDate!)}',
+                        color: isOverdue ? AppTheme.error : AppTheme.grayMedium,
+                      ),
+                    if (objective.costMonetary > 0 || objective.spendMonetary > 0)
+                      _buildDetailChip(
+                        icon: Icons.attach_money,
+                        label: 'Cost: \$${objective.costMonetary.toStringAsFixed(0)} | Spend: \$${objective.spendMonetary.toStringAsFixed(0)}',
+                        color: AppTheme.success,
+                      ),
+                    if (objective.costTime > 0 || objective.spendTime > 0)
+                      _buildDetailChip(
+                        icon: Icons.schedule,
+                        label: 'Cost: ${objective.costTime.toStringAsFixed(0)}h | Spend: ${objective.spendTime.toStringAsFixed(0)}h',
+                        color: AppTheme.primary,
+                      ),
+                  ],
                 ),
-              if (objective.costMonetary > 0)
-                _buildDetailChip(
-                  icon: Icons.attach_money,
-                  label: '\$${objective.costMonetary.toStringAsFixed(0)}',
-                  color: AppTheme.grayMedium,
-                ),
-              if (objective.costTime > 0)
-                _buildDetailChip(
-                  icon: Icons.schedule,
-                  label: '${objective.costTime.toStringAsFixed(0)}h',
-                  color: AppTheme.grayMedium,
-                ),
+              ),
+              const SizedBox(width: 8),
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  IconButton(
+                    onPressed: () => _showAddSpendDialog(context, ref, isMonetary: true),
+                    icon: Icon(Icons.attach_money, size: 18),
+                    color: AppTheme.success,
+                    tooltip: 'Add Spend \$',
+                    padding: EdgeInsets.all(4),
+                    constraints: BoxConstraints(),
+                  ),
+                  IconButton(
+                    onPressed: () => _showAddSpendDialog(context, ref, isMonetary: false),
+                    icon: Icon(Icons.schedule, size: 18),
+                    color: AppTheme.primary,
+                    tooltip: 'Add Time (hr)',
+                    padding: EdgeInsets.all(4),
+                    constraints: BoxConstraints(),
+                  ),
+                ],
+              ),
             ],
           ),
         ],
       ),
     );
+  }
+
+  Future<void> _showAddSpendDialog(BuildContext context, WidgetRef ref, {required bool isMonetary}) async {
+    final controller = TextEditingController();
+    final noteController = TextEditingController();
+    
+    final result = await showDialog<Map<String, dynamic>?>(
+      context: context,
+      barrierDismissible: true,
+      builder: (dialogContext) => AlertDialog(
+        title: Text(isMonetary ? 'Add Spend (\$)' : 'Add Time (hours)'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: controller,
+              keyboardType: TextInputType.numberWithOptions(decimal: true),
+              autofocus: true,
+              decoration: InputDecoration(
+                labelText: isMonetary ? 'Amount (\$)' : 'Hours',
+                hintText: isMonetary ? '0.00' : '0.0',
+                border: OutlineInputBorder(),
+              ),
+            ),
+            const SizedBox(height: 16),
+            TextField(
+              controller: noteController,
+              maxLines: 2,
+              decoration: InputDecoration(
+                labelText: 'Note *',
+                hintText: 'What was this for?',
+                border: OutlineInputBorder(),
+                helperText: 'Required',
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () {
+              if (controller.text.isEmpty || noteController.text.trim().isEmpty) {
+                return;
+              }
+              
+              final amount = double.tryParse(controller.text);
+              if (amount == null || amount <= 0) {
+                return;
+              }
+              
+              Navigator.pop(dialogContext, {
+                'amount': amount,
+                'note': noteController.text.trim(),
+              });
+            },
+            child: Text('Add'),
+          ),
+        ],
+      ),
+    );
+
+    controller.dispose();
+    noteController.dispose();
+
+    // Process the result after dialog is closed
+    if (result != null) {
+      await _addSpend(ref, result['amount'] as double, result['note'] as String, isMonetary);
+    }
+  }
+
+  Future<void> _addSpend(WidgetRef ref, double amount, String note, bool isMonetary) async {
+    try {
+      final firestoreService = ref.read(firestoreServiceProvider);
+      final currentUser = ref.read(currentUserProvider).value;
+      final userId = currentUser?.uid ?? 'system';
+      
+      // Create log entry
+      final logMessage = isMonetary 
+        ? 'Added \$${amount.toStringAsFixed(2)}: $note'
+        : 'Added ${amount.toStringAsFixed(1)}h: $note';
+      
+      final newLogEntry = LogEntry(
+        timestamp: DateTime.now(),
+        message: logMessage,
+        author: userId,
+      );
+
+      // Update objective with new spend and log entry
+      final updatedObjective = objective.copyWith(
+        spendMonetary: isMonetary ? objective.spendMonetary + amount : objective.spendMonetary,
+        spendTime: !isMonetary ? objective.spendTime + amount : objective.spendTime,
+        log: [...objective.log, newLogEntry],
+      );
+
+      await firestoreService.updateObjective(updatedObjective);
+      print('✅ Added ${isMonetary ? "monetary" : "time"} spend to objective');
+    } catch (e) {
+      print('❌ Error adding spend: $e');
+    }
   }
 
   Widget _buildDetailChip({
@@ -2044,5 +2239,1229 @@ class _GoalDialogState extends ConsumerState<_GoalDialog> {
         ),
       );
     }
+  }
+}
+
+/// Expandable sidebar showing all log entries for goals and objectives
+class _LogSidebar extends ConsumerStatefulWidget {
+  final String missionId;
+
+  const _LogSidebar({
+    required this.missionId,
+  });
+
+  @override
+  ConsumerState<_LogSidebar> createState() => _LogSidebarState();
+}
+
+class _LogSidebarState extends ConsumerState<_LogSidebar> {
+  bool _isExpanded = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final goalsAsync = ref.watch(goalsForMissionStreamProvider(widget.missionId));
+    final screenHeight = MediaQuery.of(context).size.height;
+    final maxHeight = screenHeight - 200; // Account for app bar and padding
+
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 300),
+      curve: Curves.easeInOut,
+      width: _isExpanded ? 400 : 48,
+      height: maxHeight,
+      clipBehavior: Clip.hardEdge,
+      decoration: BoxDecoration(
+        color: Colors.white,
+        border: Border(
+          left: BorderSide(
+            color: AppTheme.grayLight,
+            width: 1,
+          ),
+        ),
+        boxShadow: _isExpanded
+            ? [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.1),
+                  blurRadius: 8,
+                  offset: const Offset(-2, 0),
+                ),
+              ]
+            : [],
+      ),
+      child: Column(
+        children: [
+          // Sidebar header
+          Container(
+            height: 56,
+            decoration: BoxDecoration(
+              color: AppTheme.primary,
+              border: Border(
+                bottom: BorderSide(
+                  color: AppTheme.grayLight,
+                  width: 1,
+                ),
+              ),
+            ),
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                final hasSpace = constraints.maxWidth > 200;
+                return hasSpace
+                    ? Row(
+                        children: [
+                          IconButton(
+                            onPressed: () {
+                              setState(() {
+                                _isExpanded = !_isExpanded;
+                              });
+                            },
+                            icon: const Icon(
+                              Icons.chevron_right,
+                              color: Colors.white,
+                            ),
+                            tooltip: 'Collapse Log',
+                          ),
+                          const SizedBox(width: 8),
+                          const Icon(
+                            Icons.history,
+                            color: Colors.white,
+                            size: 20,
+                          ),
+                          const SizedBox(width: 8),
+                          const Text(
+                            'Activity Log',
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontSize: 16,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ],
+                      )
+                    : Center(
+                        child: IconButton(
+                          onPressed: () {
+                            setState(() {
+                              _isExpanded = !_isExpanded;
+                            });
+                          },
+                          icon: const Icon(
+                            Icons.chevron_left,
+                            color: Colors.white,
+                          ),
+                          tooltip: 'Expand Log',
+                        ),
+                      );
+              },
+            ),
+          ),
+          // Sidebar content
+          if (_isExpanded)
+            Expanded(
+              child: LayoutBuilder(
+                builder: (context, constraints) {
+                  // Only show content if we have reasonable width
+                  if (constraints.maxWidth < 100) {
+                    return const SizedBox();
+                  }
+                  return goalsAsync.when(
+                    data: (goals) {
+                      return _buildLogEntries(goals);
+                    },
+                    loading: () => const Center(
+                      child: Padding(
+                        padding: EdgeInsets.all(24),
+                        child: CircularProgressIndicator(),
+                      ),
+                    ),
+                    error: (error, stack) => Center(
+                      child: Padding(
+                        padding: const EdgeInsets.all(16),
+                        child: Text(
+                          'Error loading logs',
+                          style: TextStyle(
+                            color: AppTheme.error,
+                            fontSize: 14,
+                          ),
+                        ),
+                      ),
+                    ),
+                  );
+                },
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildLogEntries(List<Goal> goals) {
+    // Collect all log entries from goals
+    final allEntries = <_LogEntryData>[];
+
+    // Add mission comments
+    final missionCommentsAsync = ref.watch(
+      commentsForEntityStreamProvider((widget.missionId, 'mission'))
+    );
+    missionCommentsAsync.whenOrNull(
+      data: (comments) {
+        print('📊 Processing ${comments.length} mission comments');
+        for (final comment in comments) {
+          print('  Comment ID: ${comment.id}, parentId: ${comment.parentCommentId}');
+          // Only add parent comments (replies will be shown nested within parents)
+          if (comment.parentCommentId == null) {
+            print('    ✓ Adding as parent comment');
+            allEntries.add(_LogEntryData(
+              timestamp: comment.createdAt,
+              author: comment.userId,
+              entityType: 'Comment',
+              entityTitle: 'Mission',
+              message: comment.commentText,
+              commentId: comment.id,
+              entityId: comment.entityId,
+              originalEntityType: comment.entityType,
+            ));
+          } else {
+            print('    ✗ Skipping reply (will be shown nested)');
+          }
+        }
+      },
+    );
+
+    // Add goal log entries
+    for (final goal in goals) {
+      for (final entry in goal.log) {
+        allEntries.add(_LogEntryData(
+          timestamp: entry.timestamp,
+          author: entry.author,
+          entityType: 'Goal',
+          entityTitle: goal.title,
+          message: entry.message,
+        ));
+      }
+
+      // Add goal comments
+      final goalCommentsAsync = ref.watch(
+        commentsForEntityStreamProvider((goal.id, 'goal'))
+      );
+      goalCommentsAsync.whenOrNull(
+        data: (comments) {
+          print('📊 Processing ${comments.length} comments for goal "${goal.title}"');
+          for (final comment in comments) {
+            print('  Comment ID: ${comment.id}, parentId: ${comment.parentCommentId}');
+            // Only add parent comments (replies will be shown nested within parents)
+            if (comment.parentCommentId == null) {
+              print('    ✓ Adding as parent comment');
+              allEntries.add(_LogEntryData(
+                timestamp: comment.createdAt,
+                author: comment.userId,
+                entityType: 'Comment',
+                entityTitle: goal.title,
+                message: comment.commentText,
+                commentId: comment.id,
+                entityId: comment.entityId,
+                originalEntityType: comment.entityType,
+              ));
+            } else {
+              print('    ✗ Skipping reply (will be shown nested)');
+            }
+          }
+        },
+      );
+
+      // Add objective log entries for this goal
+      // Watch objectives for each goal
+      final objectivesAsync = ref.watch(objectivesForGoalStreamProvider(goal.id));
+      objectivesAsync.whenOrNull(
+        data: (objectives) {
+          for (final objective in objectives) {
+            for (final entry in objective.log) {
+              allEntries.add(_LogEntryData(
+                timestamp: entry.timestamp,
+                author: entry.author,
+                entityType: 'Objective',
+                entityTitle: objective.title,
+                message: entry.message,
+              ));
+            }
+
+            // Add objective comments
+            final objectiveCommentsAsync = ref.watch(
+              commentsForEntityStreamProvider((objective.id, 'objective'))
+            );
+            objectiveCommentsAsync.whenOrNull(
+              data: (comments) {
+                for (final comment in comments) {
+                  // Only add parent comments (replies will be shown nested within parents)
+                  if (comment.parentCommentId == null) {
+                    allEntries.add(_LogEntryData(
+                      timestamp: comment.createdAt,
+                      author: comment.userId,
+                      entityType: 'Comment',
+                      entityTitle: objective.title,
+                      message: comment.commentText,
+                      commentId: comment.id,
+                      entityId: comment.entityId,
+                      originalEntityType: comment.entityType,
+                    ));
+                  }
+                }
+              },
+            );
+          }
+        },
+      );
+    }
+
+    // Sort by newest first
+    allEntries.sort((a, b) => b.timestamp.compareTo(a.timestamp));
+
+    if (allEntries.isEmpty) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(
+                Icons.description_outlined,
+                size: 48,
+                color: AppTheme.grayMedium,
+              ),
+              const SizedBox(height: 16),
+              Text(
+                'No activity yet',
+                style: TextStyle(
+                  fontSize: 14,
+                  color: AppTheme.grayMedium,
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    return ListView.separated(
+      padding: const EdgeInsets.all(12),
+      itemCount: allEntries.length,
+      separatorBuilder: (context, index) => Divider(
+        color: AppTheme.grayLight,
+        height: 1,
+      ),
+      itemBuilder: (context, index) {
+        final entry = allEntries[index];
+        return _buildLogEntryCard(entry);
+      },
+    );
+  }
+
+  Widget _buildLogEntryCard(_LogEntryData entry) {
+    final dateFormat = DateFormat('MMM d, yyyy');
+    final timeFormat = DateFormat('h:mm a');
+
+    return Container(
+      padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 8),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Date and time
+          Row(
+            children: [
+              Icon(
+                Icons.access_time,
+                size: 12,
+                color: AppTheme.grayMedium,
+              ),
+              const SizedBox(width: 4),
+              Expanded(
+                child: Text(
+                  '${dateFormat.format(entry.timestamp)} at ${timeFormat.format(entry.timestamp)}',
+                  style: TextStyle(
+                    fontSize: 11,
+                    color: AppTheme.grayMedium,
+                    fontWeight: FontWeight.w500,
+                  ),
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              const SizedBox(width: 8),
+              // Author
+              _AuthorWidget(authorId: entry.author),
+            ],
+          ),
+          const SizedBox(height: 6),
+          // Entity type and title
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                decoration: BoxDecoration(
+                  color: entry.entityType == 'Goal'
+                      ? AppTheme.primary.withOpacity(0.1)
+                      : entry.entityType == 'Objective'
+                          ? AppTheme.success.withOpacity(0.1)
+                          : AppTheme.primaryLight.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(4),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    if (entry.entityType == 'Comment')
+                      Padding(
+                        padding: const EdgeInsets.only(right: 3),
+                        child: Icon(
+                          Icons.comment,
+                          size: 10,
+                          color: AppTheme.primaryLight,
+                        ),
+                      ),
+                    Text(
+                      entry.entityType,
+                      style: TextStyle(
+                        fontSize: 10,
+                        fontWeight: FontWeight.w600,
+                        color: entry.entityType == 'Goal'
+                            ? AppTheme.primary
+                            : entry.entityType == 'Objective'
+                                ? AppTheme.success
+                                : AppTheme.primaryLight,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 6),
+              Expanded(
+                child: Text(
+                  entry.entityTitle,
+                  style: const TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                    color: AppTheme.graphite,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          // Message
+          Text(
+            entry.message,
+            style: TextStyle(
+              fontSize: 12,
+              color: AppTheme.graphite.withOpacity(0.8),
+              height: 1.4,
+            ),
+            softWrap: true,
+          ),
+          // Reply button for comments
+          if (entry.entityType == 'Comment' && 
+              entry.commentId != null && 
+              entry.entityId != null && 
+              entry.originalEntityType != null)
+            Padding(
+              padding: const EdgeInsets.only(top: 8),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  TextButton.icon(
+                    onPressed: () {
+                      showDialog(
+                        context: context,
+                        builder: (context) => _ReplyDialog(
+                          parentCommentId: entry.commentId!,
+                          parentCommentText: entry.message,
+                          entityId: entry.entityId!,
+                          entityType: entry.originalEntityType!,
+                          entityTitle: entry.entityTitle,
+                        ),
+                      );
+                    },
+                    icon: const Icon(Icons.reply, size: 16),
+                    label: const Text('Reply'),
+                    style: TextButton.styleFrom(
+                      foregroundColor: AppTheme.primaryLight,
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                      minimumSize: Size.zero,
+                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          // Display replies for parent comments
+          if (entry.entityType == 'Comment' && 
+              entry.commentId != null && 
+              entry.entityId != null && 
+              entry.originalEntityType != null) ...[
+            Builder(
+              builder: (context) {
+                print('📌 Rendering _CommentRepliesWidget for commentId: ${entry.commentId}, entityId: ${entry.entityId}, entityType: ${entry.originalEntityType}');
+                return _CommentRepliesWidget(
+                  parentCommentId: entry.commentId!,
+                  entityId: entry.entityId!,
+                  entityType: entry.originalEntityType!,
+                  entityTitle: entry.entityTitle,
+                );
+              },
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+/// Widget to display replies to a comment
+class _CommentRepliesWidget extends ConsumerWidget {
+  final String parentCommentId;
+  final String entityId;
+  final String entityType;
+  final String entityTitle;
+
+  const _CommentRepliesWidget({
+    required this.parentCommentId,
+    required this.entityId,
+    required this.entityType,
+    required this.entityTitle,
+  });
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    print('🔍 _CommentRepliesWidget building for parent: $parentCommentId');
+    final repliesAsync = ref.watch(repliesForCommentProvider(parentCommentId));
+
+    return repliesAsync.when(
+      data: (replies) {
+        print('✅ Found ${replies.length} replies for comment $parentCommentId');
+        if (replies.isEmpty) {
+          print('   ↪ Returning SizedBox.shrink() because no replies');
+          return const SizedBox.shrink();
+        }
+
+        print('   ↪ Building reply container with ${replies.length} replies');
+        return Container(
+          margin: const EdgeInsets.only(left: 16, top: 12),
+          decoration: BoxDecoration(
+            border: Border(
+              left: BorderSide(
+                color: AppTheme.primaryLight.withOpacity(0.3),
+                width: 2,
+              ),
+            ),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: replies.map((reply) {
+              print('   📝 Reply: ${reply.commentText.substring(0, reply.commentText.length > 20 ? 20 : reply.commentText.length)}...');
+              return _buildReplyCard(context, ref, reply);
+            }).toList(),
+          ),
+        );
+      },
+      loading: () {
+        print('⏳ Loading replies for comment $parentCommentId...');
+        return Padding(
+          padding: const EdgeInsets.only(left: 16, top: 8),
+          child: Row(
+            children: [
+              SizedBox(
+                width: 12,
+                height: 12,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  valueColor: AlwaysStoppedAnimation<Color>(AppTheme.primaryLight),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Text(
+                'Loading replies...',
+                style: TextStyle(
+                  fontSize: 10,
+                  color: AppTheme.grayMedium,
+                  fontStyle: FontStyle.italic,
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+      error: (error, stack) {
+        print('❌ Error loading replies for comment $parentCommentId: $error');
+        return const SizedBox.shrink();
+      },
+    );
+  }
+
+  Widget _buildReplyCard(BuildContext context, WidgetRef ref, UserComment reply) {
+    final dateFormat = DateFormat('MMM d');
+    final timeFormat = DateFormat('h:mm a');
+
+    return Container(
+      margin: const EdgeInsets.only(left: 8, bottom: 8),
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        color: AppTheme.primaryLight.withOpacity(0.05),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(
+          color: AppTheme.primaryLight.withOpacity(0.2),
+          width: 1,
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Reply header with icon and timestamp
+          Row(
+            children: [
+              Icon(
+                Icons.subdirectory_arrow_right,
+                size: 12,
+                color: AppTheme.primaryLight,
+              ),
+              const SizedBox(width: 6),
+              Text(
+                'Reply',
+                style: TextStyle(
+                  fontSize: 10,
+                  fontWeight: FontWeight.w600,
+                  color: AppTheme.primaryLight,
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  '${dateFormat.format(reply.createdAt)} at ${timeFormat.format(reply.createdAt)}',
+                  style: TextStyle(
+                    fontSize: 10,
+                    color: AppTheme.grayMedium,
+                  ),
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              const SizedBox(width: 8),
+              // Reply author
+              _AuthorWidget(authorId: reply.userId),
+            ],
+          ),
+          const SizedBox(height: 6),
+          // Reply text
+          Text(
+            reply.commentText,
+            style: TextStyle(
+              fontSize: 11,
+              color: AppTheme.graphite.withOpacity(0.9),
+              height: 1.4,
+            ),
+            softWrap: true,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Widget to display author name, fetching from Firestore if needed
+class _AuthorWidget extends ConsumerWidget {
+  final String authorId;
+
+  const _AuthorWidget({required this.authorId});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    if (authorId.toLowerCase() == 'system') {
+      return Text(
+        'by System',
+        style: TextStyle(
+          fontSize: 10,
+          color: AppTheme.grayMedium,
+          fontStyle: FontStyle.italic,
+        ),
+        overflow: TextOverflow.ellipsis,
+        maxLines: 1,
+      );
+    }
+
+    // Fetch user from Firestore
+    final firestoreService = ref.watch(firestoreServiceProvider);
+    
+    return FutureBuilder<UserModel?>(
+      future: firestoreService.getUser(authorId),
+      builder: (context, snapshot) {
+        String displayName;
+        
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          displayName = 'Loading...';
+        } else if (snapshot.hasError || snapshot.data == null) {
+          displayName = authorId; // Fallback to ID if error
+        } else {
+          displayName = snapshot.data!.fullName;
+        }
+        
+        return Text(
+          'by $displayName',
+          style: TextStyle(
+            fontSize: 10,
+            color: AppTheme.grayMedium,
+            fontStyle: FontStyle.italic,
+          ),
+          overflow: TextOverflow.ellipsis,
+          maxLines: 1,
+        );
+      },
+    );
+  }
+}
+
+/// Helper class to hold log entry data with entity information
+class _LogEntryData {
+  final DateTime timestamp;
+  final String author;
+  final String entityType;
+  final String entityTitle;
+  final String message;
+  final String? commentId; // For comment entries that support replies
+  final String? entityId; // The ID of the entity (goal/objective/mission) for comments
+  final String? originalEntityType; // The type of entity ('goal', 'objective', 'mission') for comments
+
+  _LogEntryData({
+    required this.timestamp,
+    required this.author,
+    required this.entityType,
+    required this.entityTitle,
+    required this.message,
+    this.commentId,
+    this.entityId,
+    this.originalEntityType,
+  });
+}
+
+/// Feedback Dialog for collecting user comments on entities
+class _FeedbackDialog extends ConsumerStatefulWidget {
+  final String entityId;
+  final String entityType;
+  final String entityTitle;
+
+  const _FeedbackDialog({
+    required this.entityId,
+    required this.entityType,
+    required this.entityTitle,
+  });
+
+  @override
+  ConsumerState<_FeedbackDialog> createState() => _FeedbackDialogState();
+}
+
+class _FeedbackDialogState extends ConsumerState<_FeedbackDialog> {
+  final _formKey = GlobalKey<FormState>();
+  final _commentController = TextEditingController();
+  bool _isSaving = false;
+
+  @override
+  void dispose() {
+    _commentController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _saveComment() async {
+    if (!_formKey.currentState!.validate()) return;
+
+    setState(() {
+      _isSaving = true;
+    });
+
+    try {
+      final firestoreService = ref.read(firestoreServiceProvider);
+      final currentUser = ref.read(currentUserProvider).value;
+      
+      if (currentUser == null) {
+        throw Exception('User not authenticated');
+      }
+
+      // Generate new comment ID
+      final commentId = FirebaseFirestore.instance
+          .collection('user_comments')
+          .doc()
+          .id;
+
+      final comment = UserComment(
+        id: commentId,
+        userId: currentUser.uid,
+        entityId: widget.entityId,
+        entityType: widget.entityType,
+        commentText: _commentController.text.trim(),
+        parentCommentId: null,
+        createdAt: DateTime.now(),
+        updatedAt: DateTime.now(),
+      );
+
+      await firestoreService.saveUserComment(comment);
+
+      if (mounted) {
+        Navigator.of(context).pop();
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('💬 Feedback saved successfully!'),
+            backgroundColor: AppTheme.success,
+            duration: const Duration(seconds: 2),
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error saving feedback: $e'),
+            backgroundColor: AppTheme.error,
+            duration: const Duration(seconds: 3),
+          ),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isSaving = false;
+        });
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: Row(
+        children: [
+          Icon(
+            Icons.feedback_outlined,
+            color: AppTheme.primary,
+            size: 24,
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Text(
+              'Provide Feedback',
+              style: TextStyle(
+                fontSize: 20,
+                fontWeight: FontWeight.bold,
+                color: AppTheme.graphite,
+              ),
+            ),
+          ),
+        ],
+      ),
+      content: SizedBox(
+        width: 500,
+        child: Form(
+          key: _formKey,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Entity info
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: AppTheme.grayLight.withOpacity(0.3),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(
+                    color: AppTheme.grayLight,
+                    width: 1,
+                  ),
+                ),
+                child: Row(
+                  children: [
+                    Icon(
+                      widget.entityType == 'goal' 
+                          ? Icons.flag_outlined 
+                          : Icons.check_circle_outline,
+                      size: 16,
+                      color: AppTheme.grayMedium,
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            widget.entityType.toUpperCase(),
+                            style: TextStyle(
+                              fontSize: 10,
+                              fontWeight: FontWeight.w600,
+                              color: AppTheme.grayMedium,
+                              letterSpacing: 0.5,
+                            ),
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            widget.entityTitle,
+                            style: TextStyle(
+                              fontSize: 14,
+                              fontWeight: FontWeight.w500,
+                              color: AppTheme.graphite,
+                            ),
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 20),
+              // Comment field
+              TextFormField(
+                controller: _commentController,
+                decoration: InputDecoration(
+                  labelText: 'Your Feedback',
+                  hintText: 'Share your thoughts, progress, or reflections...',
+                  alignLabelWithHint: true,
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  focusedBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(8),
+                    borderSide: BorderSide(
+                      color: AppTheme.primary,
+                      width: 2,
+                    ),
+                  ),
+                ),
+                maxLines: 5,
+                maxLength: 1000,
+                validator: (value) {
+                  if (value == null || value.trim().isEmpty) {
+                    return 'Please enter your feedback';
+                  }
+                  if (value.trim().length < 5) {
+                    return 'Feedback must be at least 5 characters';
+                  }
+                  return null;
+                },
+                autofocus: true,
+              ),
+            ],
+          ),
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: _isSaving ? null : () => Navigator.of(context).pop(),
+          child: Text(
+            'Cancel',
+            style: TextStyle(
+              color: AppTheme.grayMedium,
+            ),
+          ),
+        ),
+        ElevatedButton.icon(
+          onPressed: _isSaving ? null : _saveComment,
+          icon: _isSaving
+              ? SizedBox(
+                  width: 16,
+                  height: 16,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                  ),
+                )
+              : Icon(Icons.send, size: 18),
+          label: Text(_isSaving ? 'Saving...' : 'Submit Feedback'),
+          style: ElevatedButton.styleFrom(
+            backgroundColor: AppTheme.primary,
+            foregroundColor: Colors.white,
+            padding: const EdgeInsets.symmetric(
+              horizontal: 20,
+              vertical: 12,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+/// Reply Dialog for replying to existing comments
+class _ReplyDialog extends ConsumerStatefulWidget {
+  final String parentCommentId;
+  final String parentCommentText;
+  final String entityId;
+  final String entityType;
+  final String entityTitle;
+
+  const _ReplyDialog({
+    required this.parentCommentId,
+    required this.parentCommentText,
+    required this.entityId,
+    required this.entityType,
+    required this.entityTitle,
+  });
+
+  @override
+  ConsumerState<_ReplyDialog> createState() => _ReplyDialogState();
+}
+
+class _ReplyDialogState extends ConsumerState<_ReplyDialog> {
+  final _formKey = GlobalKey<FormState>();
+  final _replyController = TextEditingController();
+  bool _isSaving = false;
+
+  @override
+  void dispose() {
+    _replyController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _saveReply() async {
+    if (!_formKey.currentState!.validate()) return;
+
+    setState(() {
+      _isSaving = true;
+    });
+
+    try {
+      final firestoreService = ref.read(firestoreServiceProvider);
+      final currentUser = ref.read(currentUserProvider).value;
+      
+      if (currentUser == null) {
+        throw Exception('User not authenticated');
+      }
+
+      // Generate new comment ID for the reply
+      final replyId = FirebaseFirestore.instance
+          .collection('user_comments')
+          .doc()
+          .id;
+
+      final reply = UserComment(
+        id: replyId,
+        userId: currentUser.uid,
+        entityId: widget.entityId,
+        entityType: widget.entityType,
+        commentText: _replyController.text.trim(),
+        parentCommentId: widget.parentCommentId,
+        createdAt: DateTime.now(),
+        updatedAt: DateTime.now(),
+      );
+
+      await firestoreService.saveUserComment(reply);
+
+      if (mounted) {
+        Navigator.of(context).pop();
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('💬 Reply saved successfully!'),
+            backgroundColor: AppTheme.success,
+            duration: const Duration(seconds: 2),
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error saving reply: $e'),
+            backgroundColor: AppTheme.error,
+            duration: const Duration(seconds: 3),
+          ),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isSaving = false;
+        });
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: Row(
+        children: [
+          Icon(
+            Icons.reply,
+            color: AppTheme.primaryLight,
+            size: 24,
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Text(
+              'Reply to Comment',
+              style: TextStyle(
+                fontSize: 20,
+                fontWeight: FontWeight.bold,
+                color: AppTheme.graphite,
+              ),
+            ),
+          ),
+        ],
+      ),
+      content: SizedBox(
+        width: 500,
+        child: Form(
+          key: _formKey,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Entity info
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: AppTheme.grayLight.withOpacity(0.3),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(
+                    color: AppTheme.grayLight,
+                    width: 1,
+                  ),
+                ),
+                child: Row(
+                  children: [
+                    Icon(
+                      widget.entityType == 'goal' 
+                          ? Icons.flag_outlined 
+                          : widget.entityType == 'objective'
+                              ? Icons.check_circle_outline
+                              : Icons.rocket_launch_outlined,
+                      size: 16,
+                      color: AppTheme.grayMedium,
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            widget.entityType.toUpperCase(),
+                            style: TextStyle(
+                              fontSize: 10,
+                              fontWeight: FontWeight.w600,
+                              color: AppTheme.grayMedium,
+                              letterSpacing: 0.5,
+                            ),
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            widget.entityTitle,
+                            style: TextStyle(
+                              fontSize: 14,
+                              fontWeight: FontWeight.w500,
+                              color: AppTheme.graphite,
+                            ),
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 16),
+              // Original comment
+              Text(
+                'Replying to:',
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                  color: AppTheme.grayMedium,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: AppTheme.primaryLight.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(
+                    color: AppTheme.primaryLight.withOpacity(0.3),
+                    width: 1,
+                  ),
+                ),
+                child: Text(
+                  widget.parentCommentText,
+                  style: TextStyle(
+                    fontSize: 13,
+                    color: AppTheme.graphite.withOpacity(0.8),
+                    fontStyle: FontStyle.italic,
+                    height: 1.4,
+                  ),
+                  maxLines: 4,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              const SizedBox(height: 20),
+              // Reply field
+              TextFormField(
+                controller: _replyController,
+                decoration: InputDecoration(
+                  labelText: 'Your Reply',
+                  hintText: 'Type your reply...',
+                  alignLabelWithHint: true,
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  focusedBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(8),
+                    borderSide: BorderSide(
+                      color: AppTheme.primaryLight,
+                      width: 2,
+                    ),
+                  ),
+                ),
+                maxLines: 4,
+                maxLength: 1000,
+                validator: (value) {
+                  if (value == null || value.trim().isEmpty) {
+                    return 'Please enter your reply';
+                  }
+                  if (value.trim().length < 3) {
+                    return 'Reply must be at least 3 characters';
+                  }
+                  return null;
+                },
+                autofocus: true,
+              ),
+            ],
+          ),
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: _isSaving ? null : () => Navigator.of(context).pop(),
+          child: Text(
+            'Cancel',
+            style: TextStyle(
+              color: AppTheme.grayMedium,
+            ),
+          ),
+        ),
+        ElevatedButton.icon(
+          onPressed: _isSaving ? null : _saveReply,
+          icon: _isSaving
+              ? SizedBox(
+                  width: 16,
+                  height: 16,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                  ),
+                )
+              : Icon(Icons.send, size: 18),
+          label: Text(_isSaving ? 'Saving...' : 'Submit Reply'),
+          style: ElevatedButton.styleFrom(
+            backgroundColor: AppTheme.primaryLight,
+            foregroundColor: Colors.white,
+            padding: const EdgeInsets.symmetric(
+              horizontal: 20,
+              vertical: 12,
+            ),
+          ),
+        ),
+      ],
+    );
   }
 }
