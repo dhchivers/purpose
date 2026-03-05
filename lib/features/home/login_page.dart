@@ -55,10 +55,10 @@ class _LoginPageState extends ConsumerState<LoginPage> {
   }
 
   void _navigateToForgotPassword() {
-    // TODO: Implement forgot password page
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('Forgot password feature coming soon!'),
+    showDialog(
+      context: context,
+      builder: (context) => _ForgotPasswordDialog(
+        initialEmail: _emailController.text.trim(),
       ),
     );
   }
@@ -256,6 +256,187 @@ class _LoginPageState extends ConsumerState<LoginPage> {
           ),
         ),
       ),
+    );
+  }
+}
+
+/// Dialog for password reset
+class _ForgotPasswordDialog extends ConsumerStatefulWidget {
+  final String initialEmail;
+
+  const _ForgotPasswordDialog({
+    this.initialEmail = '',
+  });
+
+  @override
+  ConsumerState<_ForgotPasswordDialog> createState() => _ForgotPasswordDialogState();
+}
+
+class _ForgotPasswordDialogState extends ConsumerState<_ForgotPasswordDialog> {
+  final _formKey = GlobalKey<FormState>();
+  late final TextEditingController _emailController;
+  bool _isLoading = false;
+  bool _emailSent = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _emailController = TextEditingController(text: widget.initialEmail);
+  }
+
+  @override
+  void dispose() {
+    _emailController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _sendPasswordReset() async {
+    if (!_formKey.currentState!.validate()) {
+      return;
+    }
+
+    setState(() => _isLoading = true);
+
+    try {
+      await ref.read(authStateProvider.notifier).sendPasswordResetEmail(
+        _emailController.text.trim(),
+      );
+
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+          _emailSent = true;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => _isLoading = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error: ${e.toString()}'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: Row(
+        children: [
+          Icon(
+            Icons.lock_reset,
+            color: Theme.of(context).colorScheme.primary,
+          ),
+          const SizedBox(width: 12),
+          const Text('Reset Password'),
+        ],
+      ),
+      content: SizedBox(
+        width: 400,
+        child: _emailSent
+            ? Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    Icons.check_circle_outline,
+                    color: Colors.green,
+                    size: 64,
+                  ),
+                  const SizedBox(height: 16),
+                  Text(
+                    'Password Reset Email Sent!',
+                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                          fontWeight: FontWeight.bold,
+                        ),
+                    textAlign: TextAlign.center,
+                  ),
+                  const SizedBox(height: 12),
+                  Text(
+                    'We\'ve sent a password reset link to:',
+                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                          color: Colors.grey[600],
+                        ),
+                    textAlign: TextAlign.center,
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    _emailController.text.trim(),
+                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                          fontWeight: FontWeight.bold,
+                        ),
+                    textAlign: TextAlign.center,
+                  ),
+                  const SizedBox(height: 12),
+                  Text(
+                    'Please check your email and follow the instructions to reset your password.',
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: Colors.grey[600],
+                        ),
+                    textAlign: TextAlign.center,
+                  ),
+                ],
+              )
+            : Form(
+                key: _formKey,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Enter your email address and we\'ll send you a link to reset your password.',
+                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                            color: Colors.grey[600],
+                          ),
+                    ),
+                    const SizedBox(height: 20),
+                    TextFormField(
+                      controller: _emailController,
+                      keyboardType: TextInputType.emailAddress,
+                      enabled: !_isLoading,
+                      decoration: InputDecoration(
+                        labelText: 'Email',
+                        hintText: 'Enter your email',
+                        prefixIcon: const Icon(Icons.email_outlined),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
+                      validator: ValidationUtils.validateEmail,
+                      autofocus: widget.initialEmail.isEmpty,
+                    ),
+                  ],
+                ),
+              ),
+      ),
+      actions: _emailSent
+          ? [
+              FilledButton(
+                onPressed: () => Navigator.of(context).pop(),
+                child: const Text('Done'),
+              ),
+            ]
+          : [
+              TextButton(
+                onPressed: _isLoading ? null : () => Navigator.of(context).pop(),
+                child: const Text('Cancel'),
+              ),
+              FilledButton(
+                onPressed: _isLoading ? null : _sendPasswordReset,
+                child: _isLoading
+                    ? const SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: Colors.white,
+                        ),
+                      )
+                    : const Text('Send Reset Link'),
+              ),
+            ],
     );
   }
 }
