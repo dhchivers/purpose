@@ -2,6 +2,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:purpose/core/services/auth_service.dart';
 import 'package:purpose/core/services/firestore_provider.dart';
+import 'package:purpose/core/services/revenue_cat_provider.dart';
 import 'package:purpose/core/models/user_model.dart';
 import 'package:purpose/core/models/auth_state.dart';
 
@@ -185,6 +186,19 @@ class AuthStateNotifier extends StateNotifier<AuthState> {
         if (userModel != null) {
           state = Authenticated(userModel);
           print('✅ State updated to Authenticated after signup');
+          
+          // Sync with RevenueCat
+          try {
+            final revenueCatService = _ref.read(revenueCatServiceProvider);
+            await revenueCatService.logIn(currentUser.uid);
+            if (userModel.email.isNotEmpty) {
+              await revenueCatService.setEmail(userModel.email);
+            }
+            await revenueCatService.setDisplayName(userModel.fullName);
+            print('✅ RevenueCat user synced');
+          } catch (e) {
+            print('⚠️ Failed to sync with RevenueCat: $e');
+          }
         }
       }
     }
@@ -217,6 +231,19 @@ class AuthStateNotifier extends StateNotifier<AuthState> {
         if (userModel != null) {
           state = Authenticated(userModel);
           print('✅ State updated to Authenticated');
+          
+          // Sync with RevenueCat
+          try {
+            final revenueCatService = _ref.read(revenueCatServiceProvider);
+            await revenueCatService.logIn(currentUser.uid);
+            if (userModel.email.isNotEmpty) {
+              await revenueCatService.setEmail(userModel.email);
+            }
+            await revenueCatService.setDisplayName(userModel.fullName);
+            print('✅ RevenueCat user synced');
+          } catch (e) {
+            print('⚠️ Failed to sync with RevenueCat: $e');
+          }
         } else {
           print('❌ firebaseUserToUserModel returned null');
           state = const AuthError('Failed to load user data');
@@ -231,6 +258,15 @@ class AuthStateNotifier extends StateNotifier<AuthState> {
   /// Sign out
   Future<void> signOut() async {
     state = const AuthLoading();
+
+    // Log out from RevenueCat first
+    try {
+      final revenueCatService = _ref.read(revenueCatServiceProvider);
+      await revenueCatService.logOut();
+      print('✅ Logged out from RevenueCat');
+    } catch (e) {
+      print('⚠️ Failed to log out from RevenueCat: $e');
+    }
 
     final result = await _authService.signOut();
 

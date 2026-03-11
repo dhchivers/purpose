@@ -5,6 +5,7 @@ import 'package:purpose/core/services/firebase_config.dart';
 import 'package:purpose/core/constants/app_constants.dart';
 import 'package:purpose/core/services/router.dart';
 import 'package:purpose/core/theme/app_theme.dart';
+import 'package:purpose/core/services/revenue_cat_service.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -28,6 +29,18 @@ void main() async {
     print('=== Firebase Initialization Complete ===');
   } catch (e, stackTrace) {
     print('❌ Firebase initialization error: $e');
+    print('Stack trace: $stackTrace');
+  }
+  
+  // Initialize RevenueCat
+  try {
+    print('=== RevenueCat Initialization Start ===');
+    final revenueCatService = RevenueCatService();
+    await revenueCatService.configure();
+    print('✅ RevenueCat initialized successfully');
+    print('=== RevenueCat Initialization Complete ===');
+  } catch (e, stackTrace) {
+    print('❌ RevenueCat initialization error: $e');
     print('Stack trace: $stackTrace');
   }
   

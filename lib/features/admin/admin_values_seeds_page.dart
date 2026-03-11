@@ -182,6 +182,9 @@ class _AdminValuesSeedsPageState extends ConsumerState<AdminValuesSeedsPage> {
 
           return valueSeedsAsync.when(
             data: (values) {
+              // Sort values alphabetically
+              final sortedValues = List<String>.from(values)..sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
+              
               return Column(
                 children: [
                   // Add new value form
@@ -250,7 +253,7 @@ class _AdminValuesSeedsPageState extends ConsumerState<AdminValuesSeedsPage> {
                         ),
                         const SizedBox(width: 8),
                         Text(
-                          '${values.length} value seed${values.length == 1 ? '' : 's'}',
+                          '${sortedValues.length} value seed${sortedValues.length == 1 ? '' : 's'}',
                           style: const TextStyle(
                             fontSize: 18,
                             fontWeight: FontWeight.bold,
@@ -262,7 +265,7 @@ class _AdminValuesSeedsPageState extends ConsumerState<AdminValuesSeedsPage> {
 
                   // Values list
                   Expanded(
-                    child: values.isEmpty
+                    child: sortedValues.isEmpty
                         ? Center(
                             child: Column(
                               mainAxisAlignment: MainAxisAlignment.center,
@@ -290,9 +293,9 @@ class _AdminValuesSeedsPageState extends ConsumerState<AdminValuesSeedsPage> {
                           )
                         : ListView.builder(
                             padding: const EdgeInsets.all(16),
-                            itemCount: values.length,
+                            itemCount: sortedValues.length,
                             itemBuilder: (context, index) {
-                              final value = values[index];
+                              final value = sortedValues[index];
                               return Card(
                                 margin: const EdgeInsets.only(bottom: 8),
                                 child: ListTile(
