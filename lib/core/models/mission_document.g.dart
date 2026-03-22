@@ -21,6 +21,8 @@ MissionDocument _$MissionDocumentFromJson(Map<String, dynamic> json) =>
       timeHorizon: json['timeHorizon'] as String,
       riskLevel: $enumDecodeNullable(_$RiskLevelEnumMap, json['riskLevel']),
       durationMonths: (json['durationMonths'] as num?)?.toInt() ?? 12,
+      useBudgets: json['useBudgets'] as bool? ?? false,
+      completed: json['completed'] as bool? ?? false,
       createdAt: DateTime.parse(json['createdAt'] as String),
       updatedAt: DateTime.parse(json['updatedAt'] as String),
     );
@@ -40,6 +42,8 @@ Map<String, dynamic> _$MissionDocumentToJson(MissionDocument instance) =>
       'timeHorizon': instance.timeHorizon,
       'riskLevel': _$RiskLevelEnumMap[instance.riskLevel],
       'durationMonths': instance.durationMonths,
+      'useBudgets': instance.useBudgets,
+      'completed': instance.completed,
       'createdAt': instance.createdAt.toIso8601String(),
       'updatedAt': instance.updatedAt.toIso8601String(),
     };

@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+  import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:purpose/core/services/revenue_cat_provider.dart';
 import 'package:purpose/core/utils/entitlement_utils.dart';
@@ -16,10 +16,10 @@ class RevenueCatExamplePage extends ConsumerWidget {
     return Scaffold(
       appBar: AppBar(
         title: const Text('RevenueCat Example'),
-        actions: [
+        actions: const [
           // Show Pro badge
           Padding(
-            padding: const EdgeInsets.all(8.0),
+            padding: EdgeInsets.all(8.0),
             child: ProBadge(),
           ),
         ],
@@ -156,7 +156,7 @@ class RevenueCatExamplePage extends ConsumerWidget {
                         style: Theme.of(context).textTheme.titleMedium,
                       ),
                       const SizedBox(width: 8),
-                      ProBadge(),
+                      const ProBadge(),
                     ],
                   ),
                   const SizedBox(height: 16),

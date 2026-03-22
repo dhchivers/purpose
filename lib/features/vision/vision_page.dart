@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
+import 'dart:io' show Platform;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:purpose/core/services/auth_provider.dart';
@@ -8,10 +10,12 @@ import 'package:purpose/core/services/strategy_provider.dart';
 import 'package:purpose/core/services/strategy_context_provider.dart';
 import 'package:purpose/core/models/user_vision.dart';
 import 'package:purpose/core/models/vision_creation_session.dart';
-import 'package:purpose/core/models/strategy_type.dart';
+import 'package:purpose/core/models/user_comment.dart';
+import 'package:purpose/core/services/user_comment_provider.dart';
+import 'package:intl/intl.dart';
 import 'package:purpose/core/theme/app_theme.dart';
 import 'package:purpose/core/constants/app_constants.dart';
-import 'package:purpose/features/admin/admin_strategy_types_page.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 
 /// Provider for user vision
 final userVisionProvider = FutureProvider.autoDispose<UserVision?>((ref) async {
@@ -323,60 +327,6 @@ class _VisionPageState extends ConsumerState<VisionPage> {
     }
   }
 
-  Future<void> _confirmDelete() async {
-    final user = ref.read(currentUserProvider).value;
-    final vision = await ref.read(userVisionProvider.future);
-    
-    if (user == null || vision == null) return;
-
-    final confirm = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Delete Vision'),
-        content: const Text(
-          'Are you sure you want to delete your vision? This action cannot be undone.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(false),
-            child: const Text('Cancel'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(true),
-            style: TextButton.styleFrom(foregroundColor: AppTheme.error),
-            child: const Text('Delete'),
-          ),
-        ],
-      ),
-    );
-
-    if (confirm == true) {
-      try {
-        final firestoreService = ref.read(firestoreServiceProvider);
-        await firestoreService.deleteUserVision(vision.id, user.uid);
-        
-        // Invalidate caches
-        ref.invalidate(userVisionProvider);
-        ref.invalidate(currentUserProvider);
-        
-        if (mounted) {
-          context.go(AppConstants.homeRoute);
-        }
-      } catch (e, stackTrace) {
-        print('❌ Error deleting vision: $e');
-        print('Stack trace: $stackTrace');
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('Error deleting vision: $e'),
-              backgroundColor: AppTheme.error,
-            ),
-          );
-        }
-      }
-    }
-  }
-
   String _getInfluenceScaleLabel(InfluenceScale scale) {
     switch (scale) {
       case InfluenceScale.individuals:
@@ -393,7 +343,6 @@ class _VisionPageState extends ConsumerState<VisionPage> {
   @override
   Widget build(BuildContext context) {
     final activeStrategy = ref.watch(activeStrategyProvider);
-    final strategyTypesAsync = ref.watch(strategyTypesStreamProvider);
 
     if (activeStrategy == null) {
       return Scaffold(
@@ -405,6 +354,13 @@ class _VisionPageState extends ConsumerState<VisionPage> {
             icon: const Icon(Icons.arrow_back),
             onPressed: () => context.go(AppConstants.homeRoute),
           ),
+          actions: [
+            IconButton(
+              icon: const Icon(Icons.forum_outlined),
+              onPressed: () => context.go('/comments'),
+              tooltip: 'Comments',
+            ),
+          ],
         ),
         body: Center(
           child: Column(
@@ -438,43 +394,10 @@ class _VisionPageState extends ConsumerState<VisionPage> {
       appBar: AppBar(
         backgroundColor: AppTheme.graphite,
         foregroundColor: Colors.white,
-        title: Row(
-          children: [
-            Text(activeStrategy.name),
-            const SizedBox(width: 12),
-            strategyTypesAsync.when(
-              data: (types) {
-                final strategyType = types.firstWhere(
-                  (type) => type.id == activeStrategy.strategyTypeId,
-                  orElse: () => StrategyType(
-                    id: '',
-                    name: 'Unknown',
-                    enabled: true,
-                    order: 0,
-                    color: 0xFF2196F3,
-                    createdAt: DateTime.now(),
-                    updatedAt: DateTime.now(),
-                  ),
-                );
-                return Chip(
-                  label: Text(
-                    strategyType.name,
-                    style: const TextStyle(
-                      fontSize: 11,
-                      color: Colors.white,
-                      fontWeight: FontWeight.w500,
-                    ),
-                  ),
-                  backgroundColor: Color(strategyType.color),
-                  padding: EdgeInsets.zero,
-                  materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                  visualDensity: VisualDensity.compact,
-                );
-              },
-              loading: () => const SizedBox.shrink(),
-              error: (_, __) => const SizedBox.shrink(),
-            ),
-          ],
+        title: Text(
+          activeStrategy.name,
+          style: const TextStyle(fontSize: 21),
+          overflow: !kIsWeb && Platform.isIOS ? TextOverflow.ellipsis : null,
         ),
         leading: IconButton(
           icon: const Icon(Icons.arrow_back),
@@ -482,244 +405,241 @@ class _VisionPageState extends ConsumerState<VisionPage> {
         ),
         actions: [
           IconButton(
-            icon: const Icon(Icons.delete_outline),
-            onPressed: _confirmDelete,
-            tooltip: 'Delete Vision',
+            icon: const Icon(Icons.forum_outlined),
+            onPressed: () => context.go('/comments'),
+            tooltip: 'Comments',
           ),
         ],
       ),
-      body: Column(
-        children: [
-          // Header section
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.all(24),
-            decoration: const BoxDecoration(
-              color: AppTheme.primary,
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text(
-                  'Vision',
-                  style: TextStyle(
-                    fontSize: 24,
-                    fontWeight: FontWeight.bold,
-                    color: Colors.white,
-                  ),
-                ),
-              ],
-            ),
-          ),
-
-          // Main content
-          Expanded(
-            child: visionAsync.when(
-              data: (vision) {
-                if (vision == null) {
-                  return Center(
-                    child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  const Icon(
-                    Icons.visibility_off_outlined,
-                    size: 64,
-                    color: AppTheme.grayMedium,
-                  ),
-                  const SizedBox(height: 16),
-                  const Text(
-                    'No vision created yet',
-                    style: TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.bold,
-                      color: AppTheme.graphite,
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  const Text(
-                    'Create your vision to see it here',
-                    style: TextStyle(
-                      fontSize: 14,
-                      color: AppTheme.grayMedium,
-                    ),
-                  ),
-                  const SizedBox(height: 24),
-                  ElevatedButton(
-                    onPressed: () => context.go('/vision/create'),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: AppTheme.primary,
-                      foregroundColor: Colors.white,
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 32,
-                        vertical: 16,
-                      ),
-                    ),
-                    child: const Text('Create Vision'),
-                  ),
-                ],
-              ),
-            );
-          }
-
+      body: visionAsync.when(
+        data: (vision) {
           // Load session data if not already loaded
-          if (_session == null && vision.sessionId != null) {
+          if (vision != null && _session == null && vision.sessionId != null) {
             _loadSession(vision.sessionId!);
           }
 
           // Set initial vision text if editing for first time
-          if (_isEditingVision && _visionController.text.isEmpty) {
+          if (vision != null && _isEditingVision && _visionController.text.isEmpty) {
             _visionController.text = vision.visionStatement;
           }
 
-          return SingleChildScrollView(
-            padding: const EdgeInsets.all(24.0),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                // Vision Statement Section
-                Card(
-                  elevation: 0,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
-                    side: const BorderSide(color: AppTheme.primaryTint),
-                  ),
-                  child: Padding(
-                    padding: const EdgeInsets.all(24.0),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // SECTION 1: Vision Statement Header (matches Purpose page style)
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(24),
+                decoration: const BoxDecoration(
+                  color: AppTheme.primary,
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
                       children: [
-                        Row(
-                          children: [
-                            const Icon(
-                              Icons.visibility,
-                              color: AppTheme.primary,
-                              size: 28,
-                            ),
-                            const SizedBox(width: 12),
-                            Expanded(
-                              child: Text(
-                                '${activeStrategy.name} - Vision',
-                                style: const TextStyle(
-                                  fontSize: 20,
-                                  fontWeight: FontWeight.bold,
-                                  color: AppTheme.primary,
-                                ),
+                        IconButton(
+                          onPressed: () {
+                            showDialog(
+                              context: context,
+                              builder: (context) => _VisionCommentDialog(
+                                strategyId: activeStrategy.id,
+                                visionStatement: vision?.visionStatement,
                               ),
-                            ),
-                            if (!_isEditingVision)
-                              IconButton(
-                                icon: const Icon(Icons.edit, size: 20),
-                                onPressed: () {
-                                  setState(() {
-                                    _isEditingVision = true;
-                                    _visionController.text = vision.visionStatement;
-                                  });
-                                },
-                                color: AppTheme.primary,
-                                tooltip: 'Edit Vision',
-                              ),
-                          ],
+                            );
+                          },
+                          icon: const Icon(Icons.forum_outlined, size: 22),
+                          color: Colors.white70,
+                          tooltip: 'Provide Comment',
+                          padding: EdgeInsets.zero,
+                          constraints: const BoxConstraints(),
                         ),
-                        const SizedBox(height: 16),
-                        if (_isEditingVision)
-                          Column(
-                            crossAxisAlignment: CrossAxisAlignment.stretch,
-                            children: [
-                              TextField(
-                                controller: _visionController,
-                                maxLines: 5,
-                                decoration: InputDecoration(
-                                  border: OutlineInputBorder(
-                                    borderRadius: BorderRadius.circular(8),
-                                  ),
-                                  filled: true,
-                                  fillColor: Colors.white,
-                                ),
+                        const Expanded(
+                          child: Center(
+                            child: Text(
+                              'Vision',
+                              style: TextStyle(
+                                fontSize: 24,
+                                fontWeight: FontWeight.bold,
+                                color: Colors.white,
                               ),
-                              const SizedBox(height: 12),
-                              Row(
-                                children: [
-                                  Expanded(
-                                    child: OutlinedButton(
-                                      onPressed: _isSaving
-                                          ? null
-                                          : () {
-                                              setState(() {
-                                                _isEditingVision = false;
-                                                _visionController.clear();
-                                              });
-                                            },
-                                      child: const Text('Cancel'),
-                                    ),
-                                  ),
-                                  const SizedBox(width: 12),
-                                  Expanded(
-                                    child: ElevatedButton(
-                                      onPressed: _isSaving
-                                          ? null
-                                          : () => _saveVisionStatement(vision),
-                                      style: ElevatedButton.styleFrom(
-                                        backgroundColor: AppTheme.primary,
-                                        foregroundColor: Colors.white,
-                                      ),
-                                      child: _isSaving
-                                          ? const SizedBox(
-                                              height: 20,
-                                              width: 20,
-                                              child: CircularProgressIndicator(
-                                                strokeWidth: 2,
-                                                color: Colors.white,
-                                              ),
-                                            )
-                                          : const Text('Save'),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ],
-                          )
-                        else
-                          Text(
-                            vision.visionStatement,
-                            style: const TextStyle(
-                              fontSize: 18,
-                              color: AppTheme.graphite,
-                              height: 1.6,
-                              fontStyle: FontStyle.italic,
                             ),
                           ),
-                        const SizedBox(height: 16),
-                        Row(
-                          children: [
-                            const Icon(
-                              Icons.schedule,
-                              size: 16,
-                              color: AppTheme.grayMedium,
-                            ),
-                            const SizedBox(width: 8),
-                            Text(
-                              '${vision.timeframeYears}-year vision',
-                              style: const TextStyle(
-                                fontSize: 14,
-                                color: AppTheme.grayMedium,
-                              ),
-                            ),
-                            const Spacer(),
-                            Text(
-                              'Updated ${_formatDate(vision.updatedAt)}',
-                              style: const TextStyle(
-                                fontSize: 12,
-                                color: AppTheme.grayMedium,
-                              ),
-                            ),
-                          ],
                         ),
+                        if (vision != null && !_isEditingVision)
+                          IconButton(
+                            icon: const Icon(Icons.edit, size: 18, color: Colors.white70),
+                            onPressed: () {
+                              setState(() {
+                                _isEditingVision = true;
+                                _visionController.text = vision.visionStatement;
+                              });
+                            },
+                            tooltip: 'Edit Vision',
+                            padding: EdgeInsets.zero,
+                            constraints: const BoxConstraints(),
+                          )
+                        else
+                          const SizedBox(width: 22),
                       ],
                     ),
-                  ),
+                    const SizedBox(height: 12),
+                    if (vision == null)
+                      const Text(
+                        'No vision created yet. Tap below to create your vision.',
+                        style: TextStyle(
+                          fontSize: 20,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.white,
+                          height: 1.3,
+                        ),
+                      )
+                    else if (_isEditingVision) ...[
+                      TextField(
+                        controller: _visionController,
+                        maxLines: 4,
+                        style: const TextStyle(color: Colors.white),
+                        decoration: InputDecoration(
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(8),
+                            borderSide: const BorderSide(color: Colors.white54),
+                          ),
+                          enabledBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(8),
+                            borderSide: const BorderSide(color: Colors.white54),
+                          ),
+                          focusedBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(8),
+                            borderSide: const BorderSide(color: Colors.white),
+                          ),
+                          filled: true,
+                          fillColor: Colors.white.withOpacity(0.15),
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: OutlinedButton(
+                              onPressed: _isSaving
+                                  ? null
+                                  : () => setState(() {
+                                        _isEditingVision = false;
+                                        _visionController.clear();
+                                      }),
+                              style: OutlinedButton.styleFrom(
+                                foregroundColor: Colors.white,
+                                side: const BorderSide(color: Colors.white54),
+                              ),
+                              child: const Text('Cancel'),
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: ElevatedButton(
+                              onPressed: _isSaving
+                                  ? null
+                                  : () => _saveVisionStatement(vision),
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: Colors.white,
+                                foregroundColor: AppTheme.primary,
+                              ),
+                              child: _isSaving
+                                  ? const SizedBox(
+                                      height: 20,
+                                      width: 20,
+                                      child: CircularProgressIndicator(strokeWidth: 2),
+                                    )
+                                  : const Text('Save'),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ] else
+                      Text(
+                        vision.visionStatement,
+                        style: const TextStyle(
+                          fontSize: 20,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.white,
+                          height: 1.3,
+                        ),
+                      ),
+                    if (vision != null && !_isEditingVision) ...[
+                      const SizedBox(height: 8),
+                      Text(
+                        '${vision.timeframeYears}-year vision · Updated ${_formatDate(vision.updatedAt)}',
+                        style: const TextStyle(
+                          fontSize: 13,
+                          color: Colors.white60,
+                        ),
+                      ),
+                    ],
+                  ],
                 ),
+              ),
 
-                const SizedBox(height: 24),
+              // SECTION 2: Scrollable Content
+              Expanded(
+                child: vision == null
+                    ? Center(
+                        child: Padding(
+                          padding: const EdgeInsets.all(24),
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const Icon(Icons.visibility_off_outlined,
+                                  size: 64, color: AppTheme.grayMedium),
+                              const SizedBox(height: 16),
+                              const Text(
+                                'No vision created yet',
+                                style: TextStyle(
+                                    fontSize: 18,
+                                    fontWeight: FontWeight.bold,
+                                    color: AppTheme.graphite),
+                              ),
+                              const SizedBox(height: 24),
+                              ElevatedButton(
+                                onPressed: () {
+                                  final activeStrategy = ref.read(activeStrategyProvider);
+                                  final purposeComplete = activeStrategy?.purpose != null &&
+                                      activeStrategy!.purpose!.isNotEmpty;
+                                  final valuesAsync = activeStrategy == null
+                                      ? null
+                                      : ref.read(strategyValuesProvider(activeStrategy.id));
+                                  final valuesComplete = valuesAsync?.valueOrNull?.isNotEmpty == true;
+
+                                  if (!purposeComplete || !valuesComplete) {
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      const SnackBar(
+                                        content: Text(
+                                          'Please complete your Purpose and Values before creating a Vision.',
+                                        ),
+                                        backgroundColor: AppTheme.error,
+                                        duration: Duration(seconds: 4),
+                                      ),
+                                    );
+                                    return;
+                                  }
+                                  context.go('/vision/create');
+                                },
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: AppTheme.primary,
+                                  foregroundColor: Colors.white,
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 32, vertical: 16),
+                                ),
+                                child: const Text('Create Vision'),
+                              ),
+                            ],
+                          ),
+                        ),
+                      )
+                    : SingleChildScrollView(
+                        padding: const EdgeInsets.all(24.0),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
 
                 // Creation Context Section
                 if (_session != null) ...[
@@ -735,17 +655,17 @@ class _VisionPageState extends ConsumerState<VisionPage> {
                       ),
                       const Spacer(),
                       if (!_isEditingQuestions)
-                        TextButton.icon(
+                        IconButton(
                           onPressed: () {
                             setState(() {
                               _isEditingQuestions = true;
                             });
                           },
                           icon: const Icon(Icons.edit, size: 18),
-                          label: const Text('Edit & Regenerate'),
-                          style: TextButton.styleFrom(
-                            foregroundColor: AppTheme.primary,
-                          ),
+                          color: AppTheme.primary,
+                          padding: EdgeInsets.zero,
+                          constraints: const BoxConstraints(),
+                          tooltip: 'Edit & Regenerate',
                         ),
                     ],
                   ),
@@ -875,7 +795,7 @@ class _VisionPageState extends ConsumerState<VisionPage> {
                                       color: Colors.white,
                                     ),
                                   )
-                                : const Text('Regenerate Vision'),
+                                : const Text('Regenerate'),
                           ),
                         ),
                       ],
@@ -962,34 +882,34 @@ class _VisionPageState extends ConsumerState<VisionPage> {
                 ],
               ],
             ),
-          );
-        },
-        loading: () => const Center(child: CircularProgressIndicator()),
-        error: (error, stack) {
-          print('❌ Error loading vision (AsyncValue): $error');
-          print('Stack trace: $stack');
-          return Center(
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                const Icon(Icons.error_outline, size: 48, color: AppTheme.error),
-                const SizedBox(height: 16),
-                Text('Error loading vision: $error'),
-                const SizedBox(height: 16),
-                ElevatedButton(
-                  onPressed: () => ref.invalidate(userVisionProvider),
-                  child: const Text('Retry'),
-                ),
-              ],
-            ),
-          );
-        },
-      ),
-    ),
+          ),   // closes SingleChildScrollView
+        ),     // closes Expanded
+      ],       // closes outer Column children
+    );
+  },
+  loading: () => const Center(child: CircularProgressIndicator()),
+  error: (error, stack) {
+    print('❌ Error loading vision (AsyncValue): $error');
+    print('Stack trace: $stack');
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          const Icon(Icons.error_outline, size: 48, color: AppTheme.error),
+          const SizedBox(height: 16),
+          Text('Error loading vision: $error'),
+          const SizedBox(height: 16),
+          ElevatedButton(
+            onPressed: () => ref.invalidate(userVisionProvider),
+            child: const Text('Retry'),
+          ),
         ],
       ),
     );
-  }
+  },
+  ),  // closes visionAsync.when(
+);    // closes Scaffold
+}     // closes build
 
   Widget _buildContextCard(String title, IconData icon, Widget content) {
     return Card(
@@ -1086,5 +1006,347 @@ class _VisionPageState extends ConsumerState<VisionPage> {
       final years = (difference.inDays / 365).floor();
       return '$years ${years == 1 ? "year" : "years"} ago';
     }
+  }
+}
+
+class _VisionCommentDialog extends ConsumerStatefulWidget {
+  final String strategyId;
+  final String? visionStatement;
+
+  const _VisionCommentDialog({
+    required this.strategyId,
+    this.visionStatement,
+  });
+
+  @override
+  ConsumerState<_VisionCommentDialog> createState() =>
+      _VisionCommentDialogState();
+}
+
+class _VisionCommentDialogState extends ConsumerState<_VisionCommentDialog> {
+  final _formKey = GlobalKey<FormState>();
+  final _commentController = TextEditingController();
+  bool _isSaving = false;
+  bool _composing = false;
+
+  @override
+  void dispose() {
+    _commentController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _save() async {
+    if (!_formKey.currentState!.validate()) return;
+    setState(() => _isSaving = true);
+    try {
+      final firestoreService = ref.read(firestoreServiceProvider);
+      final currentUser = ref.read(currentUserProvider).value;
+      if (currentUser == null) throw Exception('User not authenticated');
+
+      final commentId = FirebaseFirestore.instance
+          .collection('user_comments')
+          .doc()
+          .id;
+
+      await firestoreService.saveUserComment(UserComment(
+        id: commentId,
+        userId: currentUser.uid,
+        entityId: widget.strategyId,
+        entityType: 'vision',
+        commentText: _commentController.text.trim(),
+        parentCommentId: null,
+        createdAt: DateTime.now(),
+        updatedAt: DateTime.now(),
+      ));
+
+      if (mounted) {
+        Navigator.of(context).pop();
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Comment saved successfully!'),
+            backgroundColor: AppTheme.success,
+            duration: Duration(seconds: 2),
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error saving comment: $e'),
+            backgroundColor: AppTheme.error,
+            duration: const Duration(seconds: 3),
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isSaving = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      content: SizedBox(
+        width: 500,
+        child: Form(
+          key: _formKey,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: AppTheme.grayLight.withOpacity(0.3),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: AppTheme.grayLight),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(Icons.visibility_outlined,
+                        size: 16, color: AppTheme.primary),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text(
+                            'VISION',
+                            style: TextStyle(
+                              fontSize: 10,
+                              fontWeight: FontWeight.w600,
+                              color: AppTheme.grayMedium,
+                              letterSpacing: 0.5,
+                            ),
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            widget.visionStatement ??
+                                'No vision statement yet.',
+                            style: const TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w500,
+                              color: AppTheme.graphite,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 8),
+              if (_composing) ...[                TextFormField(
+                  controller: _commentController,
+                  decoration: InputDecoration(
+                    labelText: 'Comment',
+                    hintText:
+                        'Share your thoughts, progress, or reflections...',
+                    alignLabelWithHint: true,
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(8),
+                      borderSide: const BorderSide(
+                          color: AppTheme.primary, width: 2),
+                    ),
+                    counterText: '',
+                  ),
+                  maxLines: 8,
+                  maxLength: 1000,
+                  style: const TextStyle(fontSize: 12),
+                  autofocus: true,
+                  validator: (value) {
+                    if (value == null || value.trim().isEmpty) {
+                      return 'Please enter your comment';
+                    }
+                    if (value.trim().length < 5) {
+                      return 'Comment must be at least 5 characters';
+                    }
+                    return null;
+                  },
+                ),
+                const SizedBox(height: 2),
+                Row(
+                  children: [
+                    ListenableBuilder(
+                      listenable: _commentController,
+                      builder: (ctx, _) => Text(
+                        '${_commentController.text.length}/1000',
+                        style: const TextStyle(
+                          fontSize: 11,
+                          color: AppTheme.grayMedium,
+                        ),
+                      ),
+                    ),
+                    const Spacer(),
+                    TextButton(
+                      onPressed: _isSaving
+                          ? null
+                          : () => setState(() {
+                                _composing = false;
+                                _commentController.clear();
+                              }),
+                      child: const Text('Cancel',
+                          style: TextStyle(fontSize: 12)),
+                    ),
+                    const SizedBox(width: 4),
+                    ElevatedButton(
+                      onPressed: _isSaving ? null : _save,
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: AppTheme.primary,
+                        foregroundColor: Colors.white,
+                        textStyle: const TextStyle(fontSize: 10),
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 12, vertical: 2),
+                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                        minimumSize: Size.zero,
+                      ),
+                      child: _isSaving
+                          ? const SizedBox(
+                              width: 16,
+                              height: 16,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                valueColor: AlwaysStoppedAnimation<Color>(
+                                    Colors.white),
+                              ),
+                            )
+                          : const Text('Submit'),
+                    ),
+                  ],
+                ),
+              ] else
+                GestureDetector(
+                  onTap: () => setState(() => _composing = true),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 12, vertical: 10),
+                    decoration: BoxDecoration(
+                      border: Border.all(color: AppTheme.grayLight),
+                      borderRadius: BorderRadius.circular(8),
+                      color: AppTheme.grayLight.withOpacity(0.2),
+                    ),
+                    child: const Row(
+                      children: [
+                        Icon(Icons.add_comment_outlined,
+                            size: 14, color: AppTheme.grayMedium),
+                        SizedBox(width: 8),
+                        Text(
+                          'Add a comment...',
+                          style: TextStyle(
+                              fontSize: 12, color: AppTheme.grayMedium),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              Builder(
+                builder: (ctx) {
+                  final commentsAsync = ref.watch(
+                    commentsForEntityStreamProvider(
+                        (widget.strategyId, 'vision')),
+                  );
+                  return commentsAsync.when(
+                    data: (allComments) {
+                      final parents = allComments
+                          .where((c) => c.parentCommentId == null)
+                          .toList()
+                        ..sort(
+                            (a, b) => b.createdAt.compareTo(a.createdAt));
+                      if (parents.isEmpty) return const SizedBox.shrink();
+                      return Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Divider(height: 16),
+                          ConstrainedBox(
+                            constraints:
+                                const BoxConstraints(maxHeight: 240),
+                            child: SingleChildScrollView(
+                              child: Column(
+                                mainAxisSize: MainAxisSize.min,
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: _buildCommentWidgets(
+                                    allComments, parents),
+                              ),
+                            ),
+                          ),
+                        ],
+                      );
+                    },
+                    loading: () => const SizedBox.shrink(),
+                    error: (_, __) => const SizedBox.shrink(),
+                  );
+                },
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  List<Widget> _buildCommentWidgets(
+      List<UserComment> allComments, List<UserComment> parents) {
+    final widgets = <Widget>[];
+    for (final parent in parents) {
+      widgets.add(Padding(
+        padding: const EdgeInsets.only(bottom: 8),
+        child: _commentTile(parent),
+      ));
+      final replies = allComments
+          .where((c) => c.parentCommentId == parent.id)
+          .toList()
+        ..sort((a, b) => a.createdAt.compareTo(b.createdAt));
+      for (final reply in replies) {
+        widgets.add(Padding(
+          padding: const EdgeInsets.only(left: 8, bottom: 8),
+          child: Container(
+            padding: const EdgeInsets.only(left: 8),
+            decoration: const BoxDecoration(
+              border: Border(
+                left: BorderSide(color: AppTheme.primary, width: 2),
+              ),
+            ),
+            child: _commentTile(reply),
+          ),
+        ));
+      }
+    }
+    return widgets;
+  }
+
+  Widget _commentTile(UserComment comment) {
+    final now = DateTime.now();
+    final diff = now.difference(comment.createdAt);
+    final String timeAgo;
+    if (diff.inMinutes < 1) {
+      timeAgo = 'just now';
+    } else if (diff.inHours < 1) {
+      timeAgo = '${diff.inMinutes}m ago';
+    } else if (diff.inDays < 1) {
+      timeAgo = '${diff.inHours}h ago';
+    } else if (diff.inDays < 30) {
+      timeAgo = '${diff.inDays}d ago';
+    } else {
+      timeAgo = DateFormat('MMM d').format(comment.createdAt);
+    }
+    final authorName = ref.watch(userByIdProvider(comment.userId)).value?.fullName;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          authorName != null ? '$timeAgo · $authorName' : timeAgo,
+          style: const TextStyle(fontSize: 10, color: AppTheme.grayMedium),
+        ),
+        Text(
+          comment.commentText,
+          style: const TextStyle(fontSize: 12, color: AppTheme.graphite),
+        ),
+      ],
+    );
   }
 }

@@ -86,21 +86,21 @@ class AppTheme {
   
   /// Heading 1 style
   static const TextStyle heading1 = TextStyle(
-    fontSize: 32,
+    fontSize: 18,
     fontWeight: FontWeight.bold,
     color: graphite,
   );
   
   /// Heading 2 style
   static const TextStyle heading2 = TextStyle(
-    fontSize: 24,
+    fontSize: 18,
     fontWeight: FontWeight.bold,
     color: graphite,
   );
   
   /// Heading 3 style
   static const TextStyle heading3 = TextStyle(
-    fontSize: 20,
+    fontSize: 18,
     fontWeight: FontWeight.w600,
     color: graphite,
   );
@@ -156,6 +156,14 @@ class AppTheme {
       ),
       useMaterial3: true,
       scaffoldBackgroundColor: background,
+      textTheme: const TextTheme(
+        headlineLarge: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: graphite),
+        headlineMedium: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: graphite),
+        headlineSmall: TextStyle(fontSize: 18, fontWeight: FontWeight.w600, color: graphite),
+        titleLarge: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: graphite),
+        titleMedium: TextStyle(fontSize: 18, fontWeight: FontWeight.w600, color: graphite),
+        titleSmall: TextStyle(fontSize: 18, fontWeight: FontWeight.w500, color: graphite),
+      ),
       appBarTheme: const AppBarTheme(
         backgroundColor: graphite,
         foregroundColor: Colors.white,
@@ -203,6 +211,14 @@ class AppTheme {
       ),
       useMaterial3: true,
       scaffoldBackgroundColor: backgroundDark,
+      textTheme: const TextTheme(
+        headlineLarge: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.white),
+        headlineMedium: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.white),
+        headlineSmall: TextStyle(fontSize: 18, fontWeight: FontWeight.w600, color: Colors.white),
+        titleLarge: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.white),
+        titleMedium: TextStyle(fontSize: 18, fontWeight: FontWeight.w600, color: Colors.white),
+        titleSmall: TextStyle(fontSize: 18, fontWeight: FontWeight.w500, color: Colors.white),
+      ),
       appBarTheme: const AppBarTheme(
         backgroundColor: graphite,
         foregroundColor: Colors.white,

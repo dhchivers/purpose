@@ -2,11 +2,20 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:purpose/core/models/identity_synthesis_result.dart';
+import 'package:purpose/core/models/question_module.dart';
+import 'package:purpose/core/models/module_type.dart';
 import 'package:purpose/core/models/tier_analysis.dart';
 import 'package:purpose/core/services/auth_provider.dart';
+import 'package:purpose/core/services/firestore_provider.dart';
 import 'package:purpose/core/services/identity_synthesis_provider.dart';
 import 'package:purpose/core/services/strategy_context_provider.dart';
 import 'package:purpose/core/theme/app_theme.dart';
+
+/// Provider for purpose question modules (used to map tier names → module IDs)
+final _purposeModulesForAnalysisProvider = StreamProvider<List<QuestionModule>>((ref) {
+  final firestoreService = ref.watch(firestoreServiceProvider);
+  return firestoreService.questionModulesStream(ModuleType.purpose);
+});
 
 /// Provider for identity synthesis result
 /// Uses autoDispose to ensure fresh data on each page visit
@@ -215,6 +224,11 @@ class _IdentityAnalysisPageState extends ConsumerState<IdentityAnalysisPage> {
   @override
   Widget build(BuildContext context) {
     final resultAsync = ref.watch(identitySynthesisResultProvider);
+    // Build a name→id map used by tier cards to navigate to their module
+    final modulesByName = Map.fromEntries(
+      (ref.watch(_purposeModulesForAnalysisProvider).valueOrNull ?? [])
+          .map((m) => MapEntry(m.name, m.id)),
+    );
 
     return Scaffold(
       appBar: AppBar(
@@ -271,7 +285,7 @@ class _IdentityAnalysisPageState extends ConsumerState<IdentityAnalysisPage> {
                 const SizedBox(height: 24),
                 
                 // Tier Analysis Section
-                _buildTierAnalysisSection(result),
+                _buildTierAnalysisSection(result, modulesByName),
                 const SizedBox(height: 24),
                 
                 // Action Buttons
@@ -334,7 +348,7 @@ class _IdentityAnalysisPageState extends ConsumerState<IdentityAnalysisPage> {
                 const Text(
                   'Integrated Identity',
                   style: TextStyle(
-                    fontSize: 20,
+                    fontSize: 18,
                     fontWeight: FontWeight.bold,
                   ),
                 ),
@@ -386,7 +400,7 @@ class _IdentityAnalysisPageState extends ConsumerState<IdentityAnalysisPage> {
     );
   }
 
-  Widget _buildTierAnalysisSection(IdentitySynthesisResult result) {
+  Widget _buildTierAnalysisSection(IdentitySynthesisResult result, Map<String, String> modulesByName) {
     return Card(
       elevation: 2,
       child: Padding(
@@ -401,21 +415,23 @@ class _IdentityAnalysisPageState extends ConsumerState<IdentityAnalysisPage> {
                 const Text(
                   'Tier Analysis',
                   style: TextStyle(
-                    fontSize: 20,
+                    fontSize: 18,
                     fontWeight: FontWeight.bold,
                   ),
                 ),
               ],
             ),
             const SizedBox(height: 16),
-            ...result.tierAnalysis.map((tier) => _buildTierCard(tier)),
+            ...result.tierAnalysis.map((tier) => _buildTierCard(tier, modulesByName)),
           ],
         ),
       ),
     );
   }
 
-  Widget _buildTierCard(TierAnalysis tier) {
+  Widget _buildTierCard(TierAnalysis tier, Map<String, String> modulesByName) {
+    final moduleId = modulesByName[tier.tierName];
+
     return ExpansionTile(
       title: Text(
         tier.tierName,
@@ -426,6 +442,26 @@ class _IdentityAnalysisPageState extends ConsumerState<IdentityAnalysisPage> {
           _getSignalChip(tier.signalStrength),
           const SizedBox(width: 8),
           Text('Confidence: ${(tier.confidenceScore * 100).toStringAsFixed(0)}%'),
+        ],
+      ),
+      trailing: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (moduleId != null)
+            IconButton(
+              icon: const Icon(Icons.refresh, size: 20),
+              tooltip: 'Redo this module',
+              color: AppTheme.primary,
+              padding: EdgeInsets.zero,
+              constraints: const BoxConstraints(),
+              onPressed: () {
+                context.push('/purpose/module/$moduleId').then((_) {
+                  if (mounted) _rerunAnalysis();
+                });
+              },
+            ),
+          const SizedBox(width: 4),
+          const Icon(Icons.expand_more),
         ],
       ),
       children: [
@@ -500,7 +536,7 @@ class _IdentityAnalysisPageState extends ConsumerState<IdentityAnalysisPage> {
                 const Text(
                   'Edit Your Purpose Statement',
                   style: TextStyle(
-                    fontSize: 20,
+                    fontSize: 18,
                     fontWeight: FontWeight.bold,
                   ),
                 ),
@@ -547,7 +583,7 @@ class _IdentityAnalysisPageState extends ConsumerState<IdentityAnalysisPage> {
                 const Text(
                   'Purpose Statement Options',
                   style: TextStyle(
-                    fontSize: 20,
+                    fontSize: 18,
                     fontWeight: FontWeight.bold,
                   ),
                 ),

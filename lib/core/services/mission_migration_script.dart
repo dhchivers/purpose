@@ -1,10 +1,11 @@
 import 'dart:convert';
-import 'dart:html' as html;
+// Conditional import for web-only functionality
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:purpose/core/models/mission_map.dart';
 import 'package:purpose/core/models/mission_document.dart';
 import 'package:purpose/core/models/mission_creation_session.dart';
+import 'package:flutter/services.dart' show rootBundle;
 
 /// Migration script to refactor mission data structure
 /// 

@@ -24,6 +24,8 @@ class MissionDocument {
   final String timeHorizon; // "0-2 years", "2-4 years", etc.
   final RiskLevel? riskLevel; // Parsed risk level (low, medium, high)
   final int durationMonths; // Duration of this mission in months (default 12)
+  final bool useBudgets; // Whether this mission tracks budgets (default false)
+  final bool completed; // Whether this mission has been completed (default false)
   
   // Metadata
   final DateTime createdAt;
@@ -43,6 +45,8 @@ class MissionDocument {
     required this.timeHorizon,
     this.riskLevel,
     this.durationMonths = 12,
+    this.useBudgets = false,
+    this.completed = false,
     required this.createdAt,
     required this.updatedAt,
   });
@@ -109,6 +113,8 @@ class MissionDocument {
     String? timeHorizon,
     RiskLevel? riskLevel,
     int? durationMonths,
+    bool? useBudgets,
+    bool? completed,
     DateTime? createdAt,
     DateTime? updatedAt,
   }) {
@@ -126,6 +132,8 @@ class MissionDocument {
       timeHorizon: timeHorizon ?? this.timeHorizon,
       riskLevel: riskLevel ?? this.riskLevel,
       durationMonths: durationMonths ?? this.durationMonths,
+      useBudgets: useBudgets ?? this.useBudgets,
+      completed: completed ?? this.completed,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
     );

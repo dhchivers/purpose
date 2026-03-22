@@ -12,6 +12,7 @@ import 'package:purpose/core/services/goal_provider.dart';
 import 'package:purpose/core/services/gemini_provider.dart';
 import 'package:purpose/core/services/auth_provider.dart';
 import 'package:purpose/core/services/user_comment_provider.dart';
+import 'package:purpose/core/services/strategy_context_provider.dart';
 import 'package:purpose/core/theme/app_theme.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:intl/intl.dart';
@@ -25,25 +26,41 @@ final missionDocumentProvider =
 
 class MissionDetailPage extends ConsumerWidget {
   final String missionId;
+  final String? initialObjectiveId;
+  final String? initialGoalId;
 
   const MissionDetailPage({
     super.key,
     required this.missionId,
+    this.initialObjectiveId,
+    this.initialGoalId,
   });
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final missionAsync = ref.watch(missionDocumentProvider(missionId));
+    final activeStrategy = ref.watch(activeStrategyProvider);
 
     return Scaffold(
       appBar: AppBar(
-        backgroundColor: AppTheme.primary,
+        backgroundColor: AppTheme.graphite,
         foregroundColor: Colors.white,
-        title: const Text('Mission Details'),
+        title: Text(
+          activeStrategy?.name ?? 'Mission Details',
+          style: const TextStyle(fontSize: 21),
+          overflow: TextOverflow.ellipsis,
+        ),
         leading: IconButton(
           icon: const Icon(Icons.arrow_back),
           onPressed: () => context.go('/mission'),
         ),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.forum_outlined),
+            onPressed: () => context.go('/comments'),
+            tooltip: 'Comments',
+          ),
+        ],
       ),
       body: missionAsync.when(
         data: (mission) {
@@ -72,84 +89,130 @@ class MissionDetailPage extends ConsumerWidget {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      // Mission title with info chips
+                      // Mission title — full width
+                      Text(
+                        mission.mission,
+                        style: const TextStyle(
+                          fontSize: 20,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.white,
+                          height: 1.3,
+                        ),
+                      ),
+                      const SizedBox(height: 10),
+                      // Info chips row with comment button
                       Row(
-                        crossAxisAlignment: CrossAxisAlignment.start,
+                        crossAxisAlignment: CrossAxisAlignment.center,
                         children: [
-                          Expanded(
-                            child: Text(
-                              mission.mission,
-                              style: const TextStyle(
-                                fontSize: 28,
-                                fontWeight: FontWeight.bold,
-                                color: Colors.white,
-                                height: 1.3,
-                              ),
-                            ),
+                          IconButton(
+                            onPressed: () {
+                              showDialog(
+                                context: context,
+                                builder: (context) => _FeedbackDialog(
+                                  entityId: missionId,
+                                  entityType: 'mission',
+                                  entityTitle: mission.mission,
+                                ),
+                              );
+                            },
+                            icon: const Icon(Icons.forum_outlined, size: 20),
+                            color: Colors.white70,
+                            tooltip: 'Provide Comment',
+                            padding: EdgeInsets.zero,
+                            constraints: const BoxConstraints(),
                           ),
-                          const SizedBox(width: 16),
-                          Wrap(
-                            spacing: 12,
-                            runSpacing: 8,
-                            crossAxisAlignment: WrapCrossAlignment.center,
-                            children: [
-                              _buildInfoChip(
-                                icon: Icons.schedule,
-                                label: mission.timeHorizon,
-                              ),
-                              _buildInfoChip(
-                                icon: Icons.calendar_month,
-                                label: '${mission.durationMonths} months',
-                              ),
-                              if (mission.riskLevel != null)
-                                _buildRiskChip(mission.riskLevel!),
-                            ],
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Wrap(
+                              spacing: 8,
+                              runSpacing: 6,
+                              crossAxisAlignment: WrapCrossAlignment.center,
+                              children: [
+                                _buildInfoChip(
+                                  icon: Icons.schedule,
+                                  label: mission.timeHorizon,
+                                ),
+                                _buildInfoChip(
+                                  icon: Icons.calendar_month,
+                                  label: '${mission.durationMonths} months',
+                                ),
+                                if (mission.useBudgets)
+                                  _buildBudgetingChip(),
+                              ],
+                            ),
                           ),
                         ],
                       ),
-                      const SizedBox(height: 16),
-                      // Compact cards in full-width grid
-                      LayoutBuilder(
-                        builder: (context, constraints) {
-                          // Calculate card width to fit nicely
-                          final availableWidth = constraints.maxWidth;
-                          final cardWidth = (availableWidth - 36) / 4; // 4 cards with 12px gaps
-                          
-                          return Wrap(
-                            spacing: 12,
-                            runSpacing: 12,
-                            children: [
-                              _buildCompactCard(
-                                title: 'Focus',
-                                icon: Icons.track_changes,
-                                content: mission.focus,
-                                color: AppTheme.primary,
-                                width: cardWidth,
-                              ),
-                              _buildCompactCard(
-                                title: 'Structural Shift',
-                                icon: Icons.transform,
-                                content: mission.structuralShift,
-                                color: AppTheme.primaryLight,
-                                width: cardWidth,
-                              ),
-                              _buildCompactCard(
-                                title: 'Capability Required',
-                                icon: Icons.military_tech,
-                                content: mission.capabilityRequired,
-                                color: AppTheme.success,
-                                width: cardWidth,
-                              ),
-                              _buildCompactCard(
-                                title: 'Risk & Value Guardrail',
-                                icon: Icons.security,
-                                content: mission.riskOrValueGuardrail,
-                                color: AppTheme.warning,
-                                width: cardWidth,
-                              ),
-                            ],
-                          );
-                        },
+                      const SizedBox(height: 12),
+                      // Mission Accomplished checkbox
+                      Row(
+                        children: [
+                          SizedBox(
+                            width: 24,
+                            height: 24,
+                            child: Checkbox(
+                              value: mission.completed,
+                              onChanged: (value) async {
+                                if (value == true) {
+                                  final goalsAsync = ref.read(goalsForMissionStreamProvider(missionId));
+                                  final goals = goalsAsync.value ?? [];
+                                  final incomplete = goals.where((g) => !g.achieved).length;
+                                  if (incomplete > 0) {
+                                    final confirm = await showDialog<bool>(
+                                      context: context,
+                                      builder: (ctx) => AlertDialog(
+                                        title: const Text('Incomplete Goals'),
+                                        content: Text(
+                                          '$incomplete goal${incomplete == 1 ? '' : 's'} ${incomplete == 1 ? 'has' : 'have'} not been achieved yet. '
+                                          'Consider completing your goals before marking this mission as accomplished.',
+                                        ),
+                                        actions: [
+                                          TextButton(
+                                            onPressed: () => Navigator.of(ctx).pop(false),
+                                            child: const Text('Go Back'),
+                                          ),
+                                          FilledButton(
+                                            onPressed: () => Navigator.of(ctx).pop(true),
+                                            style: FilledButton.styleFrom(
+                                              backgroundColor: AppTheme.success,
+                                            ),
+                                            child: const Text('Mark Accomplished Anyway'),
+                                          ),
+                                        ],
+                                      ),
+                                    );
+                                    if (confirm != true) return;
+                                  }
+                                }
+                                final firestoreService = ref.read(firestoreServiceProvider);
+                                await firestoreService.updateMissionDocument(
+                                  mission.copyWith(
+                                    completed: value ?? false,
+                                    updatedAt: DateTime.now(),
+                                  ),
+                                );
+                                ref.invalidate(missionDocumentProvider(missionId));
+                              },
+                              activeColor: Colors.white,
+                              checkColor: AppTheme.primary,
+                              side: const BorderSide(color: Colors.white70, width: 1.5),
+                            ),
+                          ),
+                          const SizedBox(width: 10),
+                          Text(
+                            'Mission Accomplished',
+                            style: TextStyle(
+                              fontSize: 14,
+                              fontWeight: FontWeight.w600,
+                              color: Colors.white.withOpacity(0.95),
+                            ),
+                          ),
+                        ],
+                      ),
+                      // Mission Descriptors (expandable, inside blue header)
+                      _MissionDescriptorsSection(
+                        mission: mission,
+                        missionId: missionId,
                       ),
                     ],
                   ),
@@ -159,6 +222,9 @@ class MissionDetailPage extends ConsumerWidget {
                 _GoalsSection(
                   missionId: missionId,
                   strategyId: mission.strategyId,
+                  useBudgets: mission.useBudgets,
+                  initialObjectiveId: initialObjectiveId,
+                  initialGoalId: initialGoalId,
                 ),
               ],
             ),
@@ -224,45 +290,25 @@ class MissionDetailPage extends ConsumerWidget {
     );
   }
 
-  Widget _buildRiskChip(RiskLevel riskLevel) {
-    Color color;
-    String label;
-    
-    switch (riskLevel) {
-      case RiskLevel.low:
-        color = AppTheme.success;
-        label = 'Low Risk';
-        break;
-      case RiskLevel.medium:
-        color = AppTheme.warning;
-        label = 'Medium Risk';
-        break;
-      case RiskLevel.high:
-        color = AppTheme.error;
-        label = 'High Risk';
-        break;
-    }
 
+
+  Widget _buildBudgetingChip() {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
       decoration: BoxDecoration(
-        color: color.withOpacity(0.2),
+        color: Colors.white.withOpacity(0.2),
         borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: color.withOpacity(0.5)),
+        border: Border.all(color: Colors.white.withOpacity(0.5)),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(
-            Icons.warning_amber_rounded,
-            size: 16,
-            color: Colors.white,
-          ),
-          const SizedBox(width: 6),
+          Icon(Icons.account_balance_wallet_outlined, size: 12, color: Colors.white),
+          const SizedBox(width: 4),
           Text(
-            label,
+            'Budgeting',
             style: const TextStyle(
-              fontSize: 14,
+              fontSize: 11,
               color: Colors.white,
               fontWeight: FontWeight.w600,
             ),
@@ -271,77 +317,309 @@ class MissionDetailPage extends ConsumerWidget {
       ),
     );
   }
+}
 
-  Widget _buildCompactCard({
-    required String title,
-    required IconData icon,
-    required String content,
-    required Color color,
-    required double width,
-  }) {
+/// Expandable section showing mission descriptors with inline editing
+class _MissionDescriptorsSection extends ConsumerStatefulWidget {
+  final MissionDocument mission;
+  final String missionId;
+
+  const _MissionDescriptorsSection({
+    required this.mission,
+    required this.missionId,
+  });
+
+  @override
+  ConsumerState<_MissionDescriptorsSection> createState() =>
+      _MissionDescriptorsSectionState();
+}
+
+class _MissionDescriptorsSectionState
+    extends ConsumerState<_MissionDescriptorsSection> {
+  bool _isExpanded = false;
+  bool _isEditing = false;
+  bool _isSaving = false;
+
+  late final TextEditingController _focusController;
+  late final TextEditingController _structuralShiftController;
+  late final TextEditingController _capabilityController;
+  late final TextEditingController _riskGuardrailController;
+
+  @override
+  void initState() {
+    super.initState();
+    _focusController =
+        TextEditingController(text: widget.mission.focus);
+    _structuralShiftController =
+        TextEditingController(text: widget.mission.structuralShift);
+    _capabilityController =
+        TextEditingController(text: widget.mission.capabilityRequired);
+    _riskGuardrailController =
+        TextEditingController(text: widget.mission.riskOrValueGuardrail);
+  }
+
+  @override
+  void dispose() {
+    _focusController.dispose();
+    _structuralShiftController.dispose();
+    _capabilityController.dispose();
+    _riskGuardrailController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _save() async {
+    setState(() => _isSaving = true);
+    try {
+      final firestoreService = ref.read(firestoreServiceProvider);
+      await firestoreService.updateMissionDocument(
+        widget.mission.copyWith(
+          focus: _focusController.text.trim(),
+          structuralShift: _structuralShiftController.text.trim(),
+          capabilityRequired: _capabilityController.text.trim(),
+          riskOrValueGuardrail: _riskGuardrailController.text.trim(),
+          updatedAt: DateTime.now(),
+        ),
+      );
+      ref.invalidate(missionDocumentProvider(widget.missionId));
+      if (mounted) {
+        setState(() {
+          _isEditing = false;
+          _isSaving = false;
+        });
+      }
+    } catch (e) {
+      if (mounted) setState(() => _isSaving = false);
+    }
+  }
+
+  void _cancelEditing() {
+    setState(() {
+      _focusController.text = widget.mission.focus;
+      _structuralShiftController.text = widget.mission.structuralShift;
+      _capabilityController.text = widget.mission.capabilityRequired;
+      _riskGuardrailController.text = widget.mission.riskOrValueGuardrail;
+      _isEditing = false;
+    });
+  }
+
+  Widget _buildDescriptorSection(
+      String title, String content, IconData icon) {
     return Container(
-      width: width,
-      height: 98,
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+      width: double.infinity,
+      padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: Colors.white.withOpacity(0.95),
+        color: Colors.white,
         borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: Colors.white.withOpacity(0.3)),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.1),
-            blurRadius: 8,
-            offset: const Offset(0, 2),
-          ),
-        ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             children: [
-              Container(
-                padding: const EdgeInsets.all(3),
-                decoration: BoxDecoration(
-                  color: color.withOpacity(0.15),
-                  borderRadius: BorderRadius.circular(4),
-                ),
-                child: Icon(
-                  icon,
-                  size: 14,
-                  color: color,
-                ),
-              ),
+              Icon(icon, size: 14, color: AppTheme.primary),
               const SizedBox(width: 6),
-              Expanded(
-                child: Text(
-                  title,
-                  style: TextStyle(
-                    fontSize: 11,
-                    fontWeight: FontWeight.bold,
-                    color: color,
-                  ),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
+              Text(
+                title,
+                style: const TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                  color: AppTheme.primary,
                 ),
               ),
             ],
           ),
           const SizedBox(height: 6),
-          Expanded(
-            child: Text(
-              content,
-              style: const TextStyle(
-                fontSize: 11,
-                height: 1.4,
-                color: AppTheme.graphite,
-              ),
-              maxLines: 5,
-              overflow: TextOverflow.ellipsis,
+          Text(
+            content,
+            style: const TextStyle(
+              fontSize: 13,
+              color: AppTheme.graphite,
+              height: 1.4,
             ),
           ),
         ],
       ),
+    );
+  }
+
+  Widget _buildEditableDescriptorSection(
+      String title, TextEditingController controller, IconData icon) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Icon(icon, size: 14, color: Colors.white70),
+            const SizedBox(width: 6),
+            Text(
+              title,
+              style: const TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+                color: Colors.white70,
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        TextField(
+          controller: controller,
+          maxLines: 3,
+          style: const TextStyle(
+            fontSize: 13,
+            color: Colors.white,
+            height: 1.4,
+          ),
+          decoration: InputDecoration(
+            border: OutlineInputBorder(
+              borderSide: BorderSide(color: Colors.white38),
+            ),
+            enabledBorder: OutlineInputBorder(
+              borderSide: BorderSide(color: Colors.white38),
+            ),
+            focusedBorder: const OutlineInputBorder(
+              borderSide: BorderSide(color: Colors.white, width: 1.5),
+            ),
+            fillColor: Colors.white.withOpacity(0.1),
+            filled: true,
+            isDense: true,
+          ),
+        ),
+      ],
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // Divider between accomplished row and this section
+        Divider(height: 20, color: Colors.white24),
+
+        // Expand/collapse row
+        InkWell(
+          onTap: () => setState(() {
+            _isExpanded = !_isExpanded;
+            if (!_isExpanded) _isEditing = false;
+          }),
+          child: Row(
+            children: [
+              const Icon(Icons.info_outline, size: 18, color: Colors.white70),
+              const SizedBox(width: 8),
+              Text(
+                'Mission Descriptors',
+                style: TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w600,
+                  color: Colors.white.withOpacity(0.9),
+                ),
+              ),
+              const Spacer(),
+              if (_isExpanded && !_isEditing) ...[
+                IconButton(
+                  icon: const Icon(Icons.edit, size: 16),
+                  onPressed: () => setState(() => _isEditing = true),
+                  tooltip: 'Edit',
+                  color: Colors.white70,
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(),
+                ),
+                const SizedBox(width: 8),
+              ],
+              Icon(
+                _isExpanded ? Icons.expand_less : Icons.expand_more,
+                size: 20,
+                color: Colors.white70,
+              ),
+            ],
+          ),
+        ),
+
+        // Expandable content
+        if (_isExpanded) ...[
+          const SizedBox(height: 12),
+          if (_isEditing) ...[
+            _buildEditableDescriptorSection(
+              'Mission Focus',
+              _focusController,
+              Icons.track_changes,
+            ),
+            const SizedBox(height: 16),
+            _buildEditableDescriptorSection(
+              'Structural Shift',
+              _structuralShiftController,
+              Icons.transform,
+            ),
+            const SizedBox(height: 16),
+            _buildEditableDescriptorSection(
+              'Capability Required',
+              _capabilityController,
+              Icons.psychology,
+            ),
+            const SizedBox(height: 16),
+            _buildEditableDescriptorSection(
+              'Risk & Value Guardrails',
+              _riskGuardrailController,
+              Icons.security,
+            ),
+            const SizedBox(height: 16),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: [
+                TextButton(
+                  onPressed: _isSaving ? null : _cancelEditing,
+                  style: TextButton.styleFrom(foregroundColor: Colors.white70),
+                  child: const Text('Cancel'),
+                ),
+                const SizedBox(width: 8),
+                ElevatedButton(
+                  onPressed: _isSaving ? null : _save,
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.white,
+                    foregroundColor: AppTheme.primary,
+                  ),
+                  child: _isSaving
+                      ? SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            valueColor: AlwaysStoppedAnimation<Color>(
+                                AppTheme.primary),
+                          ),
+                        )
+                      : const Text('Save'),
+                ),
+              ],
+            ),
+          ] else ...[
+            _buildDescriptorSection(
+              'Mission Focus',
+              widget.mission.focus,
+              Icons.track_changes,
+            ),
+            const SizedBox(height: 16),
+            _buildDescriptorSection(
+              'Structural Shift',
+              widget.mission.structuralShift,
+              Icons.transform,
+            ),
+            const SizedBox(height: 16),
+            _buildDescriptorSection(
+              'Capability Required',
+              widget.mission.capabilityRequired,
+              Icons.psychology,
+            ),
+            const SizedBox(height: 16),
+            _buildDescriptorSection(
+              'Risk & Value Guardrails',
+              widget.mission.riskOrValueGuardrail,
+              Icons.security,
+            ),
+          ],
+        ],
+      ],
     );
   }
 }
@@ -350,10 +628,16 @@ class MissionDetailPage extends ConsumerWidget {
 class _GoalsSection extends ConsumerWidget {
   final String missionId;
   final String strategyId;
+  final bool useBudgets;
+  final String? initialObjectiveId;
+  final String? initialGoalId;
 
   const _GoalsSection({
     required this.missionId,
     required this.strategyId,
+    required this.useBudgets,
+    this.initialObjectiveId,
+    this.initialGoalId,
   });
 
   @override
@@ -451,8 +735,10 @@ class _GoalsSection extends ConsumerWidget {
                           goal: goal,
                           missionId: missionId,
                           strategyId: strategyId,
+                          useBudgets: useBudgets,
+                          initialObjectiveId: initialObjectiveId,
+                          initialGoalId: initialGoalId,
                           onEdit: () => _showGoalDialog(context, ref, goal),
-                          onDelete: () => _confirmDelete(context, ref, goal),
                         );
                       },
                     );
@@ -489,7 +775,7 @@ class _GoalsSection extends ConsumerWidget {
           ),
         ),
         // Log sidebar
-        _LogSidebar(missionId: missionId),
+        // _LogSidebar(missionId: missionId),
       ],
     );
   }
@@ -500,45 +786,8 @@ class _GoalsSection extends ConsumerWidget {
       builder: (context) => _GoalDialog(
         missionId: missionId,
         strategyId: strategyId,
+        useBudgets: useBudgets,
         goal: goal,
-      ),
-    );
-  }
-
-  void _confirmDelete(BuildContext context, WidgetRef ref, Goal goal) {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Delete Goal'),
-        content: Text(
-          'Are you sure you want to delete "${goal.title}"? This will also delete all associated objectives.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: const Text('Cancel'),
-          ),
-          ElevatedButton(
-            onPressed: () async {
-              Navigator.of(context).pop();
-              final firestoreService = ref.read(firestoreServiceProvider);
-              await firestoreService.deleteGoal(goal.id);
-              if (context.mounted) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(
-                    content: Text('Goal "${goal.title}" deleted'),
-                    backgroundColor: AppTheme.success,
-                  ),
-                );
-              }
-            },
-            style: ElevatedButton.styleFrom(
-              backgroundColor: AppTheme.error,
-              foregroundColor: Colors.white,
-            ),
-            child: const Text('Delete'),
-          ),
-        ],
       ),
     );
   }
@@ -549,15 +798,19 @@ class _GoalCard extends ConsumerStatefulWidget {
   final Goal goal;
   final String missionId;
   final String strategyId;
+  final bool useBudgets;
+  final String? initialObjectiveId;
+  final String? initialGoalId;
   final VoidCallback onEdit;
-  final VoidCallback onDelete;
 
   const _GoalCard({
     required this.goal,
     required this.missionId,
     required this.strategyId,
+    required this.useBudgets,
+    this.initialObjectiveId,
+    this.initialGoalId,
     required this.onEdit,
-    required this.onDelete,
   });
 
   @override
@@ -566,10 +819,30 @@ class _GoalCard extends ConsumerStatefulWidget {
 
 class _GoalCardState extends ConsumerState<_GoalCard> {
   bool _isExpanded = false;
+  bool _hasAutoExpanded = false;
 
   @override
   Widget build(BuildContext context) {
     final objectivesAsync = ref.watch(objectivesForGoalStreamProvider(widget.goal.id));
+
+    if (!_hasAutoExpanded) {
+      final matchesGoal = widget.initialGoalId == widget.goal.id;
+      if (matchesGoal) {
+        _hasAutoExpanded = true;
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) setState(() => _isExpanded = true);
+        });
+      } else if (widget.initialObjectiveId != null) {
+        objectivesAsync.whenData((objectives) {
+          if (objectives.any((o) => o.id == widget.initialObjectiveId)) {
+            _hasAutoExpanded = true;
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              if (mounted) setState(() => _isExpanded = true);
+            });
+          }
+        });
+      }
+    }
 
     return Container(
       decoration: BoxDecoration(
@@ -588,105 +861,183 @@ class _GoalCardState extends ConsumerState<_GoalCard> {
         ],
       ),
       child: Padding(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.fromLTRB(16, 10, 16, 16),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            // Top row: action buttons (left) + achieved badge (right if any)
             Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
+              crossAxisAlignment: CrossAxisAlignment.center,
               children: [
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
+                IconButton(
+                  onPressed: () {
+                    showDialog(
+                      context: context,
+                      builder: (context) => _FeedbackDialog(
+                        entityId: widget.goal.id,
+                        entityType: 'goal',
+                        entityTitle: widget.goal.title,
+                      ),
+                    );
+                  },
+                  icon: Icon(Icons.forum_outlined, size: 20),
+                  color: AppTheme.grayMedium,
+                  tooltip: 'Provide Feedback',
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(),
+                ),
+                const SizedBox(width: 8),
+                IconButton(
+                  onPressed: widget.onEdit,
+                  icon: Icon(Icons.edit_outlined, size: 20),
+                  color: AppTheme.primary,
+                  tooltip: 'Edit Goal',
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(),
+                ),
+                if (widget.goal.achieved) ...
+                  [
+                    const SizedBox(width: 12),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 4,
+                      ),
+                      decoration: BoxDecoration(
+                        color: AppTheme.success.withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
                         children: [
-                          if (widget.goal.achieved)
-                            Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 8,
-                                vertical: 4,
-                              ),
-                              decoration: BoxDecoration(
-                                color: AppTheme.success.withOpacity(0.1),
-                                borderRadius: BorderRadius.circular(12),
-                              ),
-                              child: Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  Icon(
-                                    Icons.check_circle,
-                                    size: 14,
-                                    color: AppTheme.success,
-                                  ),
-                                  const SizedBox(width: 4),
-                                  Text(
-                                    'Achieved',
-                                    style: TextStyle(
-                                      fontSize: 12,
-                                      fontWeight: FontWeight.w600,
-                                      color: AppTheme.success,
-                                    ),
-                                  ),
-                                ],
-                              ),
+                          Icon(
+                            Icons.check_circle,
+                            size: 14,
+                            color: AppTheme.success,
+                          ),
+                          const SizedBox(width: 4),
+                          Text(
+                            'Achieved',
+                            style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                              color: AppTheme.success,
                             ),
+                          ),
                         ],
                       ),
-                      if (widget.goal.achieved) const SizedBox(height: 8),
-                      Text(
-                        widget.goal.title,
-                        style: const TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.bold,
-                          color: AppTheme.graphite,
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      Text(
-                        widget.goal.description,
-                        style: TextStyle(
-                          fontSize: 14,
-                          color: AppTheme.grayMedium,
-                          height: 1.4,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Row(
-                  children: [
-                    IconButton(
-                      onPressed: () {
-                        showDialog(
-                          context: context,
-                          builder: (context) => _FeedbackDialog(
-                            entityId: widget.goal.id,
-                            entityType: 'goal',
-                            entityTitle: widget.goal.title,
-                          ),
-                        );
-                      },
-                      icon: Icon(Icons.feedback_outlined, size: 20),
-                      color: AppTheme.grayMedium,
-                      tooltip: 'Provide Feedback',
-                    ),
-                    IconButton(
-                      onPressed: widget.onEdit,
-                      icon: Icon(Icons.edit_outlined, size: 20),
-                      color: AppTheme.primary,
-                      tooltip: 'Edit Goal',
-                    ),
-                    IconButton(
-                      onPressed: widget.onDelete,
-                      icon: Icon(Icons.delete_outline, size: 20),
-                      color: AppTheme.error,
-                      tooltip: 'Delete Goal',
                     ),
                   ],
+                const Spacer(),
+                objectivesAsync.when(
+                  data: (objectives) {
+                    final achieved = objectives.where((o) => o.achieved).length;
+                    return _buildInfoChip(
+                      icon: Icons.checklist,
+                      label: 'Objectives: $achieved/${objectives.length}',
+                      color: AppTheme.grayLight,
+                      textColor: AppTheme.grayMedium,
+                    );
+                  },
+                  loading: () => _buildInfoChip(
+                    icon: Icons.checklist,
+                    label: 'Objectives: ...',
+                    color: AppTheme.grayLight,
+                    textColor: AppTheme.grayMedium,
+                  ),
+                  error: (_, __) => _buildInfoChip(
+                    icon: Icons.checklist,
+                    label: 'Objectives: -',
+                    color: AppTheme.grayLight,
+                    textColor: AppTheme.grayMedium,
+                  ),
                 ),
               ],
+            ),
+            const SizedBox(height: 4),
+            // Goal title — full width
+            Text(
+              widget.goal.title,
+              style: const TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+                color: AppTheme.graphite,
+              ),
+            ),
+            const SizedBox(height: 6),
+            // Goal Achieved checkbox
+            Row(
+              children: [
+                SizedBox(
+                  width: 20,
+                  height: 20,
+                  child: Checkbox(
+                    value: widget.goal.achieved,
+                    onChanged: (value) async {
+                      // Only show warning when checking (not unchecking)
+                      if (value == true) {
+                        final objectives = objectivesAsync.value ?? [];
+                        final incomplete = objectives.where((o) => !o.achieved).length;
+                        if (incomplete > 0) {
+                          final confirm = await showDialog<bool>(
+                            context: context,
+                            builder: (ctx) => AlertDialog(
+                              title: const Text('Incomplete Objectives'),
+                              content: Text(
+                                '$incomplete objective${incomplete == 1 ? '' : 's'} ${incomplete == 1 ? 'has' : 'have'} not been completed yet. '
+                                'Consider completing your objectives before marking this goal as achieved.',
+                              ),
+                              actions: [
+                                TextButton(
+                                  onPressed: () => Navigator.of(ctx).pop(false),
+                                  child: const Text('Go Back'),
+                                ),
+                                FilledButton(
+                                  onPressed: () => Navigator.of(ctx).pop(true),
+                                  style: FilledButton.styleFrom(
+                                    backgroundColor: AppTheme.success,
+                                  ),
+                                  child: const Text('Mark Achieved Anyway'),
+                                ),
+                              ],
+                            ),
+                          );
+                          if (confirm != true) return;
+                        }
+                      }
+                      final firestoreService = ref.read(firestoreServiceProvider);
+                      await firestoreService.updateGoal(
+                        widget.goal.copyWith(
+                          achieved: value ?? false,
+                          dateAchieved: (value ?? false) ? DateTime.now() : null,
+                          updatedAt: DateTime.now(),
+                        ),
+                      );
+                    },
+                    activeColor: AppTheme.success,
+                    materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Text(
+                  'Goal Achieved',
+                  style: TextStyle(
+                    fontSize: 13,
+                    color: AppTheme.graphite,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            // Goal description — full width
+            Text(
+              widget.goal.description,
+              style: TextStyle(
+                fontSize: 14,
+                color: AppTheme.grayMedium,
+                height: 1.4,
+              ),
             ),
             const SizedBox(height: 16),
             // Budget and Objectives Info
@@ -705,56 +1056,40 @@ class _GoalCardState extends ConsumerState<_GoalCard> {
                       0.0, 
                       (sum, obj) => sum + obj.costTime,
                     );
-                    final achieved = objectives.where((o) => o.achieved).length;
                     
                     return Wrap(
                       spacing: 16,
                       runSpacing: 8,
                       children: [
-                        // Monetary chips - Green
-                        _buildInfoChip(
-                          icon: Icons.attach_money,
-                          label: 'Budgeted: \$${widget.goal.actualMonetary.toStringAsFixed(0)} / \$${widget.goal.budgetMonetary.toStringAsFixed(0)}',
-                          color: AppTheme.success,
-                        ),
-                        _buildInfoChip(
-                          icon: Icons.price_change,
-                          label: 'Planned: \$${plannedMonetary.toStringAsFixed(0)} / \$${widget.goal.budgetMonetary.toStringAsFixed(0)}',
-                          color: AppTheme.success,
-                        ),
-                        // Time chips - Blue
-                        _buildInfoChip(
-                          icon: Icons.schedule,
-                          label: 'Budgeted: ${widget.goal.actualTime.toStringAsFixed(0)}h / ${widget.goal.budgetTime.toStringAsFixed(0)}h',
-                          color: AppTheme.primary,
-                        ),
-                        _buildInfoChip(
-                          icon: Icons.access_time,
-                          label: 'Planned: ${plannedTime.toStringAsFixed(0)}h / ${widget.goal.budgetTime.toStringAsFixed(0)}h',
-                          color: AppTheme.primary,
-                        ),
-                        // Objectives count - Light grey with dark grey text
-                        _buildInfoChip(
-                          icon: Icons.checklist,
-                          label: 'Objectives: $achieved/${objectives.length}',
-                          color: AppTheme.grayLight,
-                          textColor: AppTheme.grayMedium,
-                        ),
+                        // Monetary chips - Green (only when budgeting enabled)
+                        if (widget.useBudgets) ...[
+                          _buildInfoChip(
+                            icon: Icons.attach_money,
+                            label: 'Budgeted: \$${widget.goal.actualMonetary.toStringAsFixed(0)} / \$${widget.goal.budgetMonetary.toStringAsFixed(0)}',
+                            color: AppTheme.success,
+                          ),
+                          _buildInfoChip(
+                            icon: Icons.price_change,
+                            label: 'Planned: \$${plannedMonetary.toStringAsFixed(0)} / \$${widget.goal.budgetMonetary.toStringAsFixed(0)}',
+                            color: AppTheme.success,
+                          ),
+                          // Time chips - Blue
+                          _buildInfoChip(
+                            icon: Icons.schedule,
+                            label: 'Budgeted: ${widget.goal.actualTime.toStringAsFixed(0)}h / ${widget.goal.budgetTime.toStringAsFixed(0)}h',
+                            color: AppTheme.primary,
+                          ),
+                          _buildInfoChip(
+                            icon: Icons.access_time,
+                            label: 'Planned: ${plannedTime.toStringAsFixed(0)}h / ${widget.goal.budgetTime.toStringAsFixed(0)}h',
+                            color: AppTheme.primary,
+                          ),
+                        ],
                       ],
                     );
                   },
-                  loading: () => _buildInfoChip(
-                    icon: Icons.checklist,
-                    label: 'Objectives: ...',
-                    color: AppTheme.grayLight,
-                    textColor: AppTheme.grayMedium,
-                  ),
-                  error: (_, __) => _buildInfoChip(
-                    icon: Icons.checklist,
-                    label: 'Objectives: -',
-                    color: AppTheme.grayLight,
-                    textColor: AppTheme.grayMedium,
-                  ),
+                  loading: () => const SizedBox.shrink(),
+                  error: (_, __) => const SizedBox.shrink(),
                 ),
               ],
             ),
@@ -832,8 +1167,9 @@ class _GoalCardState extends ConsumerState<_GoalCard> {
                                     padding: const EdgeInsets.only(bottom: 8),
                                     child: _ObjectiveCard(
                                       objective: objective,
+                                      useBudgets: widget.useBudgets,
+                                      highlighted: objective.id == widget.initialObjectiveId,
                                       onEdit: () => _showObjectiveDialog(context, objective),
-                                      onDelete: () => _confirmDeleteObjective(context, objective),
                                     ),
                                   ))
                               .toList(),
@@ -872,58 +1208,10 @@ class _GoalCardState extends ConsumerState<_GoalCard> {
         goalId: widget.goal.id,
         missionId: widget.missionId,
         strategyId: widget.strategyId,
+        useBudgets: widget.useBudgets,
         objective: objective,
       ),
     );
-  }
-
-  Future<void> _confirmDeleteObjective(BuildContext context, Objective objective) async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Delete Objective'),
-        content: Text('Are you sure you want to delete "${objective.title}"?'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(false),
-            child: const Text('Cancel'),
-          ),
-          ElevatedButton(
-            onPressed: () => Navigator.of(context).pop(true),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: AppTheme.error,
-              foregroundColor: Colors.white,
-            ),
-            child: const Text('Delete'),
-          ),
-        ],
-      ),
-    );
-
-    if (confirmed == true && context.mounted) {
-      try {
-        final firestoreService = ref.read(firestoreServiceProvider);
-        await firestoreService.deleteObjective(objective.id);
-        
-        if (context.mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('Objective "${objective.title}" deleted'),
-              backgroundColor: AppTheme.success,
-            ),
-          );
-        }
-      } catch (e) {
-        if (context.mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('Error deleting objective: $e'),
-              backgroundColor: AppTheme.error,
-            ),
-          );
-        }
-      }
-    }
   }
 
   Widget _buildInfoChip({
@@ -960,187 +1248,231 @@ class _GoalCardState extends ConsumerState<_GoalCard> {
 }
 
 /// Objective Card Widget
-class _ObjectiveCard extends ConsumerWidget {
+class _ObjectiveCard extends ConsumerStatefulWidget {
   final Objective objective;
+  final bool useBudgets;
+  final bool highlighted;
   final VoidCallback onEdit;
-  final VoidCallback onDelete;
 
   const _ObjectiveCard({
     required this.objective,
+    required this.useBudgets,
+    this.highlighted = false,
     required this.onEdit,
-    required this.onDelete,
   });
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final dateFormat = DateFormat('MMM d, yyyy');
+  ConsumerState<_ObjectiveCard> createState() => _ObjectiveCardState();
+}
+
+class _ObjectiveCardState extends ConsumerState<_ObjectiveCard> {
+  @override
+  void initState() {
+    super.initState();
+    if (widget.highlighted) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          Scrollable.ensureVisible(
+            context,
+            duration: const Duration(milliseconds: 500),
+            curve: Curves.easeInOut,
+            alignment: 0.3,
+          );
+        }
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final objective = widget.objective;
+    final useBudgets = widget.useBudgets;
+    final onEdit = widget.onEdit;
     final isOverdue = objective.isOverdue;
     
     return Container(
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: widget.highlighted ? AppTheme.primary.withOpacity(0.05) : Colors.white,
         borderRadius: BorderRadius.circular(8),
         border: Border.all(
-          color: objective.achieved 
-            ? AppTheme.success 
-            : (isOverdue ? AppTheme.error : AppTheme.grayLight),
-          width: objective.achieved || isOverdue ? 1.5 : 1,
+          color: widget.highlighted
+              ? AppTheme.primary
+              : objective.achieved
+                  ? AppTheme.success
+                  : (isOverdue ? AppTheme.error : AppTheme.grayLight),
+          width: widget.highlighted || objective.achieved || isOverdue ? 1.5 : 1,
         ),
       ),
-      padding: const EdgeInsets.all(12),
+      padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          // Top row: action buttons (left) + status badges inline
           Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
+            crossAxisAlignment: CrossAxisAlignment.center,
             children: [
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        if (objective.achieved)
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 6,
-                              vertical: 2,
-                            ),
-                            decoration: BoxDecoration(
-                              color: AppTheme.success.withOpacity(0.1),
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Icon(
-                                  Icons.check_circle,
-                                  size: 12,
-                                  color: AppTheme.success,
-                                ),
-                                const SizedBox(width: 4),
-                                Text(
-                                  'Done',
-                                  style: TextStyle(
-                                    fontSize: 11,
-                                    fontWeight: FontWeight.w600,
-                                    color: AppTheme.success,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        if (isOverdue)
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 6,
-                              vertical: 2,
-                            ),
-                            decoration: BoxDecoration(
-                              color: AppTheme.error.withOpacity(0.1),
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Icon(
-                                  Icons.warning,
-                                  size: 12,
-                                  color: AppTheme.error,
-                                ),
-                                const SizedBox(width: 4),
-                                Text(
-                                  'Overdue',
-                                  style: TextStyle(
-                                    fontSize: 11,
-                                    fontWeight: FontWeight.w600,
-                                    color: AppTheme.error,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                      ],
+              IconButton(
+                onPressed: () {
+                  showDialog(
+                    context: context,
+                    builder: (context) => _FeedbackDialog(
+                      entityId: objective.id,
+                      entityType: 'objective',
+                      entityTitle: objective.title,
                     ),
-                    if (objective.achieved || isOverdue) const SizedBox(height: 6),
-                    Text(
-                      objective.title,
-                      style: const TextStyle(
-                        fontSize: 15,
-                        fontWeight: FontWeight.bold,
-                        color: AppTheme.graphite,
+                  );
+                },
+                icon: Icon(Icons.forum_outlined, size: 18),
+                color: AppTheme.grayMedium,
+                tooltip: 'Provide Feedback',
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(),
+              ),
+              const SizedBox(width: 8),
+              IconButton(
+                onPressed: onEdit,
+                icon: Icon(Icons.edit_outlined, size: 18),
+                color: AppTheme.primary,
+                tooltip: 'Edit Objective',
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(),
+              ),
+              if (useBudgets) ...[
+                const SizedBox(width: 8),
+                IconButton(
+                  onPressed: () => _showAddSpendDialog(context, ref, isMonetary: true),
+                  icon: Icon(Icons.attach_money, size: 18),
+                  color: AppTheme.success,
+                  tooltip: 'Add Spend \$',
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(),
+                ),
+                const SizedBox(width: 4),
+                IconButton(
+                  onPressed: () => _showAddSpendDialog(context, ref, isMonetary: false),
+                  icon: Icon(Icons.schedule, size: 18),
+                  color: AppTheme.primary,
+                  tooltip: 'Add Time (hr)',
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(),
+                ),
+              ],
+              if (objective.achieved) ...[
+                const SizedBox(width: 10),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: AppTheme.success.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.check_circle, size: 12, color: AppTheme.success),
+                      const SizedBox(width: 4),
+                      Text('Done', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: AppTheme.success)),
+                    ],
+                  ),
+                ),
+              ],
+              if (isOverdue) ...[
+                const SizedBox(width: 10),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: AppTheme.error.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.warning, size: 12, color: AppTheme.error),
+                      const SizedBox(width: 4),
+                      Text('Overdue', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: AppTheme.error)),
+                    ],
+                  ),
+                ),
+              ],
+              if (objective.dueDate != null) ...[
+                const Spacer(),
+                _buildDetailChip(
+                  icon: Icons.calendar_today,
+                  label: 'Due: ${DateFormat('MMM d').format(objective.dueDate!)}',
+                  color: isOverdue ? AppTheme.error : AppTheme.grayMedium,
+                ),
+              ],
+            ],
+          ),
+          const SizedBox(height: 4),
+          // Title — full width
+          Text(
+            objective.title,
+            style: const TextStyle(
+              fontSize: 15,
+              fontWeight: FontWeight.bold,
+              color: AppTheme.graphite,
+            ),
+          ),
+          const SizedBox(height: 6),
+          // Objective Completed checkbox
+          Row(
+            children: [
+              SizedBox(
+                width: 20,
+                height: 20,
+                child: Checkbox(
+                  value: objective.achieved,
+                  onChanged: (value) async {
+                    final firestoreService = ref.read(firestoreServiceProvider);
+                    await firestoreService.updateObjective(
+                      objective.copyWith(
+                        achieved: value ?? false,
+                        dateAchieved: (value ?? false) ? DateTime.now() : null,
+                        updatedAt: DateTime.now(),
                       ),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      objective.description,
-                      style: TextStyle(
-                        fontSize: 13,
-                        color: AppTheme.grayMedium,
-                        height: 1.3,
-                      ),
-                    ),
-                    const SizedBox(height: 6),
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 8,
-                        vertical: 4,
-                      ),
-                      decoration: BoxDecoration(
-                        color: AppTheme.primary.withOpacity(0.1),
-                        borderRadius: BorderRadius.circular(6),
-                      ),
-                      child: Text(
-                        '📊 ${objective.measurableRequirement}',
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: AppTheme.primary,
-                          fontWeight: FontWeight.w500,
-                        ),
-                      ),
-                    ),
-                  ],
+                    );
+                  },
+                  activeColor: AppTheme.success,
+                  materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
                 ),
               ),
               const SizedBox(width: 8),
-              Row(
-                children: [
-                  IconButton(
-                    onPressed: () {
-                      showDialog(
-                        context: context,
-                        builder: (context) => _FeedbackDialog(
-                          entityId: objective.id,
-                          entityType: 'objective',
-                          entityTitle: objective.title,
-                        ),
-                      );
-                    },
-                    icon: Icon(Icons.feedback_outlined, size: 18),
-                    color: AppTheme.grayMedium,
-                    tooltip: 'Provide Feedback',
-                    padding: EdgeInsets.all(4),
-                    constraints: BoxConstraints(),
-                  ),
-                  IconButton(
-                    onPressed: onEdit,
-                    icon: Icon(Icons.edit_outlined, size: 18),
-                    color: AppTheme.primary,
-                    tooltip: 'Edit Objective',
-                    padding: EdgeInsets.all(4),
-                    constraints: BoxConstraints(),
-                  ),
-                  IconButton(
-                    onPressed: onDelete,
-                    icon: Icon(Icons.delete_outline, size: 18),
-                    color: AppTheme.error,
-                    tooltip: 'Delete Objective',
-                    padding: EdgeInsets.all(4),
-                    constraints: BoxConstraints(),
-                  ),
-                ],
+              Text(
+                'Objective Completed',
+                style: TextStyle(
+                  fontSize: 13,
+                  color: AppTheme.graphite,
+                  fontWeight: FontWeight.w500,
+                ),
               ),
             ],
+          ),
+          const SizedBox(height: 6),
+          // Description — full width
+          Text(
+            objective.description,
+            style: TextStyle(
+              fontSize: 13,
+              color: AppTheme.grayMedium,
+              height: 1.3,
+            ),
+          ),
+          const SizedBox(height: 6),
+          // Measurable requirement
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+            decoration: BoxDecoration(
+              color: AppTheme.primary.withOpacity(0.1),
+              borderRadius: BorderRadius.circular(6),
+            ),
+            child: Text(
+              '📊 ${objective.measurableRequirement}',
+              style: TextStyle(
+                fontSize: 12,
+                color: AppTheme.primary,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
           ),
           const SizedBox(height: 8),
           Row(
@@ -1150,48 +1482,22 @@ class _ObjectiveCard extends ConsumerWidget {
                   spacing: 8,
                   runSpacing: 4,
                   children: [
-                    if (objective.dueDate != null)
-                      _buildDetailChip(
-                        icon: Icons.calendar_today,
-                        label: 'Due: ${dateFormat.format(objective.dueDate!)}',
-                        color: isOverdue ? AppTheme.error : AppTheme.grayMedium,
-                      ),
                     if (objective.costMonetary > 0 || objective.spendMonetary > 0)
-                      _buildDetailChip(
-                        icon: Icons.attach_money,
-                        label: 'Cost: \$${objective.costMonetary.toStringAsFixed(0)} | Spend: \$${objective.spendMonetary.toStringAsFixed(0)}',
-                        color: AppTheme.success,
-                      ),
+                      if (useBudgets)
+                        _buildDetailChip(
+                          icon: Icons.attach_money,
+                          label: 'Cost: \$${objective.costMonetary.toStringAsFixed(0)} | Spend: \$${objective.spendMonetary.toStringAsFixed(0)}',
+                          color: AppTheme.success,
+                        ),
                     if (objective.costTime > 0 || objective.spendTime > 0)
-                      _buildDetailChip(
-                        icon: Icons.schedule,
-                        label: 'Cost: ${objective.costTime.toStringAsFixed(0)}h | Spend: ${objective.spendTime.toStringAsFixed(0)}h',
-                        color: AppTheme.primary,
-                      ),
+                      if (useBudgets)
+                        _buildDetailChip(
+                          icon: Icons.schedule,
+                          label: 'Cost: ${objective.costTime.toStringAsFixed(0)}h | Spend: ${objective.spendTime.toStringAsFixed(0)}h',
+                          color: AppTheme.primary,
+                        ),
                   ],
                 ),
-              ),
-              const SizedBox(width: 8),
-              Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  IconButton(
-                    onPressed: () => _showAddSpendDialog(context, ref, isMonetary: true),
-                    icon: Icon(Icons.attach_money, size: 18),
-                    color: AppTheme.success,
-                    tooltip: 'Add Spend \$',
-                    padding: EdgeInsets.all(4),
-                    constraints: BoxConstraints(),
-                  ),
-                  IconButton(
-                    onPressed: () => _showAddSpendDialog(context, ref, isMonetary: false),
-                    icon: Icon(Icons.schedule, size: 18),
-                    color: AppTheme.primary,
-                    tooltip: 'Add Time (hr)',
-                    padding: EdgeInsets.all(4),
-                    constraints: BoxConstraints(),
-                  ),
-                ],
               ),
             ],
           ),
@@ -1272,6 +1578,7 @@ class _ObjectiveCard extends ConsumerWidget {
   }
 
   Future<void> _addSpend(WidgetRef ref, double amount, String note, bool isMonetary) async {
+    final objective = widget.objective;
     try {
       final firestoreService = ref.read(firestoreServiceProvider);
       final currentUser = ref.read(currentUserProvider).value;
@@ -1337,12 +1644,14 @@ class _ObjectiveDialog extends ConsumerStatefulWidget {
   final String goalId;
   final String missionId;
   final String strategyId;
+  final bool useBudgets;
   final Objective? objective;
 
   const _ObjectiveDialog({
     required this.goalId,
     required this.missionId,
     required this.strategyId,
+    required this.useBudgets,
     this.objective,
   });
 
@@ -1571,10 +1880,14 @@ class _ObjectiveDialogState extends ConsumerState<_ObjectiveDialog> {
                 ),
               TextFormField(
                 controller: _titleController,
+                maxLines: 3,
+                minLines: 1,
+                style: const TextStyle(fontSize: 13),
                 decoration: const InputDecoration(
                   labelText: 'Title',
                   hintText: 'Enter objective title',
                   border: OutlineInputBorder(),
+                  labelStyle: TextStyle(fontSize: 13),
                 ),
                 validator: (value) {
                   if (value == null || value.trim().isEmpty) {
@@ -1590,8 +1903,11 @@ class _ObjectiveDialogState extends ConsumerState<_ObjectiveDialog> {
                   labelText: 'Description',
                   hintText: 'Enter objective description',
                   border: OutlineInputBorder(),
+                  labelStyle: TextStyle(fontSize: 13),
                 ),
-                maxLines: 3,
+                style: const TextStyle(fontSize: 13),
+                minLines: 4,
+                maxLines: 4,
                 validator: (value) {
                   if (value == null || value.trim().isEmpty) {
                     return 'Please enter a description';
@@ -1606,8 +1922,11 @@ class _ObjectiveDialogState extends ConsumerState<_ObjectiveDialog> {
                   labelText: 'Measurable Requirement',
                   hintText: 'e.g., "Increase sales by 20%"',
                   border: OutlineInputBorder(),
+                  labelStyle: TextStyle(fontSize: 13),
                 ),
-                maxLines: 2,
+                style: const TextStyle(fontSize: 13),
+                minLines: 4,
+                maxLines: 4,
                 validator: (value) {
                   if (value == null || value.trim().isEmpty) {
                     return 'Please enter a measurable requirement';
@@ -1637,61 +1956,128 @@ class _ObjectiveDialogState extends ConsumerState<_ObjectiveDialog> {
                   child: Text(
                     _dueDate != null ? dateFormat.format(_dueDate!) : 'Select a date',
                     style: TextStyle(
+                      fontSize: 13,
                       color: _dueDate != null ? Colors.black : Colors.grey,
                     ),
                   ),
                 ),
               ),
-              const SizedBox(height: 16),
-              Row(
-                children: [
-                  Expanded(
-                    child: TextFormField(
-                      controller: _costMonetaryController,
-                      decoration: const InputDecoration(
-                        labelText: 'Cost \$ (Optional)',
-                        hintText: '0',
-                        border: OutlineInputBorder(),
-                        prefixText: '\$ ',
+              if (widget.useBudgets) ...[
+                const SizedBox(height: 16),
+                Row(
+                  children: [
+                    Expanded(
+                      child: TextFormField(
+                        controller: _costMonetaryController,
+                        style: const TextStyle(fontSize: 13),
+                        decoration: const InputDecoration(
+                          labelText: 'Cost \$ (Optional)',
+                          hintText: '0',
+                          border: OutlineInputBorder(),
+                          prefixText: '\$ ',
+                          labelStyle: TextStyle(fontSize: 13),
+                        ),
+                        keyboardType: TextInputType.number,
                       ),
-                      keyboardType: TextInputType.number,
                     ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: TextFormField(
-                      controller: _costTimeController,
-                      decoration: const InputDecoration(
-                        labelText: 'Time Hours (Optional)',
-                        hintText: '0',
-                        border: OutlineInputBorder(),
-                        suffixText: 'h',
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: TextFormField(
+                        controller: _costTimeController,
+                        style: const TextStyle(fontSize: 13),
+                        decoration: const InputDecoration(
+                          labelText: 'Time Hours (Optional)',
+                          hintText: '0',
+                          border: OutlineInputBorder(),
+                          suffixText: 'h',
+                          labelStyle: TextStyle(fontSize: 13),
+                        ),
+                        keyboardType: TextInputType.number,
                       ),
-                      keyboardType: TextInputType.number,
                     ),
-                  ),
-                ],
-              ),
+                  ],
+                ),
+              ],
             ],
           ),
         ),
       ),
       ),
       actions: [
-        TextButton(
-          onPressed: () => Navigator.of(context).pop(),
-          child: const Text('Cancel'),
-        ),
-        ElevatedButton(
-          onPressed: _saveObjective,
-          style: ElevatedButton.styleFrom(
-            backgroundColor: AppTheme.primary,
-            foregroundColor: Colors.white,
-          ),
-          child: Text(isEditing ? 'Update' : 'Create'),
+        Row(
+          children: [
+            if (isEditing)
+              TextButton(
+                onPressed: () => _confirmDelete(context),
+                style: TextButton.styleFrom(foregroundColor: AppTheme.error),
+                child: const Text('Delete'),
+              ),
+            const Spacer(),
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('Cancel'),
+            ),
+            ElevatedButton(
+              onPressed: _saveObjective,
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppTheme.primary,
+                foregroundColor: Colors.white,
+              ),
+              child: Text(isEditing ? 'Update' : 'Create'),
+            ),
+          ],
         ),
       ],
     );
+  }
+
+  Future<void> _confirmDelete(BuildContext context) async {
+    final objective = widget.objective!;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Delete Objective'),
+        content: Text('Are you sure you want to delete "${objective.title}"?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppTheme.error,
+              foregroundColor: Colors.white,
+            ),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed == true && context.mounted) {
+      Navigator.of(context).pop(); // close edit dialog
+      try {
+        final firestoreService = ref.read(firestoreServiceProvider);
+        await firestoreService.deleteObjective(objective.id);
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Objective "${objective.title}" deleted'),
+              backgroundColor: AppTheme.success,
+            ),
+          );
+        }
+      } catch (e) {
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Error deleting objective: \$e'),
+              backgroundColor: AppTheme.error,
+            ),
+          );
+        }
+      }
+    }
   }
 
   Future<void> _askObjectiveAgent() async {
@@ -1825,11 +2211,13 @@ class _ObjectiveDialogState extends ConsumerState<_ObjectiveDialog> {
 class _GoalDialog extends ConsumerStatefulWidget {
   final String missionId;
   final String strategyId;
+  final bool useBudgets;
   final Goal? goal;
 
   const _GoalDialog({
     required this.missionId,
     required this.strategyId,
+    required this.useBudgets,
     this.goal,
   });
 
@@ -2069,60 +2457,124 @@ class _GoalDialogState extends ConsumerState<_GoalDialog> {
                     return null;
                   },
                 ),
-                const SizedBox(height: 16),
-                TextFormField(
-                  controller: _budgetMonetaryController,
-                  decoration: const InputDecoration(
-                    labelText: 'Budget (\$)',
-                    hintText: 'Optional',
-                    border: OutlineInputBorder(),
+                if (widget.useBudgets) ...[
+                  const SizedBox(height: 16),
+                  TextFormField(
+                    controller: _budgetMonetaryController,
+                    decoration: const InputDecoration(
+                      labelText: 'Budget (\$)',
+                      hintText: 'Optional',
+                      border: OutlineInputBorder(),
+                    ),
+                    keyboardType: TextInputType.number,
+                    validator: (value) {
+                      if (value == null || value.isEmpty) return null;
+                      if (double.tryParse(value) == null) {
+                        return 'Enter a valid number';
+                      }
+                      return null;
+                    },
                   ),
-                  keyboardType: TextInputType.number,
-                  validator: (value) {
-                    if (value == null || value.isEmpty) return null;
-                    if (double.tryParse(value) == null) {
-                      return 'Enter a valid number';
-                    }
-                    return null;
-                  },
-                ),
-                const SizedBox(height: 16),
-                TextFormField(
-                  controller: _budgetTimeController,
-                  decoration: const InputDecoration(
-                    labelText: 'Budget (hours)',
-                    hintText: 'Optional',
-                    border: OutlineInputBorder(),
+                  const SizedBox(height: 16),
+                  TextFormField(
+                    controller: _budgetTimeController,
+                    decoration: const InputDecoration(
+                      labelText: 'Budget (hours)',
+                      hintText: 'Optional',
+                      border: OutlineInputBorder(),
+                    ),
+                    keyboardType: TextInputType.number,
+                    validator: (value) {
+                      if (value == null || value.isEmpty) return null;
+                      if (double.tryParse(value) == null) {
+                        return 'Enter a valid number';
+                      }
+                      return null;
+                    },
                   ),
-                  keyboardType: TextInputType.number,
-                  validator: (value) {
-                    if (value == null || value.isEmpty) return null;
-                    if (double.tryParse(value) == null) {
-                      return 'Enter a valid number';
-                    }
-                    return null;
-                  },
-                ),
+                ],
               ],
             ),
           ),
         ),
       ),
       actions: [
-        TextButton(
-          onPressed: () => Navigator.of(context).pop(),
-          child: const Text('Cancel'),
-        ),
-        ElevatedButton(
-          onPressed: _saveGoal,
-          style: ElevatedButton.styleFrom(
-            backgroundColor: AppTheme.primary,
-            foregroundColor: Colors.white,
-          ),
-          child: Text(isEditing ? 'Update' : 'Create'),
+        Row(
+          children: [
+            if (isEditing)
+              TextButton(
+                onPressed: () => _confirmDelete(context),
+                style: TextButton.styleFrom(foregroundColor: AppTheme.error),
+                child: const Text('Delete'),
+              ),
+            const Spacer(),
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('Cancel'),
+            ),
+            ElevatedButton(
+              onPressed: _saveGoal,
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppTheme.primary,
+                foregroundColor: Colors.white,
+              ),
+              child: Text(isEditing ? 'Update' : 'Create'),
+            ),
+          ],
         ),
       ],
     );
+  }
+
+  Future<void> _confirmDelete(BuildContext context) async {
+    final goal = widget.goal!;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Delete Goal'),
+        content: Text(
+          'Are you sure you want to delete "${goal.title}"? This will also delete all associated objectives.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppTheme.error,
+              foregroundColor: Colors.white,
+            ),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed == true && context.mounted) {
+      Navigator.of(context).pop(); // close edit dialog
+      try {
+        final firestoreService = ref.read(firestoreServiceProvider);
+        await firestoreService.deleteGoal(goal.id);
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Goal "${goal.title}" deleted'),
+              backgroundColor: AppTheme.success,
+            ),
+          );
+        }
+      } catch (e) {
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Error deleting goal: \$e'),
+              backgroundColor: AppTheme.error,
+            ),
+          );
+        }
+      }
+    }
   }
 
   Future<void> _askGoalAgent() async {
@@ -2957,6 +3409,7 @@ class _FeedbackDialogState extends ConsumerState<_FeedbackDialog> {
   final _formKey = GlobalKey<FormState>();
   final _commentController = TextEditingController();
   bool _isSaving = false;
+  bool _composing = false;
 
   @override
   void dispose() {
@@ -3030,26 +3483,6 @@ class _FeedbackDialogState extends ConsumerState<_FeedbackDialog> {
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
-      title: Row(
-        children: [
-          Icon(
-            Icons.feedback_outlined,
-            color: AppTheme.primary,
-            size: 24,
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Text(
-              'Provide Feedback',
-              style: TextStyle(
-                fontSize: 20,
-                fontWeight: FontWeight.bold,
-                color: AppTheme.graphite,
-              ),
-            ),
-          ),
-        ],
-      ),
       content: SizedBox(
         width: 500,
         child: Form(
@@ -3109,73 +3542,221 @@ class _FeedbackDialogState extends ConsumerState<_FeedbackDialog> {
                   ],
                 ),
               ),
-              const SizedBox(height: 20),
-              // Comment field
-              TextFormField(
-                controller: _commentController,
-                decoration: InputDecoration(
-                  labelText: 'Your Feedback',
-                  hintText: 'Share your thoughts, progress, or reflections...',
-                  alignLabelWithHint: true,
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(8),
+              const SizedBox(height: 8),
+              if (_composing) ...[                TextFormField(
+                  controller: _commentController,
+                  decoration: InputDecoration(
+                    labelText: 'Comment',
+                    hintText:
+                        'Share your thoughts, progress, or reflections...',
+                    alignLabelWithHint: true,
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(8),
+                      borderSide: const BorderSide(
+                          color: AppTheme.primary, width: 2),
+                    ),
+                    counterText: '',
                   ),
-                  focusedBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(8),
-                    borderSide: BorderSide(
-                      color: AppTheme.primary,
-                      width: 2,
+                  maxLines: 8,
+                  maxLength: 1000,
+                  style: const TextStyle(fontSize: 12),
+                  autofocus: true,
+                  validator: (value) {
+                    if (value == null || value.trim().isEmpty) {
+                      return 'Please enter your comment';
+                    }
+                    if (value.trim().length < 5) {
+                      return 'Feedback must be at least 5 characters';
+                    }
+                    return null;
+                  },
+                ),
+                const SizedBox(height: 2),
+                Row(
+                  children: [
+                    ListenableBuilder(
+                      listenable: _commentController,
+                      builder: (ctx, _) => Text(
+                        '${_commentController.text.length}/1000',
+                        style: const TextStyle(
+                          fontSize: 11,
+                          color: AppTheme.grayMedium,
+                        ),
+                      ),
+                    ),
+                    const Spacer(),
+                    TextButton(
+                      onPressed: _isSaving
+                          ? null
+                          : () => setState(() {
+                                _composing = false;
+                                _commentController.clear();
+                              }),
+                      child: Text(
+                        'Cancel',
+                        style: TextStyle(
+                          color: AppTheme.grayMedium,
+                          fontSize: 10,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 4),
+                    ElevatedButton.icon(
+                      onPressed: _isSaving ? null : _saveComment,
+                      icon: _isSaving
+                          ? const SizedBox(
+                              width: 16,
+                              height: 16,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                valueColor: AlwaysStoppedAnimation<Color>(
+                                    Colors.white),
+                              ),
+                            )
+                          : const Icon(Icons.send, size: 16),
+                      label: Text(_isSaving ? 'Saving...' : 'Submit'),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: AppTheme.primary,
+                        foregroundColor: Colors.white,
+                        textStyle: const TextStyle(fontSize: 10),
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 12, vertical: 2),
+                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                        minimumSize: Size.zero,
+                      ),
+                    ),
+                  ],
+                ),
+              ] else
+                GestureDetector(
+                  onTap: () => setState(() => _composing = true),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 12, vertical: 10),
+                    decoration: BoxDecoration(
+                      border: Border.all(color: AppTheme.grayLight),
+                      borderRadius: BorderRadius.circular(8),
+                      color: AppTheme.grayLight.withOpacity(0.2),
+                    ),
+                    child: const Row(
+                      children: [
+                        Icon(Icons.add_comment_outlined,
+                            size: 14, color: AppTheme.grayMedium),
+                        SizedBox(width: 8),
+                        Text(
+                          'Add a comment...',
+                          style: TextStyle(
+                              fontSize: 12, color: AppTheme.grayMedium),
+                        ),
+                      ],
                     ),
                   ),
                 ),
-                maxLines: 5,
-                maxLength: 1000,
-                validator: (value) {
-                  if (value == null || value.trim().isEmpty) {
-                    return 'Please enter your feedback';
-                  }
-                  if (value.trim().length < 5) {
-                    return 'Feedback must be at least 5 characters';
-                  }
-                  return null;
+              Builder(
+                builder: (ctx) {
+                  final commentsAsync = ref.watch(
+                    commentsForEntityStreamProvider(
+                        (widget.entityId, widget.entityType)),
+                  );
+                  return commentsAsync.when(
+                    data: (allComments) {
+                      final parents = allComments
+                          .where((c) => c.parentCommentId == null)
+                          .toList()
+                        ..sort(
+                            (a, b) => b.createdAt.compareTo(a.createdAt));
+                      if (parents.isEmpty) return const SizedBox.shrink();
+                      return Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Divider(height: 16),
+                          ConstrainedBox(
+                            constraints:
+                                const BoxConstraints(maxHeight: 240),
+                            child: SingleChildScrollView(
+                              child: Column(
+                                mainAxisSize: MainAxisSize.min,
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: _buildCommentWidgets(
+                                    allComments, parents),
+                              ),
+                            ),
+                          ),
+                        ],
+                      );
+                    },
+                    loading: () => const SizedBox.shrink(),
+                    error: (_, __) => const SizedBox.shrink(),
+                  );
                 },
-                autofocus: true,
               ),
             ],
           ),
         ),
       ),
-      actions: [
-        TextButton(
-          onPressed: _isSaving ? null : () => Navigator.of(context).pop(),
-          child: Text(
-            'Cancel',
-            style: TextStyle(
-              color: AppTheme.grayMedium,
+    );
+  }
+
+  List<Widget> _buildCommentWidgets(
+      List<UserComment> allComments, List<UserComment> parents) {
+    final widgets = <Widget>[];
+    for (final parent in parents) {
+      widgets.add(Padding(
+        padding: const EdgeInsets.only(bottom: 8),
+        child: _commentTile(parent),
+      ));
+      final replies = allComments
+          .where((c) => c.parentCommentId == parent.id)
+          .toList()
+        ..sort((a, b) => a.createdAt.compareTo(b.createdAt));
+      for (final reply in replies) {
+        widgets.add(Padding(
+          padding: const EdgeInsets.only(left: 8, bottom: 8),
+          child: Container(
+            padding: const EdgeInsets.only(left: 8),
+            decoration: const BoxDecoration(
+              border: Border(
+                left: BorderSide(color: AppTheme.primary, width: 2),
+              ),
             ),
+            child: _commentTile(reply),
           ),
+        ));
+      }
+    }
+    return widgets;
+  }
+
+  Widget _commentTile(UserComment comment) {
+    final now = DateTime.now();
+    final diff = now.difference(comment.createdAt);
+    final String timeAgo;
+    if (diff.inMinutes < 1) {
+      timeAgo = 'just now';
+    } else if (diff.inHours < 1) {
+      timeAgo = '${diff.inMinutes}m ago';
+    } else if (diff.inDays < 1) {
+      timeAgo = '${diff.inHours}h ago';
+    } else if (diff.inDays < 30) {
+      timeAgo = '${diff.inDays}d ago';
+    } else {
+      timeAgo = DateFormat('MMM d').format(comment.createdAt);
+    }
+    final authorName = ref.watch(userByIdProvider(comment.userId)).value?.fullName;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          authorName != null ? '$timeAgo · $authorName' : timeAgo,
+          style: const TextStyle(fontSize: 10, color: AppTheme.grayMedium),
         ),
-        ElevatedButton.icon(
-          onPressed: _isSaving ? null : _saveComment,
-          icon: _isSaving
-              ? SizedBox(
-                  width: 16,
-                  height: 16,
-                  child: CircularProgressIndicator(
-                    strokeWidth: 2,
-                    valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
-                  ),
-                )
-              : Icon(Icons.send, size: 18),
-          label: Text(_isSaving ? 'Saving...' : 'Submit Feedback'),
-          style: ElevatedButton.styleFrom(
-            backgroundColor: AppTheme.primary,
-            foregroundColor: Colors.white,
-            padding: const EdgeInsets.symmetric(
-              horizontal: 20,
-              vertical: 12,
-            ),
-          ),
+        Text(
+          comment.commentText,
+          style: const TextStyle(fontSize: 12, color: AppTheme.graphite),
         ),
       ],
     );

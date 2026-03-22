@@ -14,7 +14,7 @@ final strategyTypesStreamProvider = StreamProvider<List<StrategyType>>((ref) {
 });
 
 /// Widget for selecting and switching between strategies
-class StrategySelector extends ConsumerWidget {
+class StrategySelector extends ConsumerStatefulWidget {
   final bool showCreateButton;
   final bool compact;
 
@@ -25,7 +25,16 @@ class StrategySelector extends ConsumerWidget {
   });
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<StrategySelector> createState() => _StrategySelectorState();
+}
+
+class _StrategySelectorState extends ConsumerState<StrategySelector> {
+  bool _isCollapsed = true;
+
+  @override
+  Widget build(BuildContext context) {
+    final bool showCreateButton = widget.showCreateButton;
+    final bool compact = widget.compact;
     final currentUser = ref.watch(currentUserProvider).value;
     final activeStrategy = ref.watch(activeStrategyProvider);
     final strategiesAsync = ref.watch(currentUserStrategiesProvider);
@@ -38,17 +47,17 @@ class StrategySelector extends ConsumerWidget {
     return strategiesAsync.when(
       data: (strategies) {
         if (strategies.isEmpty) {
-          return _buildNoStrategiesState(context, ref);
+          return _buildNoStrategiesState(context);
         }
 
         // Pass strategy types to builders
         final strategyTypes = strategyTypesAsync.valueOrNull ?? [];
 
         if (compact) {
-          return _buildCompactSelector(context, ref, strategies, activeStrategy, strategyTypes);
+          return _buildCompactSelector(context, strategies, activeStrategy, strategyTypes);
         }
 
-        return _buildFullSelector(context, ref, strategies, activeStrategy, strategyTypes);
+        return _buildFullSelector(context, strategies, activeStrategy, strategyTypes, showCreateButton: showCreateButton);
       },
       loading: () => const Center(
         child: Padding(
@@ -82,7 +91,7 @@ class StrategySelector extends ConsumerWidget {
     );
   }
 
-  Widget _buildNoStrategiesState(BuildContext context, WidgetRef ref) {
+  Widget _buildNoStrategiesState(BuildContext context) {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -108,10 +117,10 @@ class StrategySelector extends ConsumerWidget {
             textAlign: TextAlign.center,
             style: TextStyle(fontSize: 14, color: Colors.grey),
           ),
-          if (showCreateButton) ...[
+          if (widget.showCreateButton) ...[
             const SizedBox(height: 16),
             ElevatedButton.icon(
-              onPressed: () => _createNewStrategy(context, ref),
+              onPressed: () => _createNewStrategy(context),
               icon: const Icon(Icons.add),
               label: const Text('Create Strategy'),
               style: ElevatedButton.styleFrom(
@@ -127,7 +136,6 @@ class StrategySelector extends ConsumerWidget {
 
   Widget _buildCompactSelector(
     BuildContext context,
-    WidgetRef ref,
     List<UserStrategy> strategies,
     UserStrategy? activeStrategy,
     List<StrategyType> strategyTypes,
@@ -183,7 +191,7 @@ class StrategySelector extends ConsumerWidget {
                   ),
                 );
               }),
-              if (showCreateButton)
+              if (widget.showCreateButton)
                 const DropdownMenuItem(
                   value: '__create__',
                   child: Row(
@@ -204,7 +212,7 @@ class StrategySelector extends ConsumerWidget {
             ],
             onChanged: (String? strategyId) {
               if (strategyId == '__create__') {
-                _createNewStrategy(context, ref);
+                _createNewStrategy(context);
               } else if (strategyId != null) {
                 final selected = strategies.firstWhere((s) => s.id == strategyId);
                 ref.read(strategyContextProvider.notifier).setStrategy(selected);
@@ -218,11 +226,11 @@ class StrategySelector extends ConsumerWidget {
 
   Widget _buildFullSelector(
     BuildContext context,
-    WidgetRef ref,
     List<UserStrategy> strategies,
     UserStrategy? activeStrategy,
-    List<StrategyType> strategyTypes,
-  ) {
+    List<StrategyType> strategyTypes, {
+    bool showCreateButton = true,
+  }) {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -240,31 +248,66 @@ class StrategySelector extends ConsumerWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            children: [
-              const Icon(Icons.dashboard_outlined, size: 20),
-              const SizedBox(width: 8),
-              const Text(
-                'Strategies',
-                style: TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-              const Spacer(),
-              if (showCreateButton)
-                TextButton.icon(
-                  onPressed: () => _createNewStrategy(context, ref),
-                  icon: const Icon(Icons.add, size: 18),
-                  label: const Text('New'),
-                  style: TextButton.styleFrom(
-                    foregroundColor: Colors.blue,
+          // Header row with collapse toggle
+          InkWell(
+            onTap: () => setState(() => _isCollapsed = !_isCollapsed),
+            borderRadius: BorderRadius.circular(8),
+            child: Row(
+              children: [
+                const Icon(Icons.dashboard_outlined, size: 20),
+                const SizedBox(width: 8),
+                const Text(
+                  'Strategies',
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
                   ),
                 ),
-            ],
+                const Spacer(),
+                if (!_isCollapsed && showCreateButton)
+                  IconButton(
+                    onPressed: () => _createNewStrategy(context),
+                    icon: const Icon(Icons.add, size: 18),
+                    color: Colors.blue,
+                    tooltip: 'New Strategy',
+                    padding: EdgeInsets.zero,
+                    constraints: const BoxConstraints(),
+                  ),
+                Icon(
+                  _isCollapsed ? Icons.expand_more : Icons.expand_less,
+                  size: 20,
+                  color: Colors.grey[600],
+                ),
+              ],
+            ),
           ),
-          const SizedBox(height: 16),
-          _buildStrategyGrid(context, ref, strategies, activeStrategy, strategyTypes),
+          // Collapsed: show only active strategy name
+          if (_isCollapsed && activeStrategy != null) ...[
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                const SizedBox(width: 4),
+                const Icon(Icons.check_circle, size: 14, color: Colors.blue),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: Text(
+                    activeStrategy.name,
+                    style: const TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                      color: Colors.blue,
+                    ),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+              ],
+            ),
+          ],
+          // Expanded: show full strategy grid
+          if (!_isCollapsed) ...[
+            const SizedBox(height: 16),
+            _buildStrategyGrid(context, strategies, activeStrategy, strategyTypes),
+          ],
         ],
       ),
     );
@@ -272,7 +315,6 @@ class StrategySelector extends ConsumerWidget {
 
   Widget _buildStrategyGrid(
     BuildContext context,
-    WidgetRef ref,
     List<UserStrategy> strategies,
     UserStrategy? activeStrategy,
     List<StrategyType> strategyTypes,
@@ -302,12 +344,12 @@ class StrategySelector extends ConsumerWidget {
                 final oldIndex = strategies.indexOf(draggedStrategy);
                 final newIndex = index;
                 if (oldIndex != -1 && newIndex != -1 && oldIndex != newIndex) {
-                  _onReorder(context, ref, strategies, oldIndex, newIndex);
+                  _onReorder(context, strategies, oldIndex, newIndex);
                 }
               },
               builder: (context, candidateData, rejectedData) {
                 final isHovering = candidateData.isNotEmpty;
-                
+
                 return Container(
                   decoration: isHovering
                       ? BoxDecoration(
@@ -324,15 +366,15 @@ class StrategySelector extends ConsumerWidget {
                         width: cardWidth,
                         child: Opacity(
                           opacity: 0.8,
-                          child: _buildStrategyCardContent(context, ref, strategy, isActive, cardWidth, strategyTypes),
+                          child: _buildStrategyCardContent(context, strategy, isActive, cardWidth, strategyTypes),
                         ),
                       ),
                     ),
                     childWhenDragging: Opacity(
                       opacity: 0.3,
-                      child: _buildStrategyCardContent(context, ref, strategy, isActive, cardWidth, strategyTypes),
+                      child: _buildStrategyCardContent(context, strategy, isActive, cardWidth, strategyTypes),
                     ),
-                    child: _buildStrategyCardContent(context, ref, strategy, isActive, cardWidth, strategyTypes),
+                    child: _buildStrategyCardContent(context, strategy, isActive, cardWidth, strategyTypes),
                   ),
                 );
               },
@@ -345,7 +387,6 @@ class StrategySelector extends ConsumerWidget {
 
   Widget _buildStrategyCardContent(
     BuildContext context,
-    WidgetRef ref,
     UserStrategy strategy,
     bool isActive,
     double cardWidth,
@@ -370,10 +411,11 @@ class StrategySelector extends ConsumerWidget {
       child: InkWell(
         onTap: () {
           ref.read(strategyContextProvider.notifier).setStrategy(strategy);
+          if (_isCollapsed) setState(() => _isCollapsed = false);
         },
         borderRadius: BorderRadius.circular(12),
         child: Container(
-          padding: const EdgeInsets.all(16),
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
           decoration: BoxDecoration(
             color: isActive ? Colors.blue.withOpacity(0.1) : Colors.grey[50],
             borderRadius: BorderRadius.circular(12),
@@ -382,81 +424,76 @@ class StrategySelector extends ConsumerWidget {
               width: isActive ? 2 : 1,
             ),
           ),
-          child: Column(
+          child: Row(
             crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisSize: MainAxisSize.min,
             children: [
-              Row(
-                children: [
-                  Chip(
-                    label: Text(
-                      strategyType.name,
-                      style: const TextStyle(
-                        fontSize: 12,
-                        color: Colors.white,
-                        fontWeight: FontWeight.w500,
+              // Left column: 80% — title and description
+              Expanded(
+                flex: 4,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      strategy.name,
+                      style: TextStyle(
+                        fontWeight: isActive ? FontWeight.bold : FontWeight.w600,
+                        fontSize: 14,
                       ),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
                     ),
-                    backgroundColor: Color(strategyType.color),
-                    padding: EdgeInsets.zero,
-                    materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                    visualDensity: VisualDensity.compact,
-                  ),
-                  const Spacer(),
-                  IconButton(
-                    icon: const Icon(Icons.edit, size: 18),
-                    padding: EdgeInsets.zero,
-                    constraints: const BoxConstraints(),
-                    color: Colors.grey[600],
-                    onPressed: () => _editStrategy(context, ref, strategy),
-                    tooltip: 'Edit Strategy',
-                  ),
-                  const SizedBox(width: 8),
-                  IconButton(
-                    icon: const Icon(Icons.delete, size: 18),
-                    padding: EdgeInsets.zero,
-                    constraints: const BoxConstraints(),
-                    color: Colors.grey[600],
-                    onPressed: () => _deleteStrategy(context, ref, strategy),
-                    tooltip: 'Delete Strategy',
-                  ),
-                  const SizedBox(width: 8),
-                  if (isActive)
-                    const Icon(
-                      Icons.check_circle,
-                      color: Colors.blue,
-                      size: 20,
+                    if (strategy.description != null) ...[
+                      const SizedBox(height: 4),
+                      Text(
+                        strategy.description!,
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: Colors.grey[600],
+                        ),
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+              const SizedBox(width: 8),
+              // Right column: 20% — type chip, edit and delete buttons
+              Expanded(
+                flex: 1,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Chip(
+                      label: Text(
+                        strategyType.name,
+                        style: const TextStyle(
+                          fontSize: 9,
+                          color: Colors.white,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                      backgroundColor: Color(strategyType.color),
+                      padding: EdgeInsets.zero,
+                      labelPadding: const EdgeInsets.symmetric(horizontal: 4),
+                      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      visualDensity: VisualDensity.compact,
                     ),
-                  const SizedBox(width: 4),
-                  Icon(
-                    Icons.drag_indicator,
-                    color: Colors.grey[400],
-                    size: 20,
-                  ),
-                ],
-              ),
-              const SizedBox(height: 12),
-              Text(
-                strategy.name,
-                style: TextStyle(
-                  fontWeight: isActive ? FontWeight.bold : FontWeight.w600,
-                  fontSize: 16,
+                    const SizedBox(height: 2),
+                    IconButton(
+                      icon: const Icon(Icons.edit, size: 16),
+                      padding: EdgeInsets.zero,
+                      constraints: const BoxConstraints(),
+                      color: Colors.grey[600],
+                      onPressed: () => _editStrategy(context, strategy),
+                      tooltip: 'Edit Strategy',
+                    ),
+
+                  ],
                 ),
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
               ),
-              if (strategy.description != null) ...[
-                const SizedBox(height: 8),
-                Text(
-                  strategy.description!,
-                  style: TextStyle(
-                    fontSize: 13,
-                    color: Colors.grey[600],
-                  ),
-                  maxLines: 3,
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ],
             ],
           ),
         ),
@@ -466,7 +503,6 @@ class StrategySelector extends ConsumerWidget {
 
   Future<void> _onReorder(
     BuildContext context,
-    WidgetRef ref,
     List<UserStrategy> strategies,
     int oldIndex,
     int newIndex,
@@ -506,7 +542,7 @@ class StrategySelector extends ConsumerWidget {
     }
   }
 
-  Future<void> _createNewStrategy(BuildContext context, WidgetRef ref) async {
+  Future<void> _createNewStrategy(BuildContext context) async {
     final currentUser = ref.read(currentUserProvider).value;
     if (currentUser == null) return;
 
@@ -649,7 +685,7 @@ class StrategySelector extends ConsumerWidget {
     }
   }
 
-  Future<void> _editStrategy(BuildContext context, WidgetRef ref, UserStrategy strategy) async {
+  Future<void> _editStrategy(BuildContext context, UserStrategy strategy) async {
     final currentUser = ref.read(currentUserProvider).value;
     if (currentUser == null) return;
 
@@ -740,25 +776,44 @@ class StrategySelector extends ConsumerWidget {
               ],
             ),
           ),
+          actionsAlignment: MainAxisAlignment.spaceBetween,
           actions: [
             TextButton(
-              onPressed: () => Navigator.pop(context, false),
-              child: const Text('Cancel'),
+              onPressed: () => Navigator.pop(context, 'delete'),
+              style: TextButton.styleFrom(foregroundColor: Colors.red),
+              child: const Text('Delete'),
             ),
-            ElevatedButton(
-              onPressed: () => Navigator.pop(context, true),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.blue,
-                foregroundColor: Colors.white,
-              ),
-              child: const Text('Save'),
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextButton(
+                  onPressed: () => Navigator.pop(context, 'cancel'),
+                  child: const Text('Cancel'),
+                ),
+                const SizedBox(width: 8),
+                ElevatedButton(
+                  onPressed: () => Navigator.pop(context, 'save'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.blue,
+                    foregroundColor: Colors.white,
+                  ),
+                  child: const Text('Save'),
+                ),
+              ],
             ),
           ],
         ),
       ),
     );
 
-    if (result == true && nameController.text.isNotEmpty && selectedType != null) {
+    if (result == 'delete') {
+      if (context.mounted) {
+        _deleteStrategy(context, strategy);
+      }
+      return;
+    }
+
+    if (result == 'save' && nameController.text.isNotEmpty && selectedType != null) {
       try {
         // Update the strategy
         final updatedStrategy = strategy.copyWith(
@@ -793,7 +848,7 @@ class StrategySelector extends ConsumerWidget {
     }
   }
 
-  Future<void> _deleteStrategy(BuildContext context, WidgetRef ref, UserStrategy strategy) async {
+  Future<void> _deleteStrategy(BuildContext context, UserStrategy strategy) async {
     final currentUser = ref.read(currentUserProvider).value;
     if (currentUser == null) return;
 

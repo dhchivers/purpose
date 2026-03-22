@@ -2,10 +2,15 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:purpose/core/services/auth_provider.dart';
 import 'package:purpose/core/services/firestore_provider.dart';
 import 'package:purpose/core/services/strategy_provider.dart';
+import 'package:purpose/core/services/strategy_context_provider.dart';
 import 'package:purpose/core/models/user_value.dart';
+import 'package:purpose/core/models/user_comment.dart';
 import 'package:purpose/core/models/value_creation_session.dart';
+import 'package:purpose/core/services/user_comment_provider.dart';
 import 'package:purpose/core/theme/app_theme.dart';
 
 /// Page for viewing and editing a specific value
@@ -186,32 +191,25 @@ class _ValueDetailPageState extends ConsumerState<ValueDetailPage> {
 
   @override
   Widget build(BuildContext context) {
+    final activeStrategy = ref.watch(activeStrategyProvider);
     return Scaffold(
       appBar: AppBar(
-        backgroundColor: AppTheme.primary,
+        backgroundColor: AppTheme.graphite,
         foregroundColor: Colors.white,
-        title: Text(_currentValue?.refinedLabel ?? 'Value Details'),
+        title: Text(
+          activeStrategy?.name ?? 'Core Values',
+          style: const TextStyle(fontSize: 21),
+        ),
         leading: IconButton(
           icon: const Icon(Icons.arrow_back),
           onPressed: () => context.go('/values'),
         ),
         actions: [
-          if (_currentValue != null && !_isEditing)
-            IconButton(
-              icon: const Icon(Icons.edit),
-              onPressed: () {
-                setState(() {
-                  _isEditing = true;
-                });
-              },
-              tooltip: 'Edit',
-            ),
-          if (_currentValue != null)
-            IconButton(
-              icon: const Icon(Icons.delete),
-              onPressed: _deleteValue,
-              tooltip: 'Delete',
-            ),
+          IconButton(
+            icon: const Icon(Icons.forum_outlined),
+            onPressed: () => context.go('/comments'),
+            tooltip: 'Comments',
+          ),
         ],
       ),
       body: FutureBuilder<void>(
@@ -255,49 +253,96 @@ class _ValueDetailPageState extends ConsumerState<ValueDetailPage> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const Icon(
-                        Icons.diamond,
-                        size: 48,
-                        color: Colors.white,
+                      Row(
+                        children: [
+                          IconButton(
+                            onPressed: () {
+                              final activeStrategy = ref.read(activeStrategyProvider);
+                              if (activeStrategy == null) return;
+                              showDialog(
+                                context: context,
+                                builder: (context) => _ValueCommentDialog(
+                                  strategyId: activeStrategy.id,
+                                  valueId: widget.valueId,
+                                  valueLabel: _currentValue?.refinedLabel,
+                                  valueStatement: _currentValue?.statement,
+                                ),
+                              );
+                            },
+                            icon: const Icon(Icons.forum_outlined, size: 22),
+                            color: Colors.white70,
+                            tooltip: 'Provide Comment',
+                            padding: EdgeInsets.zero,
+                            constraints: const BoxConstraints(),
+                          ),
+                          Expanded(
+                            child: Center(
+                              child: _isEditing
+                                  ? TextField(
+                                      controller: _labelController,
+                                      textAlign: TextAlign.center,
+                                      style: const TextStyle(
+                                        fontSize: 24,
+                                        fontWeight: FontWeight.bold,
+                                        color: Colors.white,
+                                      ),
+                                      decoration: InputDecoration(
+                                        hintText: 'Value title...',
+                                        hintStyle: TextStyle(
+                                          color: Colors.white.withOpacity(0.5),
+                                        ),
+                                        enabledBorder: UnderlineInputBorder(
+                                          borderSide: BorderSide(color: Colors.white.withOpacity(0.5)),
+                                        ),
+                                        focusedBorder: const UnderlineInputBorder(
+                                          borderSide: BorderSide(color: Colors.white, width: 2),
+                                        ),
+                                      ),
+                                    )
+                                  : Text(
+                                      _currentValue!.refinedLabel,
+                                      style: const TextStyle(
+                                        fontSize: 24,
+                                        fontWeight: FontWeight.bold,
+                                        color: Colors.white,
+                                      ),
+                                    ),
+                            ),
+                          ),
+                          const SizedBox(width: 22),
+                        ],
                       ),
-                      const SizedBox(height: 16),
-                      if (_isEditing)
-                        TextField(
-                          controller: _labelController,
-                          style: const TextStyle(
-                            fontSize: 32,
-                            fontWeight: FontWeight.bold,
-                            color: Colors.white,
-                          ),
-                          decoration: InputDecoration(
-                            hintText: 'Value title...',
-                            hintStyle: TextStyle(
-                              color: Colors.white.withOpacity(0.5),
-                            ),
-                            enabledBorder: UnderlineInputBorder(
-                              borderSide: BorderSide(color: Colors.white.withOpacity(0.5)),
-                            ),
-                            focusedBorder: const UnderlineInputBorder(
-                              borderSide: BorderSide(color: Colors.white, width: 2),
-                            ),
-                          ),
-                        )
-                      else
-                        Text(
-                          _currentValue!.refinedLabel,
-                          style: const TextStyle(
-                            fontSize: 32,
-                            fontWeight: FontWeight.bold,
-                            color: Colors.white,
-                          ),
-                        ),
                       const SizedBox(height: 8),
-                      Text(
-                        'Based on: ${_currentValue!.seedValue}',
-                        style: const TextStyle(
-                          fontSize: 16,
-                          color: Colors.white70,
-                        ),
+                      Row(
+                        children: [
+                          Text(
+                            'Based on: ${_currentValue!.seedValue}',
+                            style: const TextStyle(
+                              fontSize: 16,
+                              color: Colors.white70,
+                            ),
+                          ),
+                          const Spacer(),
+                          if (!_isEditing) ...[                            
+                            IconButton(
+                              icon: const Icon(Icons.edit_outlined, size: 20),
+                              onPressed: () => setState(() => _isEditing = true),
+                              color: Colors.white70,
+                              tooltip: 'Edit',
+                              padding: EdgeInsets.zero,
+                              constraints: const BoxConstraints(),
+                            ),
+                            const SizedBox(width: 4),
+                          ],
+                          IconButton(
+                            icon: const Icon(Icons.delete_outline, size: 20),
+                            onPressed: _deleteValue,
+                            color: Colors.white70,
+                            tooltip: 'Delete',
+                            padding: EdgeInsets.zero,
+                            constraints: const BoxConstraints(),
+                          ),
+                        ],
                       ),
                     ],
                   ),
@@ -769,6 +814,363 @@ class _ValueDetailPageState extends ConsumerState<ValueDetailPage> {
               ),
             ],
           ),
+        ),
+      ],
+    );
+  }
+}
+
+class _ValueCommentDialog extends ConsumerStatefulWidget {
+  final String strategyId;
+  final String valueId;
+  final String? valueLabel;
+  final String? valueStatement;
+
+  const _ValueCommentDialog({
+    required this.strategyId,
+    required this.valueId,
+    this.valueLabel,
+    this.valueStatement,
+  });
+
+  @override
+  ConsumerState<_ValueCommentDialog> createState() =>
+      _ValueCommentDialogState();
+}
+
+class _ValueCommentDialogState extends ConsumerState<_ValueCommentDialog> {
+  final _formKey = GlobalKey<FormState>();
+  final _commentController = TextEditingController();
+  bool _isSaving = false;
+  bool _composing = false;
+
+  @override
+  void dispose() {
+    _commentController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _save() async {
+    if (!_formKey.currentState!.validate()) return;
+    setState(() => _isSaving = true);
+    try {
+      final firestoreService = ref.read(firestoreServiceProvider);
+      final currentUser = ref.read(currentUserProvider).value;
+      if (currentUser == null) throw Exception('User not authenticated');
+
+      final commentId = FirebaseFirestore.instance
+          .collection('user_comments')
+          .doc()
+          .id;
+
+      await firestoreService.saveUserComment(UserComment(
+        id: commentId,
+        userId: currentUser.uid,
+        entityId: widget.valueId,
+        entityType: 'value',
+        commentText: _commentController.text.trim(),
+        parentCommentId: null,
+        createdAt: DateTime.now(),
+        updatedAt: DateTime.now(),
+      ));
+
+      if (mounted) {
+        Navigator.of(context).pop();
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Comment saved successfully!'),
+            backgroundColor: AppTheme.success,
+            duration: Duration(seconds: 2),
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error saving comment: $e'),
+            backgroundColor: AppTheme.error,
+            duration: const Duration(seconds: 3),
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isSaving = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      content: SizedBox(
+        width: 500,
+        child: Form(
+          key: _formKey,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: AppTheme.grayLight.withOpacity(0.3),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: AppTheme.grayLight),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(Icons.diamond_outlined,
+                        size: 16, color: AppTheme.primary),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text(
+                            'CORE VALUE',
+                            style: TextStyle(
+                              fontSize: 10,
+                              fontWeight: FontWeight.w600,
+                              color: AppTheme.grayMedium,
+                              letterSpacing: 0.5,
+                            ),
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            widget.valueLabel ?? 'Core Value',
+                            style: const TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w500,
+                              color: AppTheme.graphite,
+                            ),
+                          ),
+                          if (widget.valueStatement != null &&
+                              widget.valueStatement!.isNotEmpty) ...[  
+                            const SizedBox(height: 2),
+                            Text(
+                              widget.valueStatement!,
+                              style: const TextStyle(
+                                fontSize: 11,
+                                color: AppTheme.grayMedium,
+                                fontStyle: FontStyle.italic,
+                              ),
+                            ),
+                          ],
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 8),
+              if (_composing) ...[                TextFormField(
+                  controller: _commentController,
+                  decoration: InputDecoration(
+                    labelText: 'Comment',
+                    hintText:
+                        'Share your thoughts, progress, or reflections...',
+                    alignLabelWithHint: true,
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(8),
+                      borderSide: const BorderSide(
+                          color: AppTheme.primary, width: 2),
+                    ),
+                    counterText: '',
+                  ),
+                  maxLines: 8,
+                  maxLength: 1000,
+                  style: const TextStyle(fontSize: 12),
+                  autofocus: true,
+                  validator: (value) {
+                    if (value == null || value.trim().isEmpty) {
+                      return 'Please enter your comment';
+                    }
+                    if (value.trim().length < 5) {
+                      return 'Comment must be at least 5 characters';
+                    }
+                    return null;
+                  },
+                ),
+                const SizedBox(height: 2),
+                Row(
+                  children: [
+                    ListenableBuilder(
+                      listenable: _commentController,
+                      builder: (ctx, _) => Text(
+                        '${_commentController.text.length}/1000',
+                        style: const TextStyle(
+                          fontSize: 11,
+                          color: AppTheme.grayMedium,
+                        ),
+                      ),
+                    ),
+                    const Spacer(),
+                    TextButton(
+                      onPressed: _isSaving
+                          ? null
+                          : () => setState(() {
+                                _composing = false;
+                                _commentController.clear();
+                              }),
+                      child: const Text('Cancel',
+                          style: TextStyle(fontSize: 12)),
+                    ),
+                    const SizedBox(width: 4),
+                    ElevatedButton(
+                      onPressed: _isSaving ? null : _save,
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: AppTheme.primary,
+                        foregroundColor: Colors.white,
+                        textStyle: const TextStyle(fontSize: 10),
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 12, vertical: 2),
+                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                        minimumSize: Size.zero,
+                      ),
+                      child: _isSaving
+                          ? const SizedBox(
+                              width: 16,
+                              height: 16,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                valueColor: AlwaysStoppedAnimation<Color>(
+                                    Colors.white),
+                              ),
+                            )
+                          : const Text('Submit'),
+                    ),
+                  ],
+                ),
+              ] else
+                GestureDetector(
+                  onTap: () => setState(() => _composing = true),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 12, vertical: 10),
+                    decoration: BoxDecoration(
+                      border: Border.all(color: AppTheme.grayLight),
+                      borderRadius: BorderRadius.circular(8),
+                      color: AppTheme.grayLight.withOpacity(0.2),
+                    ),
+                    child: const Row(
+                      children: [
+                        Icon(Icons.add_comment_outlined,
+                            size: 14, color: AppTheme.grayMedium),
+                        SizedBox(width: 8),
+                        Text(
+                          'Add a comment...',
+                          style: TextStyle(
+                              fontSize: 12, color: AppTheme.grayMedium),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              Builder(
+                builder: (ctx) {
+                  final commentsAsync = ref.watch(
+                    commentsForEntityStreamProvider(
+                        (widget.valueId, 'value')),
+                  );
+                  return commentsAsync.when(
+                    data: (allComments) {
+                      final parents = allComments
+                          .where((c) => c.parentCommentId == null)
+                          .toList()
+                        ..sort(
+                            (a, b) => b.createdAt.compareTo(a.createdAt));
+                      if (parents.isEmpty) return const SizedBox.shrink();
+                      return Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Divider(height: 16),
+                          ConstrainedBox(
+                            constraints:
+                                const BoxConstraints(maxHeight: 240),
+                            child: SingleChildScrollView(
+                              child: Column(
+                                mainAxisSize: MainAxisSize.min,
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: _buildCommentWidgets(
+                                    allComments, parents),
+                              ),
+                            ),
+                          ),
+                        ],
+                      );
+                    },
+                    loading: () => const SizedBox.shrink(),
+                    error: (_, __) => const SizedBox.shrink(),
+                  );
+                },
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  List<Widget> _buildCommentWidgets(
+      List<UserComment> allComments, List<UserComment> parents) {
+    final widgets = <Widget>[];
+    for (final parent in parents) {
+      widgets.add(Padding(
+        padding: const EdgeInsets.only(bottom: 8),
+        child: _commentTile(parent),
+      ));
+      final replies = allComments
+          .where((c) => c.parentCommentId == parent.id)
+          .toList()
+        ..sort((a, b) => a.createdAt.compareTo(b.createdAt));
+      for (final reply in replies) {
+        widgets.add(Padding(
+          padding: const EdgeInsets.only(left: 8, bottom: 8),
+          child: Container(
+            padding: const EdgeInsets.only(left: 8),
+            decoration: const BoxDecoration(
+              border: Border(
+                left: BorderSide(color: AppTheme.primary, width: 2),
+              ),
+            ),
+            child: _commentTile(reply),
+          ),
+        ));
+      }
+    }
+    return widgets;
+  }
+
+  Widget _commentTile(UserComment comment) {
+    final now = DateTime.now();
+    final diff = now.difference(comment.createdAt);
+    final String timeAgo;
+    if (diff.inMinutes < 1) {
+      timeAgo = 'just now';
+    } else if (diff.inHours < 1) {
+      timeAgo = '${diff.inMinutes}m ago';
+    } else if (diff.inDays < 1) {
+      timeAgo = '${diff.inHours}h ago';
+    } else if (diff.inDays < 30) {
+      timeAgo = '${diff.inDays}d ago';
+    } else {
+      timeAgo = DateFormat('MMM d').format(comment.createdAt);
+    }
+    final authorName = ref.watch(userByIdProvider(comment.userId)).value?.fullName;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          authorName != null ? '$timeAgo · $authorName' : timeAgo,
+          style: const TextStyle(fontSize: 10, color: AppTheme.grayMedium),
+        ),
+        Text(
+          comment.commentText,
+          style: const TextStyle(fontSize: 12, color: AppTheme.graphite),
         ),
       ],
     );

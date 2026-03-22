@@ -159,64 +159,55 @@ class ProBadge extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final hasProAsync = ref.watch(hasProEntitlementProvider);
+    // Use cached provider to avoid constant rebuilds that cause semantics errors
+    final hasPro = ref.watch(cachedHasProEntitlementProvider);
 
-    return hasProAsync.when(
-      data: (hasPro) {
-        if (hasPro) {
-          return Container(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-            decoration: BoxDecoration(
-              gradient: const LinearGradient(
-                colors: [Colors.amber, Colors.orange],
-              ),
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: const Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(Icons.workspace_premium, size: 16, color: Colors.white),
-                SizedBox(width: 4),
-                Text(
-                  'PRO',
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 12,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-              ],
-            ),
-          );
-        }
-        
-        if (showFree) {
-          return Container(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-            decoration: BoxDecoration(
-              color: Colors.grey[300],
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: const Text(
-              'FREE',
+    if (hasPro) {
+      return Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+        decoration: BoxDecoration(
+          gradient: const LinearGradient(
+            colors: [Colors.amber, Colors.orange],
+          ),
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: const Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.workspace_premium, size: 16, color: Colors.white),
+            SizedBox(width: 4),
+            Text(
+              'PRO',
               style: TextStyle(
-                color: Colors.black54,
+                color: Colors.white,
                 fontSize: 12,
                 fontWeight: FontWeight.bold,
               ),
             ),
-          );
-        }
-        
-        return const SizedBox.shrink();
-      },
-      loading: () => const SizedBox(
-        width: 16,
-        height: 16,
-        child: CircularProgressIndicator(strokeWidth: 2),
-      ),
-      error: (_, __) => const SizedBox.shrink(),
-    );
+          ],
+        ),
+      );
+    }
+    
+    if (showFree) {
+      return Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+        decoration: BoxDecoration(
+          color: Colors.grey[300],
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: const Text(
+          'FREE',
+          style: TextStyle(
+            color: Colors.black54,
+            fontSize: 12,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+      );
+    }
+    
+    return const SizedBox.shrink();
   }
 }
 

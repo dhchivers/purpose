@@ -6,6 +6,11 @@ import 'package:purpose/core/services/revenue_cat_provider.dart';
 import 'package:purpose/core/models/user_model.dart';
 import 'package:purpose/core/models/auth_state.dart';
 
+/// Provider to look up any user by UID (for displaying author names)
+final userByIdProvider = FutureProvider.autoDispose.family<UserModel?, String>((ref, uid) async {
+  return ref.read(firestoreServiceProvider).getUser(uid);
+});
+
 /// Provider for the AuthService
 final authServiceProvider = Provider<AuthService>((ref) {
   return AuthService();

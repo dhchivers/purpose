@@ -130,8 +130,16 @@ class _ValueCreationFlowPageState extends ConsumerState<ValueCreationFlowPage> {
     try {
       // Generate Phase 2 clarification questions
       final geminiService = await ref.read(geminiServiceProvider.future);
+      final activeStrategy = ref.read(activeStrategyProvider);
+      final firestoreService = ref.read(firestoreServiceProvider);
+      String strategyTypeName = 'Personal';
+      if (activeStrategy != null) {
+        final strategyType = await firestoreService.getStrategyType(activeStrategy.strategyTypeId);
+        if (strategyType != null) strategyTypeName = strategyType.name;
+      }
       final questionsData = await geminiService.generateValueClarificationQuestions(
         seedValue: seedValue,
+        strategyTypeName: strategyTypeName,
       );
 
       // Convert to MultipleChoiceQuestion objects
@@ -152,7 +160,6 @@ class _ValueCreationFlowPageState extends ConsumerState<ValueCreationFlowPage> {
       });
 
       // Save session to Firestore
-      final firestoreService = ref.read(firestoreServiceProvider);
       await firestoreService.saveValueCreationSession(_session!);
     } catch (e) {
       setState(() {
@@ -229,39 +236,17 @@ class _ValueCreationFlowPageState extends ConsumerState<ValueCreationFlowPage> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Row(
-                    children: [
-                      Container(
-                        padding: const EdgeInsets.all(8),
-                        decoration: BoxDecoration(
-                          color: AppTheme.primary,
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: const Text(
-                          '1',
-                          style: TextStyle(
-                            color: Colors.white,
-                            fontSize: 24,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 16),
-                      const Expanded(
-                        child: Text(
-                          'Select a Seed Value',
-                          style: TextStyle(
-                            fontSize: 24,
-                            fontWeight: FontWeight.bold,
-                            color: AppTheme.graphite,
-                          ),
-                        ),
-                      ),
-                    ],
+                  const Text(
+                    'Select a Seed Value',
+                    style: TextStyle(
+                      fontSize: 24,
+                      fontWeight: FontWeight.bold,
+                      color: AppTheme.graphite,
+                    ),
                   ),
                   const SizedBox(height: 12),
                   const Text(
-                    'Choose a broad value that resonates with you. We\'ll help you refine it into a precise personal value through guided questions.',
+                    'Choose a broad value that resonates. We\'ll help refine it into a precise value through guided questions.',
                     style: TextStyle(
                       fontSize: 16,
                       height: 1.5,
@@ -306,10 +291,10 @@ class _ValueCreationFlowPageState extends ConsumerState<ValueCreationFlowPage> {
                       shrinkWrap: true,
                       physics: const NeverScrollableScrollPhysics(),
                       gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                        crossAxisCount: 5,
+                        crossAxisCount: 2,
                         crossAxisSpacing: 12,
                         mainAxisSpacing: 12,
-                        childAspectRatio: 2.5,
+                        childAspectRatio: 2.8,
                       ),
                       itemCount: seeds.length,
                       itemBuilder: (context, index) {
@@ -325,7 +310,7 @@ class _ValueCreationFlowPageState extends ConsumerState<ValueCreationFlowPage> {
                                 child: Text(
                                   seed,
                                   style: const TextStyle(
-                                    fontSize: 16,
+                                    fontSize: 13,
                                     fontWeight: FontWeight.w600,
                                     color: AppTheme.primary,
                                   ),

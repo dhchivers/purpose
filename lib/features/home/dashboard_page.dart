@@ -1,13 +1,41 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
+import 'dart:io' show Platform;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-import 'package:purpose/core/models/goal.dart';
+import 'package:intl/intl.dart';
+import 'package:purpose/core/models/mission_document.dart';
+import 'package:purpose/core/models/user_comment.dart';
+import 'package:purpose/core/models/user_model.dart';
+import 'package:purpose/core/models/user_value.dart';
 import 'package:purpose/core/services/auth_provider.dart';
+import 'package:purpose/core/services/firestore_provider.dart';
+import 'package:purpose/core/services/goal_provider.dart';
 import 'package:purpose/core/services/strategy_provider.dart';
 import 'package:purpose/core/services/strategy_context_provider.dart';
-import 'package:purpose/core/services/goal_provider.dart';
+import 'package:purpose/core/services/user_comment_provider.dart';
+import 'package:purpose/core/theme/app_theme.dart';
 import 'package:purpose/shared/widgets/strategy_selector.dart';
-import 'package:intl/intl.dart';
+
+final _dashValueByIdProvider =
+    FutureProvider.autoDispose.family<UserValue?, String>((ref, id) async {
+  return ref.read(firestoreServiceProvider).getUserValue(id);
+});
+
+final _dashMissionByIdProvider =
+    FutureProvider.autoDispose.family<MissionDocument?, String>((ref, id) async {
+  return ref.read(firestoreServiceProvider).getMissionDocument(id);
+});
+
+final _dashUserByIdProvider =
+    FutureProvider.autoDispose.family<UserModel?, String>((ref, uid) async {
+  return ref.read(firestoreServiceProvider).getUser(uid);
+});
+
+final _dashMissionMapStrategyIdProvider =
+    FutureProvider.autoDispose.family<String?, String>((ref, missionMapId) async {
+  return ref.read(firestoreServiceProvider).getUserMissionMapStrategyId(missionMapId);
+});
 
 class DashboardPage extends ConsumerWidget {
   const DashboardPage({super.key});
@@ -157,7 +185,7 @@ class DashboardPage extends ConsumerWidget {
           }
 
           return SingleChildScrollView(
-            padding: const EdgeInsets.all(24.0),
+            padding: const EdgeInsets.only(left: 24.0, right: 24.0, bottom: 24.0),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -248,285 +276,31 @@ class DashboardPage extends ConsumerWidget {
                     ),
                   ),
 
+                // Quick Action Buttons
+                Consumer(
+                  builder: (context, ref, child) {
+                    final activeStrategy = ref.watch(activeStrategyProvider);
+                    return _QuickActionButtonsBar(
+                      user: user,
+                      activeStrategy: activeStrategy,
+                    );
+                  },
+                ),
+                const SizedBox(height: 24),
+
                 // Strategy Selector
-                const SizedBox(height: 16),
                 const StrategySelector(
                   showCreateButton: true,
                   compact: false,
                 ),
                 const SizedBox(height: 24),
 
-                // Quick Action Buttons
-                Row(
-                  children: [
-                    Expanded(
-                      child: _QuickActionButton(
-                        icon: Icons.psychology,
-                        label: 'Purpose',
-                        onTap: () => context.go('/purpose'),
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: _QuickActionButton(
-                        icon: Icons.diamond_outlined,
-                        label: 'Values',
-                        onTap: () => context.go('/values'),
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: _QuickActionButton(
-                        icon: Icons.visibility,
-                        label: 'Vision',
-                        onTap: () {
-                          // Navigate to detail page if vision exists, otherwise to creation flow
-                          if (user.vision != null) {
-                            context.go('/vision');
-                          } else {
-                            context.go('/vision/create');
-                          }
-                        },
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: _QuickActionButton(
-                        icon: Icons.track_changes,
-                        label: 'Mission',
-                        onTap: () => context.go('/mission'),
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: _QuickActionButton(
-                        icon: Icons.flag_outlined,
-                        label: 'Goals',
-                        onTap: () {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(content: Text('Goals module coming soon!')),
-                          );
-                        },
-                      ),
-                    ),
-                  ],
-                ),
+                // Current Objectives
+                const _CurrentObjectivesSection(),
                 const SizedBox(height: 24),
 
-                // Progress section
-                Text(
-                  'Your Progress',
-                  style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                        fontWeight: FontWeight.bold,
-                      ),
-                ),
-                const SizedBox(height: 16),
-                // Two column layout: Left (Purpose/Vision/Mission/Values) and Right (Goals)
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    // Left Column: Purpose, Vision, Mission, Values
-                    Expanded(
-                      flex: 1,
-                      child: Column(
-                        children: [
-                          // Purpose Card - Strategy-scoped
-                          Consumer(
-                            builder: (context, ref, child) {
-                              final activeStrategy = ref.watch(activeStrategyProvider);
-                              
-                              if (activeStrategy == null) {
-                                return _PurposeCard(
-                                  value: 'No active strategy',
-                                  color: Colors.grey,
-                                  onTap: () => context.go('/'),
-                                );
-                              }
-                              
-                              return _PurposeCard(
-                                value: activeStrategy.purpose ?? 'Not set',
-                                color: activeStrategy.purpose != null ? const Color(0xFF1E6BFF) : Colors.grey,
-                                lastUpdated: activeStrategy.purpose != null ? activeStrategy.updatedAt : null,
-                                onTap: () => context.go('/purpose'),
-                              );
-                            },
-                          ),
-                          const SizedBox(height: 12),
-                          // Vision Card - Strategy-scoped
-                          Consumer(
-                            builder: (context, ref, child) {
-                              final activeStrategy = ref.watch(activeStrategyProvider);
-                              
-                              if (activeStrategy == null) {
-                                return _PurposeCard(
-                                  icon: Icons.visibility,
-                                  label: 'Vision',
-                                  value: 'No active strategy',
-                                  color: Colors.grey,
-                                  onTap: () => context.go('/'),
-                                );
-                              }
-                              
-                              return _PurposeCard(
-                                icon: Icons.visibility,
-                                label: 'Vision',
-                                value: activeStrategy.currentVision ?? 'Not set',
-                                color: activeStrategy.currentVision != null ? const Color(0xFF1E6BFF) : Colors.grey,
-                                lastUpdated: activeStrategy.currentVision != null ? activeStrategy.updatedAt : null,
-                                onTap: () {
-                                  if (activeStrategy.currentVision != null) {
-                                    context.go('/vision');
-                                  } else {
-                                    context.go('/vision/create');
-                                  }
-                                },
-                              );
-                            },
-                          ),
-                          const SizedBox(height: 12),
-                          // Mission Card - Strategy-scoped
-                          Consumer(
-                            builder: (context, ref, child) {
-                              // Get active strategy first
-                              final activeStrategy = ref.watch(activeStrategyProvider);
-                              
-                              if (activeStrategy == null) {
-                                return _PurposeCard(
-                                  icon: Icons.track_changes,
-                                  label: 'Mission',
-                                  value: 'No active strategy',
-                                  color: Colors.grey,
-                                  onTap: () => context.go('/'),
-                                );
-                              }
-                              
-                              final missionMapAsync = ref.watch(strategyMissionMapStreamProvider(activeStrategy.id));
-                              return missionMapAsync.when(
-                                data: (missionMap) {
-                                  final hasMissions = missionMap != null && missionMap.missions.isNotEmpty;
-                                  final currentMission = missionMap?.currentMission;
-                                  final currentIndex = missionMap?.currentMissionIndex ?? 0;
-                                  
-                                  // Calculate timeline for current mission
-                                  String? timeline;
-                                  if (hasMissions && currentMission != null && missionMap.strategyStartDate != null) {
-                                    final startDate = _calculateMissionStartDate(missionMap, currentIndex);
-                                    final endDate = _calculateMissionEndDate(missionMap, currentIndex);
-                                    if (startDate != null && endDate != null) {
-                                      timeline = '${_formatMonthYear(startDate)} - ${_formatMonthYear(endDate)} (${currentMission.durationMonths} months)';
-                                    }
-                                  }
-                                  
-                                  return _PurposeCard(
-                                    icon: Icons.track_changes,
-                                    label: 'Mission',
-                                    value: hasMissions && currentMission != null
-                                        ? currentMission.mission
-                                        : 'Not set',
-                                    subtitle: timeline,
-                                    color: hasMissions ? const Color(0xFF1E6BFF) : Colors.grey,
-                                    lastUpdated: hasMissions ? missionMap.updatedAt : null,
-                                    onTap: () {
-                                      if (hasMissions) {
-                                        context.go('/mission');
-                                      } else {
-                                        context.go('/mission/create');
-                                      }
-                                    },
-                                  );
-                                },
-                                loading: () => const _PurposeCard(
-                                  icon: Icons.track_changes,
-                                  label: 'Mission',
-                                  value: 'Loading...',
-                                  color: Colors.grey,
-                                ),
-                                error: (error, stack) {
-                                  print('❌ Error loading mission map on dashboard: $error');
-                                  print('Stack trace: $stack');
-                                  return const _PurposeCard(
-                                    icon: Icons.track_changes,
-                                    label: 'Mission',
-                                    value: 'Error loading',
-                                    color: Colors.grey,
-                                  );
-                                },
-                              );
-                            },
-                          ),
-                          const SizedBox(height: 12),
-                          // Load and display user values
-                          Consumer(
-                            builder: (context, ref, child) {
-                              // Get active strategy first
-                              final activeStrategy = ref.watch(activeStrategyProvider);
-                              
-                              if (activeStrategy == null) {
-                                return const _ValuesCard(
-                                  values: [],
-                                );
-                              }
-                              
-                              final userValuesAsync = ref.watch(strategyValuesProvider(activeStrategy.id));
-                              return userValuesAsync.when(
-                                data: (userValues) {
-                                  // Find the most recently updated value
-                                  DateTime? mostRecentUpdate;
-                                  if (userValues.isNotEmpty) {
-                                    for (final value in userValues) {
-                                      final valueUpdated = value.updatedAt ?? value.createdAt;
-                                      if (mostRecentUpdate == null || valueUpdated.isAfter(mostRecentUpdate)) {
-                                        mostRecentUpdate = valueUpdated;
-                                      }
-                                    }
-                                  }
-                                  return _ValuesCard(
-                                    values: userValues.map((v) => v.refinedLabel).toList(),
-                                    lastUpdated: mostRecentUpdate,
-                                  );
-                                },
-                                loading: () => const _ValuesCard(values: []),
-                                error: (error, stack) {
-                                  print('❌ Error loading values on dashboard: $error');
-                                  print('Stack trace: $stack');
-                                  return const _ValuesCard(values: []);
-                                },
-                              );
-                            },
-                          ),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    // Right Column: Goals
-                    Expanded(
-                      flex: 1,
-                      child: Column(
-                        children: [
-                          Consumer(
-                            builder: (context, ref, child) {
-                              final activeStrategy = ref.watch(activeStrategyProvider);
-                              
-                              if (activeStrategy == null) {
-                                return const _GoalsCard(goals: []);
-                              }
-                              
-                              final goalsAsync = ref.watch(activeGoalsForStrategyProvider(activeStrategy.id));
-                              return goalsAsync.when(
-                                data: (goals) => _GoalsCard(goals: goals),
-                                loading: () => const _GoalsCard(goals: []),
-                                error: (error, stack) {
-                                  print('❌ Error loading goals on dashboard: $error');
-                                  return const _GoalsCard(goals: []);
-                                },
-                              );
-                            },
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
+                // Comments
+                const _CommentsSection(),
               ],
             ),
           );
@@ -544,479 +318,636 @@ class DashboardPage extends ConsumerWidget {
   }
 }
 
-class _PurposeCard extends StatelessWidget {
-  final IconData icon;
-  final String label;
-  final String value;
-  final String? subtitle;
-  final Color color;
-  final DateTime? lastUpdated;
-  final VoidCallback? onTap;
-
-  const _PurposeCard({
-    this.icon = Icons.flag,
-    this.label = 'Purpose',
-    required this.value,
-    this.subtitle,
-    required this.color,
-    this.lastUpdated,
-    this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final card = Card(
-      child: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: IntrinsicHeight(
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              // Left column: Icon and Label
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisAlignment: MainAxisAlignment.start,
-                children: [
-                  Icon(icon, size: 32, color: color),
-                  const SizedBox(height: 4),
-                  Text(
-                    label,
-                    style: Theme.of(context).textTheme.bodySmall,
-                  ),
-                ],
-              ),
-              const SizedBox(width: 16),
-              // Right column: Text (centered)
-              Expanded(
-                child: Center(
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Text(
-                        value,
-                        textAlign: TextAlign.center,
-                        style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                              fontWeight: value == 'Not set' ? FontWeight.bold : FontWeight.normal,
-                              color: color,
-                            ),
-                      ),
-                      if (subtitle != null) ...[
-                        const SizedBox(height: 6),
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Icon(
-                              Icons.event,
-                              size: 12,
-                              color: Colors.grey[600],
-                            ),
-                            const SizedBox(width: 4),
-                            Flexible(
-                              child: Text(
-                                subtitle!,
-                                textAlign: TextAlign.center,
-                                style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                                      color: Colors.grey[600],
-                                      fontSize: 11,
-                                      fontWeight: FontWeight.w500,
-                                    ),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ],
-                      if (lastUpdated != null) ...[
-                        const SizedBox(height: 4),
-                        Text(
-                          'Updated ${DateFormat('MMM d, y').format(lastUpdated!)}',
-                          style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                                color: Colors.grey[600],
-                                fontSize: 11,
-                              ),
-                        ),
-                      ],
-                    ],
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-
-    if (onTap != null) {
-      return InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(12),
-        child: card,
-      );
-    }
-
-    return card;
-  }
-}
-
-class _ValuesCard extends StatelessWidget {
-  final List<String> values;
-  final DateTime? lastUpdated;
-
-  const _ValuesCard({
-    required this.values,
-    this.lastUpdated,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Card(
-      child: InkWell(
-        onTap: () => context.go('/values'),
-        borderRadius: BorderRadius.circular(12),
-        child: Padding(
-          padding: const EdgeInsets.all(16.0),
-          child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                const Icon(Icons.diamond_outlined, size: 32, color: Color(0xFF1E6BFF)),
-                const SizedBox(width: 8),
-                Text(
-                  'Values',
-                  style: Theme.of(context).textTheme.bodySmall,
-                ),
-              ],
-            ),
-            const SizedBox(height: 16),
-            if (values.isEmpty)
-              Center(
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 16.0),
-                  child: Column(
-                    children: [
-                      Text(
-                        '0',
-                        style: Theme.of(context).textTheme.displayMedium?.copyWith(
-                              fontWeight: FontWeight.bold,
-                              color: Colors.grey,
-                            ),
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        'No values defined yet',
-                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                              color: Colors.grey,
-                            ),
-                      ),
-                    ],
-                  ),
-                ),
-              )
-            else
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: values.take(5).map((value) => Padding(
-                  padding: const EdgeInsets.only(bottom: 8.0),
-                  child: Row(
-                    children: [
-                      const Icon(
-                        Icons.check_circle,
-                        size: 16,
-                        color: Color(0xFF1E6BFF),
-                      ),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: Text(
-                          value,
-                          style: Theme.of(context).textTheme.bodyMedium,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ),
-                    ],
-                  ),
-                )).toList(),
-              ),
-            if (values.length > 5)
-              Padding(
-                padding: const EdgeInsets.only(top: 4.0),
-                child: Text(
-                  '+${values.length - 5} more',
-                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: Colors.grey,
-                        fontStyle: FontStyle.italic,
-                      ),
-                ),
-              ),
-            if (lastUpdated != null) ...[
-              const SizedBox(height: 8),
-              Text(
-                'Updated ${DateFormat('MMM d, y').format(lastUpdated!)}',
-                style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      color: Colors.grey[600],
-                      fontSize: 11,
-                    ),
-              ),
-            ],
-          ],
-        ),
-      ),
-      ),
-    );
-  }
-}
-
-class _GoalsCard extends ConsumerWidget {
-  final List<Goal> goals;
-
-  const _GoalsCard({
-    required this.goals,
-  });
+// Current Objectives Section
+class _CurrentObjectivesSection extends ConsumerWidget {
+  const _CurrentObjectivesSection();
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    // Get mission ID for navigation from goals (since they have missionId)
-    // or fallback to mission map page if no goals
     final activeStrategy = ref.watch(activeStrategyProvider);
-    String? currentMissionId;
-    bool canNavigate = false;
-    
-    if (goals.isNotEmpty) {
-      // Use missionId from first goal (all goals in this list are for current mission)
-      currentMissionId = goals.first.missionId;
-      canNavigate = true;
-    } else if (activeStrategy != null) {
-      // No goals, but can navigate to mission map page
-      canNavigate = true;
-    }
-    
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            InkWell(
-              onTap: canNavigate
-                ? () {
-                    if (currentMissionId != null) {
-                      context.go('/mission/$currentMissionId');
-                    } else {
-                      context.go('/mission');
-                    }
-                  }
-                : null,
-              child: Row(
-                children: [
-                  const Icon(Icons.checklist, size: 32, color: Color(0xFF1E6BFF)),
-                  const SizedBox(width: 8),
-                  Text(
-                    'Goals',
-                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      decoration: canNavigate ? TextDecoration.underline : null,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 12),
-            if (goals.isEmpty)
-              Center(
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 24),
-                  child: Text(
-                    'No active goals',
-                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                          color: Colors.grey,
-                        ),
-                  ),
-                ),
-              )
-            else
-              ...goals.map((goal) => _GoalItem(goal: goal)),
-          ],
-        ),
-      ),
+    if (activeStrategy == null) return const SizedBox.shrink();
+
+    final missionMapAsync = ref.watch(missionMapStreamProvider(activeStrategy.id));
+    return missionMapAsync.when(
+      loading: () => const SizedBox.shrink(),
+      error: (_, __) => const SizedBox.shrink(),
+      data: (missionMap) {
+        if (missionMap == null) return const SizedBox.shrink();
+
+        final missionsAsync = ref.watch(missionsForMapStreamProvider(missionMap.id));
+        return missionsAsync.when(
+          loading: () => const SizedBox.shrink(),
+          error: (_, __) => const SizedBox.shrink(),
+          data: (missions) {
+            if (missions.isEmpty) return const SizedBox.shrink();
+            final currentIndex = missionMap.currentMissionIndex ?? 0;
+            if (currentIndex >= missions.length) return const SizedBox.shrink();
+            final currentMission = missions[currentIndex];
+            return _CurrentObjectivesSectionContent(mission: currentMission);
+          },
+        );
+      },
     );
   }
 }
 
-class _GoalItem extends ConsumerWidget {
-  final Goal goal;
+class _CurrentObjectivesSectionContent extends ConsumerWidget {
+  final MissionDocument mission;
 
-  const _GoalItem({required this.goal});
+  const _CurrentObjectivesSectionContent({required this.mission});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final objectivesAsync = ref.watch(objectivesForGoalStreamProvider(goal.id));
-
+    final objectivesAsync = ref.watch(objectivesForMissionStreamProvider(mission.id));
     return objectivesAsync.when(
-      data: (objectives) {
-        final achieved = objectives.where((obj) => obj.achieved).length;
-        final total = objectives.length;
-        
-        return Padding(
-          padding: const EdgeInsets.only(bottom: 8),
-          child: Container(
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              color: Colors.grey.shade50,
-              borderRadius: BorderRadius.circular(8),
-              border: Border.all(color: Colors.grey.shade200),
-            ),
-            child: Row(
+      loading: () => const SizedBox.shrink(),
+      error: (_, __) => const SizedBox.shrink(),
+      data: (allObjectives) {
+        final objectives = allObjectives.where((o) => !o.achieved).toList()
+          ..sort((a, b) {
+            if (a.dueDate == null && b.dueDate == null) return 0;
+            if (a.dueDate == null) return 1;
+            if (b.dueDate == null) return -1;
+            return a.dueDate!.compareTo(b.dueDate!);
+          });
+        if (objectives.isEmpty) return const SizedBox.shrink();
+
+        final now = DateTime.now();
+        return Container(
+          decoration: BoxDecoration(
+            color: AppTheme.surface,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: AppTheme.grayLight),
+          ),
+          child: ExpansionTile(
+            shape: const Border(),
+            collapsedShape: const Border(),
+            tilePadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+            title: Row(
               children: [
-                Expanded(
-                  child: Text(
-                    goal.title,
-                    style: const TextStyle(
-                      fontWeight: FontWeight.w600,
-                      fontSize: 14,
-                    ),
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
+                const Icon(Icons.flag_outlined, size: 18, color: AppTheme.primary),
+                const SizedBox(width: 8),
+                const Text(
+                  'Current Objectives',
+                  style: TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 15,
+                    color: AppTheme.graphite,
                   ),
                 ),
                 const SizedBox(width: 8),
-                Text(
-                  'Objectives Completed: $achieved/$total',
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: Colors.grey.shade700,
-                    fontWeight: FontWeight.w500,
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: AppTheme.primary.withOpacity(0.12),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Text(
+                    '${objectives.length}',
+                    style: const TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.bold,
+                      color: AppTheme.primary,
+                    ),
                   ),
                 ),
               ],
             ),
+            subtitle: GestureDetector(
+              onTap: () => context.go('/mission/${mission.id}'),
+              child: Text(
+                mission.mission,
+                style: const TextStyle(
+                  fontSize: 12,
+                  color: AppTheme.grayMedium,
+                ),
+              ),
+            ),
+            children: objectives.map((objective) {
+              final isOverdue = objective.dueDate != null &&
+                  objective.dueDate!.isBefore(now);
+              final dueDateColor = isOverdue ? AppTheme.error : AppTheme.grayMedium;
+
+              return ExpansionTile(
+                shape: const Border(),
+                collapsedShape: const Border(),
+                tilePadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+                onExpansionChanged: (_) {},
+                title: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    if (objective.dueDate != null) ...[
+                      Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          if (isOverdue)
+                            Icon(Icons.warning_amber_rounded,
+                                size: 12, color: dueDateColor),
+                          if (isOverdue) const SizedBox(width: 2),
+                          Text(
+                            'Due: ${DateFormat('MMM d, yyyy').format(objective.dueDate!)}',
+                            style: TextStyle(
+                              fontSize: 11,
+                              color: dueDateColor,
+                              fontWeight: isOverdue
+                                  ? FontWeight.bold
+                                  : FontWeight.normal,
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 2),
+                    ],
+                    GestureDetector(
+                      onTap: () => context.go(
+                          '/mission/${mission.id}?objectiveId=${objective.id}'),
+                      child: Text(
+                        objective.title,
+                        style: const TextStyle(
+                            fontSize: 14, color: AppTheme.graphite),
+                      ),
+                    ),
+                  ],
+                ),
+                children: [
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: Text(
+                      objective.description,
+                      style: const TextStyle(
+                          fontSize: 13,
+                          color: AppTheme.grayMedium,
+                          height: 1.5),
+                    ),
+                  ),
+                ],
+              );
+            }).toList(),
           ),
         );
       },
-      loading: () => Padding(
-        padding: const EdgeInsets.only(bottom: 8),
-        child: Container(
-          padding: const EdgeInsets.all(12),
-          decoration: BoxDecoration(
-            color: Colors.grey.shade50,
-            borderRadius: BorderRadius.circular(8),
-            border: Border.all(color: Colors.grey.shade200),
-          ),
-          child: Row(
-            children: [
-              Expanded(
-                child: Text(
-                  goal.title,
-                  style: const TextStyle(
-                    fontWeight: FontWeight.w600,
-                    fontSize: 14,
-                  ),
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ),
-              const SizedBox(width: 8),
-              Text(
-                'Objectives Completed: ...',
-                style: TextStyle(
-                  fontSize: 12,
-                  color: Colors.grey.shade700,
-                  fontWeight: FontWeight.w500,
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-      error: (error, stack) => Padding(
-        padding: const EdgeInsets.only(bottom: 8),
-        child: Container(
-          padding: const EdgeInsets.all(12),
-          decoration: BoxDecoration(
-            color: Colors.grey.shade50,
-            borderRadius: BorderRadius.circular(8),
-            border: Border.all(color: Colors.grey.shade200),
-          ),
-          child: Text(
-            goal.title,
-            style: const TextStyle(
-              fontWeight: FontWeight.w600,
-              fontSize: 14,
-            ),
-            maxLines: 2,
-            overflow: TextOverflow.ellipsis,
-          ),
-        ),
-      ),
     );
   }
 }
 
-class _QuickActionButton extends StatelessWidget {
-  final IconData icon;
-  final String label;
-  final VoidCallback onTap;
+// Quick Action Buttons Bar Widget
+class _QuickActionButtonsBar extends ConsumerWidget {
+  final dynamic user;
+  final dynamic activeStrategy;
 
-  const _QuickActionButton({
+  const _QuickActionButtonsBar({
+    required this.user,
+    required this.activeStrategy,
+  });
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final isIOS = !kIsWeb && Platform.isIOS;
+
+    final purposeComplete = activeStrategy?.purpose != null;
+    final visionComplete = activeStrategy?.currentVision != null;
+
+    // Reactively watch values and mission map so status updates without re-selecting
+    final valuesComplete = activeStrategy == null
+        ? false
+        : ref.watch(strategyValuesProvider(activeStrategy.id)).when(
+            data: (values) => values.length >= 3,
+            loading: () => false,
+            error: (_, __) => false,
+          );
+
+    final missionComplete = activeStrategy == null
+        ? false
+        : ref.watch(strategyMissionMapStreamProvider(activeStrategy.id)).when(
+            data: (missionMap) => missionMap != null && missionMap.missions.isNotEmpty,
+            loading: () => false,
+            error: (_, __) => false,
+          );
+
+    if (isIOS) {
+      // iOS: Icon-only buttons spanning full width
+      return Row(
+        children: [
+          Expanded(
+            child: _CompletableIconButton(
+              icon: Icons.psychology,
+              tooltip: 'Purpose',
+              isComplete: purposeComplete,
+              onPressed: () => context.go('/purpose'),
+            ),
+          ),
+          Expanded(
+            child: _CompletableIconButton(
+              icon: Icons.diamond_outlined,
+              tooltip: 'Values',
+              isComplete: valuesComplete,
+              onPressed: () => context.go('/values'),
+            ),
+          ),
+          Expanded(
+            child: _CompletableIconButton(
+              icon: Icons.visibility,
+              tooltip: 'Vision',
+              isComplete: visionComplete,
+              onPressed: () {
+                if (user.vision != null) {
+                  context.go('/vision');
+                } else {
+                  context.go('/vision/create');
+                }
+              },
+            ),
+          ),
+          Expanded(
+            child: _CompletableIconButton(
+              icon: Icons.track_changes,
+              tooltip: 'Mission',
+              isComplete: missionComplete,
+              onPressed: () => context.go('/mission'),
+            ),
+          ),
+        ],
+      );
+    } else {
+      // Web: Buttons with labels spanning full width
+      return Row(
+        children: [
+          Expanded(
+            child: _CompletableElevatedButton(
+              icon: Icons.psychology,
+              label: 'Purpose',
+              isComplete: purposeComplete,
+              onPressed: () => context.go('/purpose'),
+            ),
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: _CompletableElevatedButton(
+              icon: Icons.diamond_outlined,
+              label: 'Values',
+              isComplete: valuesComplete,
+              onPressed: () => context.go('/values'),
+            ),
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: _CompletableElevatedButton(
+              icon: Icons.visibility,
+              label: 'Vision',
+              isComplete: visionComplete,
+              onPressed: () {
+                if (user.vision != null) {
+                  context.go('/vision');
+                } else {
+                  context.go('/vision/create');
+                }
+              },
+            ),
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: _CompletableElevatedButton(
+              icon: Icons.track_changes,
+              label: 'Mission',
+              isComplete: missionComplete,
+              onPressed: () => context.go('/mission'),
+            ),
+          ),
+        ],
+      );
+    }
+  }
+}
+
+// Helper widget for iOS icon buttons with completion highlighting
+class _CompletableIconButton extends StatelessWidget {
+  final IconData icon;
+  final String tooltip;
+  final bool isComplete;
+  final VoidCallback onPressed;
+
+  const _CompletableIconButton({
     required this.icon,
-    required this.label,
-    required this.onTap,
+    required this.tooltip,
+    required this.isComplete,
+    required this.onPressed,
   });
 
   @override
   Widget build(BuildContext context) {
-    return Card(
-      child: InkWell(
-        onTap: onTap,
+    return Container(
+      decoration: isComplete
+          ? BoxDecoration(
+              color: const Color(0xFF1E6BFF).withOpacity(0.1),
+              border: Border(
+                bottom: BorderSide(
+                  color: const Color(0xFF1E6BFF),
+                  width: 3,
+                ),
+              ),
+            )
+          : null,
+      child: IconButton(
+        icon: Icon(icon),
+        tooltip: tooltip,
+        onPressed: onPressed,
+        iconSize: 28,
+        color: isComplete ? const Color(0xFF1E6BFF) : null,
+      ),
+    );
+  }
+}
+
+// Helper widget for web elevated buttons with completion highlighting
+class _CompletableElevatedButton extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final bool isComplete;
+  final VoidCallback onPressed;
+
+  const _CompletableElevatedButton({
+    required this.icon,
+    required this.label,
+    required this.isComplete,
+    required this.onPressed,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return ElevatedButton.icon(
+      icon: Icon(icon, size: 18),
+      label: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(label),
+          if (isComplete) ...[
+            const SizedBox(width: 4),
+            const Icon(Icons.check_circle, size: 16),
+          ],
+        ],
+      ),
+      onPressed: onPressed,
+      style: ElevatedButton.styleFrom(
+        backgroundColor: isComplete ? const Color(0xFF1E6BFF) : null,
+        foregroundColor: isComplete ? Colors.white : null,
+      ),
+    );
+  }
+}
+
+const _kDashEntityLabels = {
+  'purpose': 'PURPOSE',
+  'vision': 'VISION',
+  'mission': 'MISSION',
+  'mission_map': 'MISSION MAP',
+  'goal': 'GOAL',
+  'objective': 'OBJECTIVE',
+  'value': 'VALUE',
+};
+
+class _CommentsSection extends ConsumerWidget {
+  const _CommentsSection();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final currentUser = ref.watch(currentUserProvider).value;
+    if (currentUser == null) return const SizedBox.shrink();
+
+    final commentsAsync = ref.watch(commentsForUserStreamProvider(currentUser.uid));
+    final cutoff = DateTime.now().subtract(const Duration(days: 14));
+
+    final allComments = commentsAsync.maybeWhen(
+      data: (all) => all,
+      orElse: () => <UserComment>[],
+    );
+
+    final activeStrategy = ref.watch(activeStrategyProvider);
+    final activeStrategyId = activeStrategy?.id;
+
+    // Resolve strategy ID for a parent comment from cached provider values.
+    // Returns null if not yet loaded — in that case, include the comment.
+    String? _strategyIdFor(UserComment c) {
+      final id = c.entityId;
+      switch (c.entityType) {
+        case 'purpose':
+        case 'vision':
+          return id; // entityId IS the strategyId
+        case 'goal':
+          return ref.watch(goalProvider(id)).value?.strategyId;
+        case 'objective':
+          return ref.watch(objectiveProvider(id)).value?.strategyId;
+        case 'mission':
+          return ref.watch(_dashMissionByIdProvider(id)).value?.strategyId;
+        case 'mission_map':
+          return ref.watch(_dashMissionMapStrategyIdProvider(id)).value;
+        case 'value':
+          return ref.watch(_dashValueByIdProvider(id)).value?.strategyId;
+        default:
+          return null;
+      }
+    }
+
+    bool _parentBelongsToStrategy(UserComment parent) {
+      if (activeStrategyId == null) return true; // no filter when no strategy selected
+      final resolved = _strategyIdFor(parent);
+      return resolved == null || resolved == activeStrategyId;
+    }
+
+    // Build ordered list: each recent parent followed by its recent replies.
+    // A parent qualifies if it or any of its replies were updated within cutoff.
+    final topLevelAll = allComments.where((c) => c.parentCommentId == null).toList();
+    final orderedRecent = <UserComment>[];
+    for (final parent in topLevelAll) {
+      if (!_parentBelongsToStrategy(parent)) continue;
+      final replies = allComments
+          .where((c) => c.parentCommentId == parent.id)
+          .toList()
+        ..sort((a, b) => a.createdAt.compareTo(b.createdAt));
+      final recentReplies = replies.where((r) => r.updatedAt.isAfter(cutoff)).toList();
+      final parentRecent = parent.updatedAt.isAfter(cutoff);
+      if (parentRecent || recentReplies.isNotEmpty) {
+        if (parentRecent) orderedRecent.add(parent);
+        orderedRecent.addAll(recentReplies);
+      }
+    }
+
+    if (orderedRecent.isEmpty) return const SizedBox.shrink();
+
+    final topLevelCount =
+        topLevelAll.where(_parentBelongsToStrategy).length;
+
+    return Container(
+      decoration: BoxDecoration(
+        color: AppTheme.surface,
         borderRadius: BorderRadius.circular(12),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(vertical: 16.0),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
+        border: Border.all(color: AppTheme.grayLight),
+      ),
+      child: ExpansionTile(
+        shape: const Border(),
+        collapsedShape: const Border(),
+        tilePadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+        childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+        title: GestureDetector(
+          onTap: () => context.go('/comments'),
+          child: Row(
             children: [
-              Icon(
-                icon,
-                size: 32,
-                color: Theme.of(context).colorScheme.primary,
+              GestureDetector(
+                onTap: () => context.go('/comments'),
+                child: const Icon(Icons.forum_outlined,
+                    size: 18, color: AppTheme.primary),
               ),
-              const SizedBox(height: 8),
-              Text(
-                label,
-                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+              const SizedBox(width: 8),
+              const Text(
+                'Recent Comments',
+                style: TextStyle(
+                  fontWeight: FontWeight.bold,
+                  fontSize: 15,
+                  color: AppTheme.graphite,
+                ),
+              ),
+              if (topLevelCount > 0) ...[
+                const SizedBox(width: 8),
+                Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: AppTheme.primary.withOpacity(0.12),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Text(
+                    '$topLevelCount',
+                    style: const TextStyle(
+                      fontSize: 12,
                       fontWeight: FontWeight.bold,
+                      color: AppTheme.primary,
                     ),
-                textAlign: TextAlign.center,
-              ),
+                  ),
+                ),
+              ],
             ],
           ),
+        ),
+        children: orderedRecent.isEmpty
+            ? [
+                const Padding(
+                  padding: EdgeInsets.symmetric(vertical: 8),
+                  child: Text(
+                    'No comments in the past 14 days.',
+                    style: TextStyle(
+                        fontSize: 13, color: AppTheme.grayMedium),
+                  ),
+                ),
+              ]
+            : orderedRecent
+                .map((comment) => _DashCommentTile(
+                      key: ValueKey(comment.id),
+                      comment: comment,
+                    ))
+                .toList(),
+      ),
+    );
+  }
+}
+
+class _DashCommentTile extends ConsumerWidget {
+  final UserComment comment;
+  const _DashCommentTile({super.key, required this.comment});
+
+  String _resolveTitle(WidgetRef ref) {
+    final id = comment.entityId;
+    switch (comment.entityType) {
+      case 'purpose':
+        return ref.watch(strategyProvider(id)).value?.purpose ?? '';
+      case 'vision':
+        return ref.watch(strategyVisionProvider(id)).value?.visionStatement ?? '';
+      case 'mission':
+        return ref.watch(_dashMissionByIdProvider(id)).value?.mission ?? '';
+      case 'goal':
+        return ref.watch(goalProvider(id)).value?.title ?? '';
+      case 'objective':
+        return ref.watch(objectiveProvider(id)).value?.title ?? '';
+      case 'value':
+        return ref.watch(_dashValueByIdProvider(id)).value?.refinedLabel ?? '';
+      default:
+        return '';
+    }
+  }
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final isReply = comment.parentCommentId != null;
+    final entityLabel =
+        _kDashEntityLabels[comment.entityType] ?? comment.entityType.toUpperCase();
+    final entityTitle = isReply ? '' : _resolveTitle(ref);
+
+    return Padding(
+      padding: EdgeInsets.only(left: isReply ? 12 : 0, bottom: 8, top: 4),
+      child: GestureDetector(
+        onTap: () => context.go('/comments'),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            if (isReply)
+              Container(
+                width: 2,
+                height: 36,
+                margin: const EdgeInsets.only(right: 8, top: 2),
+                color: AppTheme.primary.withOpacity(0.35),
+              ),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  if (!isReply) ...[
+                    Text(
+                      entityLabel,
+                      style: const TextStyle(
+                        fontSize: 10,
+                        fontWeight: FontWeight.w600,
+                        color: AppTheme.primary,
+                        letterSpacing: 0.5,
+                      ),
+                    ),
+                    if (entityTitle.isNotEmpty)
+                      Text(
+                        entityTitle,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w500,
+                          color: AppTheme.graphite,
+                        ),
+                      ),
+                  ],
+                  Row(
+                    children: [
+                      Text(
+                        DateFormat('MMM d · h:mm a').format(comment.updatedAt),
+                        style: const TextStyle(fontSize: 11, color: AppTheme.grayMedium),
+                      ),
+                      if (ref.watch(_dashUserByIdProvider(comment.userId)).value?.fullName case final String name)
+                        Text(
+                          ' · $name',
+                          style: const TextStyle(fontSize: 11, color: AppTheme.grayMedium),
+                        ),
+                    ],
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    comment.commentText,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(fontSize: 13, color: AppTheme.graphite),
+                  ),
+                ],
+              ),
+            ),
+          ],
         ),
       ),
     );
   }
 }
 
-// Helper functions for mission timeline calculation
-DateTime? _calculateMissionStartDate(dynamic missionMap, int missionIndex) {
-  if (missionMap.strategyStartDate == null) return null;
-  
-  int cumulativeMonths = 0;
-  for (int i = 0; i < missionIndex; i++) {
-    cumulativeMonths += (missionMap.missions[i].durationMonths as num).toInt();
-  }
-  
-  final startDate = missionMap.strategyStartDate!;
-  return DateTime(startDate.year, startDate.month + cumulativeMonths, 1);
-}
-
-DateTime? _calculateMissionEndDate(dynamic missionMap, int missionIndex) {
-  final startDate = _calculateMissionStartDate(missionMap, missionIndex);
-  if (startDate == null) return null;
-  
-  final durationMonths = (missionMap.missions[missionIndex].durationMonths as num).toInt();
-  return DateTime(startDate.year, startDate.month + durationMonths - 1, 1);
-}
-
-String _formatMonthYear(DateTime? date) {
-  if (date == null) return 'Not set';
-  const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
-                  'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-  return '${months[date.month - 1]} ${date.year}';
-}

@@ -513,24 +513,44 @@ Be authentic, inspiring, and specific to THEIR unique responses. This should fee
   /// Generate clarification questions for Phase 2 of value creation
   Future<List<Map<String, dynamic>>> generateValueClarificationQuestions({
     required String seedValue,
+    String strategyTypeName = 'Personal',
   }) async {
-    final prompt = '''
-You are a values clarification expert helping a user explore what a value truly means to them.
+    final isBusiness = strategyTypeName.toLowerCase().contains('business') ||
+        strategyTypeName.toLowerCase().contains('organization') ||
+        strategyTypeName.toLowerCase().contains('company');
 
-The user has selected "$seedValue" as a value they want to develop and articulate.
+    final context = isBusiness
+        ? 'an organization developing its core organizational value of "$seedValue"'
+        : 'a person exploring what the value "$seedValue" means to them personally';
+
+    final focusPoints = isBusiness
+        ? '''1. Define what this value means as an organizational principle (not just a dictionary definition)
+2. Identify how this value should shape team behavior, decisions, and culture
+3. Connect the value to the organization's deeper mission and strategic direction'''
+        : '''1. Define what this value personally means to them (not just a dictionary definition)
+2. Identify how this value shows up or could show up in their life
+3. Connect the value to their deeper motivations or aspirations''';
+
+    final questionGuidance = isBusiness
+        ? '''- Focused on organizational culture, leadership behavior, and team dynamics
+- Relevant to how the organization makes decisions, treats people, and operates
+- Have options that reflect different organizational philosophies or approaches
+- Avoid overly personal or introspective framing — keep it strategic and cultural'''
+        : '''- Personal and introspective
+- Have options that feel authentic and meaningful
+- Focused on the user's unique interpretation and lived experience''';
+
+    final prompt = '''
+You are a values clarification expert helping $context.
 
 Generate exactly 3 multiple choice questions that will help them:
-1. Define what this value personally means to them (not just dictionary definition)
-2. Identify how this value shows up or could show up in their life
-3. Connect the value to their deeper motivations or aspirations
+$focusPoints
 
 Each question should have 4 answer options that represent different perspectives or interpretations.
 
 Questions should be:
 - Thought-provoking and insightful
-- Personal and introspective
-- Have options that feel authentic and meaningful
-- Focused on the user's unique interpretation and experience
+$questionGuidance
 
 Return ONLY a JSON array of objects with this exact structure:
 [
@@ -570,6 +590,37 @@ No additional text or formatting, just the JSON array.
     } catch (e) {
       print('Error generating clarification questions: $e');
       // Fallback to generic questions if AI fails
+      if (isBusiness) {
+        return [
+          {
+            'question': 'What does "$seedValue" mean as an organizational principle?',
+            'options': [
+              'How we make decisions and set priorities',
+              'How we treat our team members and customers',
+              'The standards we hold ourselves to in our work',
+              'The culture we want to build over time'
+            ]
+          },
+          {
+            'question': 'When should "$seedValue" be most visible in our organization?',
+            'options': [
+              'In how leadership communicates and models behavior',
+              'In how we handle difficult decisions or trade-offs',
+              'In how teams collaborate day-to-day',
+              'In how we measure success and performance'
+            ]
+          },
+          {
+            'question': 'How should "$seedValue" shape our organizational culture?',
+            'options': [
+              'As a non-negotiable standard in how we operate',
+              'As a guiding principle for hiring and team building',
+              'As a lens for evaluating strategic opportunities',
+              'As a foundation for customer and partner relationships'
+            ]
+          },
+        ];
+      }
       return [
         {
           'question': 'What does "$seedValue" mean to you personally?',
@@ -1433,6 +1484,77 @@ Generate the mission map now.
       );
       return fallbackMissions;
     }
+  }
+
+  /// Generate a single mission to be inserted into an existing mission map
+  Future<Map<String, dynamic>> generateSingleMission({
+    required String purposeStatement,
+    required List<String> coreValues,
+    required String visionStatement,
+    required List<String> existingMissionTitles,
+    required String briefDescription,
+    required int insertPosition,
+  }) async {
+    final valuesContext = coreValues.join(', ');
+    final existingContext = existingMissionTitles.isEmpty
+        ? 'None yet.'
+        : existingMissionTitles.asMap().entries
+            .map((e) => 'Mission ${e.key + 1}: ${e.value}')
+            .join('\n');
+
+    final prompt = '''
+You are a Strategic Mission Mapping Agent.
+
+Generate a single new mission to be inserted at position ${insertPosition + 1} into an existing mission map.
+
+## CONTEXT
+
+**Purpose Statement:** "$purposeStatement"
+**Core Values:** $valuesContext
+**Vision Statement:** "$visionStatement"
+
+**Existing Missions (in order):**
+$existingContext
+
+**Intent for the new mission (position ${insertPosition + 1}):**
+"$briefDescription"
+
+## INSTRUCTIONS
+
+Generate one mission that:
+- Fits logically at position ${insertPosition + 1} in the sequence
+- Aligns with the purpose, values, and vision
+- Represents a structural or capability milestone (not a task list)
+- Complements the existing missions
+
+## OUTPUT FORMAT
+
+Return ONLY a JSON object with this exact structure (no additional text):
+
+{
+  "mission": "[Descriptive mission title]",
+  "focus": "[What this mission focuses on achieving]",
+  "structural_shift": "[What structural change occurs]",
+  "capability_required": "[What capabilities must be developed]",
+  "risk_or_value_guardrail": "[Risk assessment (Low/Medium/High) and key constraints]",
+  "duration_months": 12
+}
+
+In risk_or_value_guardrail, explicitly state risk level (Low, Medium, or High) at the start.
+''';
+
+    final response = await _makeOpenAIRequest(
+      model: AIConfig.defaultModel,
+      messages: [
+        {'role': 'user', 'content': prompt},
+      ],
+      temperature: 0.7,
+      maxTokens: 600,
+      responseFormat: {'type': 'json_object'},
+    );
+
+    final content = _extractContent(response);
+    return jsonDecode(content) as Map<String, dynamic>;
   }
 
   /// Generate fallback missions if AI call fails

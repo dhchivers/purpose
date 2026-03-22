@@ -6,12 +6,14 @@ import 'package:purpose/core/models/auth_state.dart';
 import 'package:purpose/features/home/login_page.dart';
 import 'package:purpose/features/home/signup_page.dart';
 import 'package:purpose/features/home/dashboard_page.dart';
+import 'package:purpose/features/home/comments_page.dart';
 import 'package:purpose/features/admin/admin_settings_page.dart';
 import 'package:purpose/features/admin/admin_modules_page.dart';
 import 'package:purpose/features/admin/admin_module_detail_page.dart';
 import 'package:purpose/features/admin/admin_values_seeds_page.dart';
 import 'package:purpose/features/admin/admin_strategy_types_page.dart';
-import 'package:purpose/features/admin/migration_test_page.dart';
+// Conditional import - migration page only available on web
+import 'package:purpose/features/admin/migration_test_page.dart' if (dart.library.io) 'package:purpose/features/admin/migration_test_page_stub.dart';
 import 'package:purpose/features/purpose/purpose_modules_page.dart';
 import 'package:purpose/features/purpose/module_questionnaire_page.dart';
 import 'package:purpose/features/purpose/identity_analysis_page.dart';
@@ -74,6 +76,11 @@ final routerProvider = Provider<GoRouter>((ref) {
         path: AppConstants.homeRoute,
         name: 'home',
         builder: (context, state) => const DashboardPage(),
+      ),
+      GoRoute(
+        path: '/comments',
+        name: 'comments',
+        builder: (context, state) => const CommentsPage(),
       ),
       GoRoute(
         path: AppConstants.loginRoute,
@@ -179,7 +186,9 @@ final routerProvider = Provider<GoRouter>((ref) {
         name: 'mission-detail',
         builder: (context, state) {
           final missionId = state.pathParameters['id']!;
-          return MissionDetailPage(missionId: missionId);
+          final objectiveId = state.uri.queryParameters['objectiveId'];
+          final goalId = state.uri.queryParameters['goalId'];
+          return MissionDetailPage(missionId: missionId, initialObjectiveId: objectiveId, initialGoalId: goalId);
         },
       ),
     ],

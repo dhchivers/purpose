@@ -1954,6 +1954,18 @@ class FirestoreService {
   }
 
   /// Get a user's mission map by strategyId
+  Future<String?> getUserMissionMapStrategyId(String missionMapId) async {
+    try {
+      final doc = await _userMissionMapsCollection.doc(missionMapId).get();
+      if (!doc.exists) return null;
+      final data = doc.data() as Map<String, dynamic>?;
+      return data?['strategyId'] as String?;
+    } catch (e) {
+      print('❌ Error getting mission map strategyId: $e');
+      return null;
+    }
+  }
+
   Future<UserMissionMap?> getUserMissionMap(String strategyId) async {
     try {
       final querySnapshot = await _userMissionMapsCollection
@@ -2739,6 +2751,49 @@ class FirestoreService {
     });
   }
 
+  /// Stream all objectives for a mission (real-time)
+  Stream<List<Objective>> objectivesForMissionStream(String missionId) {
+    return _objectivesCollection
+        .where('missionId', isEqualTo: missionId)
+        .orderBy('dueDate')
+        .snapshots()
+        .map((snapshot) {
+      final objectives = <Objective>[];
+      for (var doc in snapshot.docs) {
+        try {
+          final data = doc.data();
+          if (data == null) continue;
+          objectives.add(Objective(
+            id: doc.id,
+            goalId: _getStringField(data, 'goalId'),
+            missionId: _getStringField(data, 'missionId'),
+            strategyId: _getStringField(data, 'strategyId'),
+            title: _getStringField(data, 'title'),
+            description: _getStringField(data, 'description'),
+            measurableRequirement: _getStringField(data, 'measurableRequirement'),
+            dueDate: _getDateTimeField(data, 'dueDate'),
+            costMonetary: _getDoubleField(data, 'costMonetary', 0.0),
+            costTime: _getDoubleField(data, 'costTime', 0.0),
+            spendMonetary: _getDoubleField(data, 'spendMonetary', 0.0),
+            spendTime: _getDoubleField(data, 'spendTime', 0.0),
+            log: _getLogEntries(data, 'log'),
+            achieved: _getBoolField(data, 'achieved', false),
+            dateAchieved: _getDateTimeField(data, 'dateAchieved'),
+            dateCreated: _getDateTimeField(data, 'dateCreated') ?? DateTime.now(),
+            updatedAt: _getDateTimeField(data, 'updatedAt') ?? DateTime.now(),
+          ));
+        } catch (e) {
+          print('❌ Error parsing objective ${doc.id}: $e');
+          continue;
+        }
+      }
+      return objectives;
+    }).handleError((error) {
+      print('❌ Error in objectivesForMissionStream for missionId=$missionId: $error');
+      return <Objective>[];
+    });
+  }
+
   /// Update an objective
   Future<void> updateObjective(Objective objective) async {
     try {
@@ -3121,7 +3176,53 @@ class FirestoreService {
     }
   }
 
-  /// Get all comments by a specific user
+  /// Update the text of an existing comment
+  Future<void> updateUserComment(String commentId, String newText) async {
+    try {
+      await _userCommentsCollection.doc(commentId).update({
+        'commentText': newText,
+        'updatedAt': DateTime.now().toIso8601String(),
+      });
+      print('✅ Updated user comment: $commentId');
+    } catch (e) {
+      print('❌ Error updating user comment $commentId: $e');
+      rethrow;
+    }
+  }
+
+  /// Stream all comments by a specific user (real-time updates)
+  Stream<List<UserComment>> commentsForUserStream(String userId) {
+    return _userCommentsCollection
+        .where('userId', isEqualTo: userId)
+        .snapshots()
+        .map((snapshot) {
+      final comments = <UserComment>[];
+      for (var doc in snapshot.docs) {
+        try {
+          final data = doc.data();
+          if (data == null) continue;
+          comments.add(UserComment(
+            id: doc.id,
+            userId: _getStringField(data, 'userId'),
+            entityId: _getStringField(data, 'entityId'),
+            entityType: _getStringField(data, 'entityType'),
+            commentText: _getStringField(data, 'commentText'),
+            parentCommentId: _getStringField(data, 'parentCommentId').isEmpty
+                ? null
+                : _getStringField(data, 'parentCommentId'),
+            createdAt: _getDateTimeField(data, 'createdAt') ?? DateTime.now(),
+            updatedAt: _getDateTimeField(data, 'updatedAt') ?? DateTime.now(),
+          ));
+        } catch (e) {
+          continue;
+        }
+      }
+      // Sort client-side to avoid needing a composite index
+      comments.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+      return comments;
+    });
+  }
+
   Future<List<UserComment>> getCommentsByUser(String userId) async {
     try {
       final querySnapshot = await _userCommentsCollection

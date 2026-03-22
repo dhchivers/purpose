@@ -30,6 +30,12 @@ final commentsByUserProvider = FutureProvider.family<List<UserComment>, String>(
   return firestoreService.getCommentsByUser(userId);
 });
 
+/// Provider for all comments by a specific user (Stream - real-time updates)
+final commentsForUserStreamProvider = StreamProvider.family<List<UserComment>, String>((ref, userId) {
+  final firestoreService = ref.watch(firestoreServiceProvider);
+  return firestoreService.commentsForUserStream(userId);
+});
+
 /// Provider to get comment count for an entity
 final commentCountForEntityProvider = FutureProvider.family<int, (String, String)>(
   (ref, params) async {

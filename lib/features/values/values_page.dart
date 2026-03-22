@@ -1,13 +1,13 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
+import 'dart:io' show Platform;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:purpose/core/services/auth_provider.dart';
 import 'package:purpose/core/services/strategy_provider.dart';
 import 'package:purpose/core/services/strategy_context_provider.dart';
 import 'package:purpose/core/models/user_value.dart';
-import 'package:purpose/core/models/strategy_type.dart';
 import 'package:purpose/core/theme/app_theme.dart';
-import 'package:purpose/features/admin/admin_strategy_types_page.dart';
 
 /// Page displaying user's values and entry point to value creation
 class ValuesPage extends ConsumerWidget {
@@ -17,7 +17,6 @@ class ValuesPage extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final currentUserAsync = ref.watch(currentUserProvider);
     final activeStrategyAsync = ref.watch(activeStrategyAsyncProvider);
-    final strategyTypesAsync = ref.watch(strategyTypesStreamProvider);
 
     return currentUserAsync.when(
       data: (user) {
@@ -26,7 +25,7 @@ class ValuesPage extends ConsumerWidget {
             appBar: AppBar(
               backgroundColor: AppTheme.primary,
               foregroundColor: Colors.white,
-              title: const Text('Values'),
+              title: const Text('Core Values'),
               leading: IconButton(
                 icon: const Icon(Icons.arrow_back),
                 onPressed: () => context.go('/'),
@@ -43,7 +42,7 @@ class ValuesPage extends ConsumerWidget {
                 appBar: AppBar(
                   backgroundColor: AppTheme.primary,
                   foregroundColor: Colors.white,
-                  title: const Text('Values'),
+                  title: const Text('Core Values'),
                   leading: IconButton(
                     icon: const Icon(Icons.arrow_back),
                     onPressed: () => context.go('/'),
@@ -82,48 +81,22 @@ class ValuesPage extends ConsumerWidget {
               appBar: AppBar(
                 backgroundColor: AppTheme.graphite,
                 foregroundColor: Colors.white,
-                title: Row(
-                  children: [
-                    Text(strategy.name),
-                    const SizedBox(width: 12),
-                    strategyTypesAsync.when(
-                      data: (types) {
-                        final strategyType = types.firstWhere(
-                          (type) => type.id == strategy.strategyTypeId,
-                          orElse: () => StrategyType(
-                            id: '',
-                            name: 'Unknown',
-                            enabled: true,
-                            order: 0,
-                            color: 0xFF2196F3,
-                            createdAt: DateTime.now(),
-                            updatedAt: DateTime.now(),
-                          ),
-                        );
-                        return Chip(
-                          label: Text(
-                            strategyType.name,
-                            style: const TextStyle(
-                              fontSize: 11,
-                              color: Colors.white,
-                              fontWeight: FontWeight.w500,
-                            ),
-                          ),
-                          backgroundColor: Color(strategyType.color),
-                          padding: EdgeInsets.zero,
-                          materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                          visualDensity: VisualDensity.compact,
-                        );
-                      },
-                      loading: () => const SizedBox.shrink(),
-                      error: (_, __) => const SizedBox.shrink(),
-                    ),
-                  ],
+                title: Text(
+                  strategy.name,
+                  style: const TextStyle(fontSize: 21),
+                  overflow: !kIsWeb && Platform.isIOS ? TextOverflow.ellipsis : null,
                 ),
                 leading: IconButton(
                   icon: const Icon(Icons.arrow_back),
                   onPressed: () => context.go('/'),
                 ),
+                actions: [
+                  IconButton(
+                    icon: const Icon(Icons.forum_outlined),
+                    onPressed: () => context.go('/comments'),
+                    tooltip: 'Comments',
+                  ),
+                ],
               ),
               body: valuesAsync.when(
                 data: (values) => _buildValuesContent(context, values, strategy.name),
@@ -144,27 +117,13 @@ class ValuesPage extends ConsumerWidget {
                   ),
                 ),
               ),
-              floatingActionButton: valuesAsync.maybeWhen(
-                data: (values) {
-                  // Only show FAB if under 5 values
-                  if (values.length >= 5) return null;
-                  
-                  return FloatingActionButton.extended(
-                    onPressed: () => context.go('/values/create'),
-                    icon: const Icon(Icons.add),
-                    label: const Text('Create Value'),
-                    backgroundColor: AppTheme.primary,
-                  );
-                },
-                orElse: () => null,
-              ),
             );
           },
           loading: () => Scaffold(
             appBar: AppBar(
               backgroundColor: AppTheme.primary,
               foregroundColor: Colors.white,
-              title: const Text('Values'),
+              title: const Text('Core Values'),
               leading: IconButton(
                 icon: const Icon(Icons.arrow_back),
                 onPressed: () => context.go('/'),
@@ -176,7 +135,7 @@ class ValuesPage extends ConsumerWidget {
             appBar: AppBar(
               backgroundColor: AppTheme.primary,
               foregroundColor: Colors.white,
-              title: const Text('Values'),
+              title: const Text('Core Values'),
               leading: IconButton(
                 icon: const Icon(Icons.arrow_back),
                 onPressed: () => context.go('/'),
@@ -199,7 +158,7 @@ class ValuesPage extends ConsumerWidget {
         appBar: AppBar(
           backgroundColor: AppTheme.primary,
           foregroundColor: Colors.white,
-          title: const Text('Values'),
+          title: const Text('Core Values'),
           leading: IconButton(
             icon: const Icon(Icons.arrow_back),
             onPressed: () => context.go('/'),
@@ -211,7 +170,7 @@ class ValuesPage extends ConsumerWidget {
         appBar: AppBar(
           backgroundColor: AppTheme.primary,
           foregroundColor: Colors.white,
-          title: const Text('Values'),
+          title: const Text('Core Values'),
           leading: IconButton(
             icon: const Icon(Icons.arrow_back),
             onPressed: () => context.go('/'),
@@ -228,21 +187,37 @@ class ValuesPage extends ConsumerWidget {
         // Header with info
         Container(
           width: double.infinity,
-          padding: const EdgeInsets.all(24),
+          padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 24),
           decoration: const BoxDecoration(
             color: AppTheme.primary,
           ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+          child: Row(
             children: [
-              const Text(
-                'Values',
-                style: TextStyle(
-                  fontSize: 24,
-                  fontWeight: FontWeight.bold,
-                  color: Colors.white,
+              const SizedBox(width: 22),
+              const Expanded(
+                child: Center(
+                  child: Text(
+                    'Core Values',
+                    style: TextStyle(
+                      fontSize: 24,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.white,
+                    ),
+                  ),
                 ),
               ),
+              if (values.length < 5)
+                IconButton(
+                  onPressed: () => context.go('/values/create'),
+                  icon: const Icon(Icons.add_circle_outline),
+                  tooltip: 'Create Value',
+                  iconSize: 28,
+                  color: Colors.white,
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(),
+                )
+              else
+                const SizedBox(width: 22),
             ],
           ),
         ),

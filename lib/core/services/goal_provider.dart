@@ -51,6 +51,12 @@ final objectivesForGoalStreamProvider = StreamProvider.family<List<Objective>, S
   return firestoreService.objectivesForGoalStream(goalId);
 });
 
+/// Provider for all objectives for a mission (Stream - real-time updates)
+final objectivesForMissionStreamProvider = StreamProvider.family<List<Objective>, String>((ref, missionId) {
+  final firestoreService = ref.watch(firestoreServiceProvider);
+  return firestoreService.objectivesForMissionStream(missionId);
+});
+
 // ========== COMPUTED PROVIDERS ==========
 
 /// Provider to get number of objectives for a goal

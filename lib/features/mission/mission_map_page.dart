@@ -1,16 +1,21 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
+import 'dart:io' show Platform;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:purpose/core/services/auth_provider.dart';
 import 'package:purpose/core/services/firestore_provider.dart';
+import 'package:purpose/core/services/gemini_provider.dart';
 import 'package:purpose/core/services/strategy_provider.dart';
 import 'package:purpose/core/services/strategy_context_provider.dart';
 import 'package:purpose/core/models/mission_map.dart';
 import 'package:purpose/core/models/mission_document.dart';
 import 'package:purpose/core/models/mission_creation_session.dart';
-import 'package:purpose/core/models/strategy_type.dart';
+import 'package:purpose/core/models/user_comment.dart';
+import 'package:purpose/core/services/user_comment_provider.dart';
+import 'package:intl/intl.dart';
 import 'package:purpose/core/theme/app_theme.dart';
-import 'package:purpose/features/admin/admin_strategy_types_page.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 
 /// Page displaying user's mission map
 class MissionMapPage extends ConsumerStatefulWidget {
@@ -21,21 +26,23 @@ class MissionMapPage extends ConsumerStatefulWidget {
 }
 
 class _MissionMapPageState extends ConsumerState<MissionMapPage> {
-  bool _isDeleting = false;
   int? _editingMissionIndex;
   bool _isSaving = false;
   final Set<int> _expandedMissions = {}; // Track which missions are expanded
   
   // Text controllers for editing
   final TextEditingController _missionController = TextEditingController();
+  final TextEditingController _focusController = TextEditingController();
   final TextEditingController _structuralShiftController = TextEditingController();
   final TextEditingController _capabilityController = TextEditingController();
   final TextEditingController _riskGuardrailController = TextEditingController();
   final TextEditingController _durationController = TextEditingController();
+  bool _useBudgets = false;
 
   @override
   void dispose() {
     _missionController.dispose();
+    _focusController.dispose();
     _structuralShiftController.dispose();
     _capabilityController.dispose();
     _riskGuardrailController.dispose();
@@ -47,10 +54,12 @@ class _MissionMapPageState extends ConsumerState<MissionMapPage> {
     setState(() {
       _editingMissionIndex = index;
       _missionController.text = mission.mission;
+      _focusController.text = mission.focus;
       _structuralShiftController.text = mission.structuralShift;
       _capabilityController.text = mission.capabilityRequired;
       _riskGuardrailController.text = mission.riskOrValueGuardrail;
       _durationController.text = mission.durationMonths.toString();
+      _useBudgets = mission.useBudgets;
     });
   }
 
@@ -58,10 +67,12 @@ class _MissionMapPageState extends ConsumerState<MissionMapPage> {
     setState(() {
       _editingMissionIndex = null;
       _missionController.clear();
+      _focusController.clear();
       _structuralShiftController.clear();
       _capabilityController.clear();
       _riskGuardrailController.clear();
       _durationController.clear();
+      _useBudgets = false;
     });
   }
 
@@ -105,36 +116,6 @@ class _MissionMapPageState extends ConsumerState<MissionMapPage> {
     return '${months[date.month - 1]} ${date.year}';
   }
 
-  // Format date as separate lines for timeline
-  Widget _buildTimelineDate(DateTime? date) {
-    if (date == null) return const SizedBox.shrink();
-    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
-                    'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Text(
-          months[date.month - 1],
-          style: const TextStyle(
-            fontSize: 10,
-            color: AppTheme.grayMedium,
-            fontWeight: FontWeight.w600,
-            height: 1.0,
-          ),
-        ),
-        Text(
-          '${date.year}',
-          style: const TextStyle(
-            fontSize: 10,
-            color: AppTheme.grayMedium,
-            fontWeight: FontWeight.w500,
-            height: 1.0,
-          ),
-        ),
-      ],
-    );
-  }
-
   Future<void> _updateStrategyStartDate(MissionMap missionMap, DateTime newDate) async {
     try {
       final firestoreService = ref.read(firestoreServiceProvider);
@@ -169,6 +150,7 @@ class _MissionMapPageState extends ConsumerState<MissionMapPage> {
 
   Future<void> _saveMission(MissionMap missionMap, List<MissionDocument> missions, int index) async {
     if (_missionController.text.trim().isEmpty ||
+        _focusController.text.trim().isEmpty ||
         _structuralShiftController.text.trim().isEmpty ||
         _capabilityController.text.trim().isEmpty ||
         _riskGuardrailController.text.trim().isEmpty ||
@@ -216,11 +198,13 @@ class _MissionMapPageState extends ConsumerState<MissionMapPage> {
       // Create updated mission document
       final updatedMissionDoc = missionDoc.copyWith(
         mission: _missionController.text.trim(),
+        focus: _focusController.text.trim(),
         structuralShift: _structuralShiftController.text.trim(),
         capabilityRequired: _capabilityController.text.trim(),
         riskOrValueGuardrail: riskGuardrail,
         riskLevel: riskLevel,
         durationMonths: duration,
+        useBudgets: _useBudgets,
         updatedAt: DateTime.now(),
       );
 
@@ -234,10 +218,12 @@ class _MissionMapPageState extends ConsumerState<MissionMapPage> {
       });
       
       _missionController.clear();
+      _focusController.clear();
       _structuralShiftController.clear();
       _capabilityController.clear();
       _riskGuardrailController.clear();
       _durationController.clear();
+      setState(() => _useBudgets = false);
       
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -386,6 +372,7 @@ class _MissionMapPageState extends ConsumerState<MissionMapPage> {
   }
 
   Future<void> _showAddMissionDialog(MissionMap missionMap, List<MissionDocument> missions) async {
+    final briefDescriptionController = TextEditingController();
     final missionTitleController = TextEditingController();
     final focusController = TextEditingController();
     final structuralShiftController = TextEditingController();
@@ -400,165 +387,289 @@ class _MissionMapPageState extends ConsumerState<MissionMapPage> {
     final result = await showDialog<Map<String, dynamic>>(
       context: context,
       builder: (dialogContext) {
-        return AlertDialog(
-          title: const Text('Add New Mission'),
-          content: SingleChildScrollView(
-            child: SizedBox(
-              width: 500,
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text(
-                    'Insert Position',
-                    style: TextStyle(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w600,
-                      color: AppTheme.primary,
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  DropdownButtonFormField<int>(
-                    value: selectedPosition,
-                    decoration: const InputDecoration(
-                      border: OutlineInputBorder(),
-                      isDense: true,
-                      hintText: 'Select position',
-                    ),
-                    items: List.generate(
-                      missions.length + 1,
-                      (index) => DropdownMenuItem(
-                        value: index,
-                        child: Text('Mission ${index + 1}'),
-                      ),
-                    ),
-                    onChanged: (value) {
-                      if (value != null) {
-                        selectedPosition = value;
-                      }
-                    },
-                  ),
-                  const SizedBox(height: 16),
-                  TextField(
-                    controller: missionTitleController,
-                    decoration: const InputDecoration(
-                      labelText: 'Mission Title *',
-                      border: OutlineInputBorder(),
-                      isDense: true,
-                    ),
-                    maxLines: 2,
-                  ),
-                  const SizedBox(height: 12),
-                  TextField(
-                    controller: focusController,
-                    decoration: const InputDecoration(
-                      labelText: 'Focus *',
-                      border: OutlineInputBorder(),
-                      isDense: true,
-                      hintText: 'What this mission focuses on',
-                    ),
-                    maxLines: 2,
-                  ),
-                  const SizedBox(height: 12),
-                  TextField(
-                    controller: structuralShiftController,
-                    decoration: const InputDecoration(
-                      labelText: 'Structural Shift *',
-                      border: OutlineInputBorder(),
-                      isDense: true,
-                      hintText: 'What structural change occurs',
-                    ),
-                    maxLines: 3,
-                  ),
-                  const SizedBox(height: 12),
-                  TextField(
-                    controller: capabilityController,
-                    decoration: const InputDecoration(
-                      labelText: 'Capability Required *',
-                      border: OutlineInputBorder(),
-                      isDense: true,
-                      hintText: 'What capabilities need to be developed',
-                    ),
-                    maxLines: 3,
-                  ),
-                  const SizedBox(height: 12),
-                  TextField(
-                    controller: riskGuardrailController,
-                    decoration: const InputDecoration(
-                      labelText: 'Risk & Value Guardrails *',
-                      border: OutlineInputBorder(),
-                      isDense: true,
-                      hintText: 'Include: low, medium, or high risk',
-                    ),
-                    maxLines: 3,
-                  ),
-                  const SizedBox(height: 12),
-                  TextField(
-                    controller: durationController,
-                    decoration: const InputDecoration(
-                      labelText: 'Duration (months) *',
-                      border: OutlineInputBorder(),
-                      isDense: true,
-                      hintText: 'e.g., 12',
-                    ),
-                    keyboardType: TextInputType.number,
-                  ),
-                ],
-              ),
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(dialogContext),
-              child: const Text('Cancel'),
-            ),
-            ElevatedButton(
-              onPressed: () {
-                if (missionTitleController.text.trim().isEmpty ||
-                    focusController.text.trim().isEmpty ||
-                    structuralShiftController.text.trim().isEmpty ||
-                    capabilityController.text.trim().isEmpty ||
-                    riskGuardrailController.text.trim().isEmpty ||
-                    durationController.text.trim().isEmpty) {
-                  ScaffoldMessenger.of(scaffoldContext).showSnackBar(
-                    const SnackBar(
-                      content: Text('All fields are required'),
-                      backgroundColor: AppTheme.error,
-                    ),
-                  );
-                  return;
-                }
-                
-                final duration = int.tryParse(durationController.text.trim());
-                if (duration == null || duration <= 0) {
-                  ScaffoldMessenger.of(scaffoldContext).showSnackBar(
-                    const SnackBar(
-                      content: Text('Duration must be a positive number'),
-                      backgroundColor: AppTheme.error,
-                    ),
-                  );
-                  return;
-                }
-                
-                Navigator.pop(dialogContext, {
-                  'position': selectedPosition,
-                  'confirmed': true,
+        bool isGenerating = false;
+        String? generationError;
+
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            Future<void> handleAiGenerate() async {
+              if (briefDescriptionController.text.trim().isEmpty) {
+                setDialogState(() {
+                  generationError = 'Please describe the mission intent first.';
                 });
-              },
-              child: const Text('Add Mission'),
-            ),
-          ],
+                return;
+              }
+              setDialogState(() {
+                isGenerating = true;
+                generationError = null;
+              });
+              try {
+                final activeStrategy = ref.read(activeStrategyProvider);
+                final geminiService = await ref.read(geminiServiceProvider.future);
+                final values = await ref.read(
+                    strategyValuesProvider(activeStrategy?.id ?? '').future);
+                final vision = await ref.read(
+                    strategyVisionProvider(activeStrategy?.id ?? '').future);
+
+                final result = await geminiService.generateSingleMission(
+                  purposeStatement: activeStrategy?.purpose ?? '',
+                  coreValues: values.map((v) => v.statement).toList(),
+                  visionStatement: vision?.visionStatement ?? '',
+                  existingMissionTitles:
+                      missions.map((m) => m.mission).toList(),
+                  briefDescription: briefDescriptionController.text.trim(),
+                  insertPosition: selectedPosition,
+                );
+
+                missionTitleController.text = result['mission'] as String? ?? '';
+                focusController.text = result['focus'] as String? ?? '';
+                structuralShiftController.text =
+                    result['structural_shift'] as String? ?? '';
+                capabilityController.text =
+                    result['capability_required'] as String? ?? '';
+                riskGuardrailController.text =
+                    result['risk_or_value_guardrail'] as String? ?? '';
+                final aiDuration = result['duration_months'];
+                if (aiDuration != null) {
+                  durationController.text = aiDuration.toString();
+                }
+
+                setDialogState(() => isGenerating = false);
+              } catch (e) {
+                setDialogState(() {
+                  isGenerating = false;
+                  generationError = 'AI generation failed. Fill in fields manually.';
+                });
+              }
+            }
+
+            return AlertDialog(
+              title: const Text('Add New Mission'),
+              content: SingleChildScrollView(
+                child: SizedBox(
+                  width: 500,
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      // AI Generation section
+                      Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: AppTheme.primary.withOpacity(0.05),
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(
+                              color: AppTheme.primary.withOpacity(0.2)),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text(
+                              'AI Generate',
+                              style: TextStyle(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w600,
+                                color: AppTheme.primary,
+                              ),
+                            ),
+                            const SizedBox(height: 8),
+                            TextField(
+                              controller: briefDescriptionController,
+                              decoration: const InputDecoration(
+                                labelText: 'Describe the mission intent',
+                                border: OutlineInputBorder(),
+                                isDense: true,
+                                hintText:
+                                    'e.g. Build strategic partnerships to scale operations',
+                              ),
+                              maxLines: 2,
+                            ),
+                            const SizedBox(height: 8),
+                            if (generationError != null)
+                              Padding(
+                                padding: const EdgeInsets.only(bottom: 8),
+                                child: Text(
+                                  generationError!,
+                                  style: const TextStyle(
+                                      color: AppTheme.error, fontSize: 12),
+                                ),
+                              ),
+                            SizedBox(
+                              width: double.infinity,
+                              child: ElevatedButton.icon(
+                                onPressed:
+                                    isGenerating ? null : handleAiGenerate,
+                                icon: isGenerating
+                                    ? const SizedBox(
+                                        width: 14,
+                                        height: 14,
+                                        child: CircularProgressIndicator(
+                                          strokeWidth: 2,
+                                          valueColor:
+                                              AlwaysStoppedAnimation<Color>(
+                                                  Colors.white),
+                                        ),
+                                      )
+                                    : const Icon(Icons.auto_awesome, size: 16),
+                                label: Text(
+                                    isGenerating ? 'Generating…' : 'Generate'),
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: AppTheme.primary,
+                                  foregroundColor: Colors.white,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                      const Text(
+                        'Insert Position',
+                        style: TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600,
+                          color: AppTheme.primary,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      DropdownButtonFormField<int>(
+                        value: selectedPosition,
+                        decoration: const InputDecoration(
+                          border: OutlineInputBorder(),
+                          isDense: true,
+                          hintText: 'Select position',
+                        ),
+                        items: List.generate(
+                          missions.length + 1,
+                          (index) => DropdownMenuItem(
+                            value: index,
+                            child: Text('Mission ${index + 1}'),
+                          ),
+                        ),
+                        onChanged: (value) {
+                          if (value != null) {
+                            setDialogState(() => selectedPosition = value);
+                          }
+                        },
+                      ),
+                      const SizedBox(height: 16),
+                      TextField(
+                        controller: missionTitleController,
+                        decoration: const InputDecoration(
+                          labelText: 'Mission Title *',
+                          border: OutlineInputBorder(),
+                          isDense: true,
+                        ),
+                        maxLines: 2,
+                      ),
+                      const SizedBox(height: 12),
+                      TextField(
+                        controller: focusController,
+                        decoration: const InputDecoration(
+                          labelText: 'Mission Focus *',
+                          border: OutlineInputBorder(),
+                          isDense: true,
+                          hintText: 'What this mission focuses on',
+                        ),
+                        maxLines: 2,
+                      ),
+                      const SizedBox(height: 12),
+                      TextField(
+                        controller: structuralShiftController,
+                        decoration: const InputDecoration(
+                          labelText: 'Structural Shift *',
+                          border: OutlineInputBorder(),
+                          isDense: true,
+                          hintText: 'What structural change occurs',
+                        ),
+                        maxLines: 3,
+                      ),
+                      const SizedBox(height: 12),
+                      TextField(
+                        controller: capabilityController,
+                        decoration: const InputDecoration(
+                          labelText: 'Capability Required *',
+                          border: OutlineInputBorder(),
+                          isDense: true,
+                          hintText: 'What capabilities need to be developed',
+                        ),
+                        maxLines: 3,
+                      ),
+                      const SizedBox(height: 12),
+                      TextField(
+                        controller: riskGuardrailController,
+                        decoration: const InputDecoration(
+                          labelText: 'Risk & Value Guardrails *',
+                          border: OutlineInputBorder(),
+                          isDense: true,
+                          hintText: 'Include: low, medium, or high risk',
+                        ),
+                        maxLines: 3,
+                      ),
+                      const SizedBox(height: 12),
+                      TextField(
+                        controller: durationController,
+                        decoration: const InputDecoration(
+                          labelText: 'Duration (months) *',
+                          border: OutlineInputBorder(),
+                          isDense: true,
+                          hintText: 'e.g., 12',
+                        ),
+                        keyboardType: TextInputType.number,
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(dialogContext),
+                  child: const Text('Cancel'),
+                ),
+                ElevatedButton(
+                  onPressed: () {
+                    if (missionTitleController.text.trim().isEmpty ||
+                        focusController.text.trim().isEmpty ||
+                        structuralShiftController.text.trim().isEmpty ||
+                        capabilityController.text.trim().isEmpty ||
+                        riskGuardrailController.text.trim().isEmpty ||
+                        durationController.text.trim().isEmpty) {
+                      ScaffoldMessenger.of(scaffoldContext).showSnackBar(
+                        const SnackBar(
+                          content: Text('All fields are required'),
+                          backgroundColor: AppTheme.error,
+                        ),
+                      );
+                      return;
+                    }
+
+                    final duration =
+                        int.tryParse(durationController.text.trim());
+                    if (duration == null || duration <= 0) {
+                      ScaffoldMessenger.of(scaffoldContext).showSnackBar(
+                        const SnackBar(
+                          content: Text('Duration must be a positive number'),
+                          backgroundColor: AppTheme.error,
+                        ),
+                      );
+                      return;
+                    }
+
+                    Navigator.pop(dialogContext, {
+                      'position': selectedPosition,
+                      'confirmed': true,
+                    });
+                  },
+                  child: const Text('Add Mission'),
+                ),
+              ],
+            );
+          },
         );
       },
     );
 
     if (result == null || result['confirmed'] != true) {
-      missionTitleController.dispose();
-      focusController.dispose();
-      structuralShiftController.dispose();
-      capabilityController.dispose();
-      riskGuardrailController.dispose();
-      durationController.dispose();
       return;
     }
 
@@ -661,6 +772,7 @@ class _MissionMapPageState extends ConsumerState<MissionMapPage> {
       ref.invalidate(missionMapStreamProvider(missionMap.strategyId));
       ref.invalidate(currentUserProvider);
       
+      briefDescriptionController.dispose();
       missionTitleController.dispose();
       focusController.dispose();
       structuralShiftController.dispose();
@@ -677,6 +789,7 @@ class _MissionMapPageState extends ConsumerState<MissionMapPage> {
         );
       }
     } catch (e) {
+      briefDescriptionController.dispose();
       missionTitleController.dispose();
       focusController.dispose();
       structuralShiftController.dispose();
@@ -695,67 +808,9 @@ class _MissionMapPageState extends ConsumerState<MissionMapPage> {
     }
   }
 
-  Future<void> _deleteMissionMap(MissionMap missionMap) async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Delete Mission Map?'),
-        content: const Text(
-          'Are you sure you want to delete your mission map? This action cannot be undone.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(false),
-            child: const Text('Cancel'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(true),
-            style: TextButton.styleFrom(
-              foregroundColor: AppTheme.error,
-            ),
-            child: const Text('Delete'),
-          ),
-        ],
-      ),
-    );
-
-    if (confirmed != true) return;
-
-    setState(() => _isDeleting = true);
-
-    try {
-      final firestoreService = ref.read(firestoreServiceProvider);
-
-      // Delete the mission map (which will cascade delete all mission documents)
-      await firestoreService.deleteMissionMap(missionMap.id, missionMap.strategyId);
-      
-      ref.invalidate(missionMapStreamProvider(missionMap.strategyId));
-      ref.invalidate(missionsForMapStreamProvider(missionMap.id));
-      ref.invalidate(currentUserProvider);
-      
-      setState(() => _isDeleting = false);
-      
-      if (mounted) {
-        context.go('/home');
-      }
-    } catch (e) {
-      setState(() => _isDeleting = false);
-      
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Error deleting mission map: $e'),
-            backgroundColor: AppTheme.error,
-          ),
-        );
-      }
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
     final activeStrategy = ref.watch(activeStrategyProvider);
-    final strategyTypesAsync = ref.watch(strategyTypesStreamProvider);
 
     if (activeStrategy == null) {
       return Scaffold(
@@ -810,44 +865,18 @@ class _MissionMapPageState extends ConsumerState<MissionMapPage> {
                 onPressed: () => context.go('/'),
                 tooltip: 'Back to Home',
               ),
-              title: Row(
-                children: [
-                  Text(activeStrategy.name),
-                  const SizedBox(width: 12),
-                  strategyTypesAsync.when(
-                    data: (types) {
-                      final strategyType = types.firstWhere(
-                        (type) => type.id == activeStrategy.strategyTypeId,
-                        orElse: () => StrategyType(
-                          id: '',
-                          name: 'Unknown',
-                          enabled: true,
-                          order: 0,
-                          color: 0xFF2196F3,
-                          createdAt: DateTime.now(),
-                          updatedAt: DateTime.now(),
-                        ),
-                      );
-                      return Chip(
-                        label: Text(
-                          strategyType.name,
-                          style: const TextStyle(
-                            fontSize: 11,
-                            color: Colors.white,
-                            fontWeight: FontWeight.w500,
-                          ),
-                        ),
-                        backgroundColor: Color(strategyType.color),
-                        padding: EdgeInsets.zero,
-                        materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                        visualDensity: VisualDensity.compact,
-                      );
-                    },
-                    loading: () => const SizedBox.shrink(),
-                    error: (_, __) => const SizedBox.shrink(),
-                  ),
-                ],
+              title: Text(
+                activeStrategy.name,
+                style: const TextStyle(fontSize: 21),
+                overflow: !kIsWeb && Platform.isIOS ? TextOverflow.ellipsis : null,
               ),
+              actions: [
+                IconButton(
+                  icon: const Icon(Icons.forum_outlined),
+                  onPressed: () => context.go('/comments'),
+                  tooltip: 'Comments',
+                ),
+              ],
             ),
             body: _buildEmptyState(),
           );
@@ -863,67 +892,16 @@ class _MissionMapPageState extends ConsumerState<MissionMapPage> {
               onPressed: () => context.go('/'),
               tooltip: 'Back to Home',
             ),
-            title: Row(
-              children: [
-                Text(activeStrategy.name),
-                const SizedBox(width: 12),
-                strategyTypesAsync.when(
-                  data: (types) {
-                    final strategyType = types.firstWhere(
-                      (type) => type.id == activeStrategy.strategyTypeId,
-                      orElse: () => StrategyType(
-                        id: '',
-                        name: 'Unknown',
-                        enabled: true,
-                        order: 0,
-                        color: 0xFF2196F3,
-                        createdAt: DateTime.now(),
-                        updatedAt: DateTime.now(),
-                      ),
-                    );
-                    return Chip(
-                      label: Text(
-                        strategyType.name,
-                        style: const TextStyle(
-                          fontSize: 11,
-                          color: Colors.white,
-                          fontWeight: FontWeight.w500,
-                        ),
-                      ),
-                      backgroundColor: Color(strategyType.color),
-                      padding: EdgeInsets.zero,
-                      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                      visualDensity: VisualDensity.compact,
-                    );
-                  },
-                  loading: () => const SizedBox.shrink(),
-                  error: (_, __) => const SizedBox.shrink(),
-                ),
-              ],
+            title: Text(
+              activeStrategy.name,
+              style: const TextStyle(fontSize: 21),
+              overflow: !kIsWeb && Platform.isIOS ? TextOverflow.ellipsis : null,
             ),
             actions: [
               IconButton(
-                onPressed: () {
-                  context.go('/mission/create');
-                },
-                icon: const Icon(Icons.refresh),
-                tooltip: 'Regenerate Map',
-              ),
-              IconButton(
-                onPressed: _isDeleting 
-                    ? null 
-                    : () => _deleteMissionMap(missionMap),
-                icon: _isDeleting
-                    ? const SizedBox(
-                        width: 24,
-                        height: 24,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2,
-                          color: Colors.white,
-                        ),
-                      )
-                    : const Icon(Icons.delete),
-                tooltip: 'Delete Map',
+                icon: const Icon(Icons.forum_outlined),
+                onPressed: () => context.go('/comments'),
+                tooltip: 'Comments',
               ),
             ],
           ),
@@ -936,15 +914,53 @@ class _MissionMapPageState extends ConsumerState<MissionMapPage> {
                 decoration: const BoxDecoration(
                   color: AppTheme.primary,
                 ),
-                child: const Center(
-                  child: Text(
-                    'Mission Map',
-                    style: TextStyle(
-                      fontSize: 24,
-                      fontWeight: FontWeight.bold,
+                child: Row(
+                  children: [
+                    IconButton(
+                      onPressed: () {
+                        showDialog(
+                          context: context,
+                          builder: (context) => _MissionMapCommentDialog(
+                            missionMapId: missionMap.id,
+                            strategyName: activeStrategy.name,
+                          ),
+                        );
+                      },
+                      icon: const Icon(Icons.forum_outlined),
+                      tooltip: 'Provide Comment',
+                      iconSize: 24,
                       color: Colors.white,
+                      padding: EdgeInsets.zero,
+                      constraints: const BoxConstraints(),
                     ),
-                  ),
+                    const Expanded(
+                      child: Center(
+                        child: Text(
+                          'Mission Map',
+                          style: TextStyle(
+                            fontSize: 24,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.white,
+                          ),
+                        ),
+                      ),
+                    ),
+                    Consumer(
+                      builder: (context, ref, _) {
+                        final missionsAsync = ref.watch(missionsForMapStreamProvider(missionMap.id));
+                        final missions = missionsAsync.value ?? [];
+                        return IconButton(
+                          onPressed: () => _showAddMissionDialog(missionMap, missions),
+                          icon: const Icon(Icons.add_circle_outline),
+                          tooltip: 'Add Mission',
+                          iconSize: 28,
+                          color: Colors.white,
+                          padding: EdgeInsets.zero,
+                          constraints: const BoxConstraints(),
+                        );
+                      },
+                    ),
+                  ],
                 ),
               ),
 
@@ -976,43 +992,10 @@ class _MissionMapPageState extends ConsumerState<MissionMapPage> {
             onPressed: () => context.go('/'),
             tooltip: 'Back to Home',
           ),
-          title: Row(
-            children: [
-              Text(activeStrategy.name),
-              const SizedBox(width: 12),
-              strategyTypesAsync.when(
-                data: (types) {
-                  final strategyType = types.firstWhere(
-                    (type) => type.id == activeStrategy.strategyTypeId,
-                    orElse: () => StrategyType(
-                      id: '',
-                      name: 'Unknown',
-                      enabled: true,
-                      order: 0,
-                      color: 0xFF2196F3,
-                      createdAt: DateTime.now(),
-                      updatedAt: DateTime.now(),
-                    ),
-                  );
-                  return Chip(
-                    label: Text(
-                      strategyType.name,
-                      style: const TextStyle(
-                        fontSize: 11,
-                        color: Colors.white,
-                        fontWeight: FontWeight.w500,
-                      ),
-                    ),
-                    backgroundColor: Color(strategyType.color),
-                    padding: EdgeInsets.zero,
-                    materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                    visualDensity: VisualDensity.compact,
-                  );
-                },
-                loading: () => const SizedBox.shrink(),
-                error: (_, __) => const SizedBox.shrink(),
-              ),
-            ],
+          title: Text(
+            activeStrategy.name,
+            style: const TextStyle(fontSize: 21),
+            overflow: !kIsWeb && Platform.isIOS ? TextOverflow.ellipsis : null,
           ),
         ),
         body: const Center(
@@ -1028,43 +1011,10 @@ class _MissionMapPageState extends ConsumerState<MissionMapPage> {
             onPressed: () => context.go('/'),
             tooltip: 'Back to Home',
           ),
-          title: Row(
-            children: [
-              Text(activeStrategy.name),
-              const SizedBox(width: 12),
-              strategyTypesAsync.when(
-                data: (types) {
-                  final strategyType = types.firstWhere(
-                    (type) => type.id == activeStrategy.strategyTypeId,
-                    orElse: () => StrategyType(
-                      id: '',
-                      name: 'Unknown',
-                      enabled: true,
-                      order: 0,
-                      color: 0xFF2196F3,
-                      createdAt: DateTime.now(),
-                      updatedAt: DateTime.now(),
-                    ),
-                  );
-                  return Chip(
-                    label: Text(
-                      strategyType.name,
-                      style: const TextStyle(
-                        fontSize: 11,
-                        color: Colors.white,
-                        fontWeight: FontWeight.w500,
-                      ),
-                    ),
-                    backgroundColor: Color(strategyType.color),
-                    padding: EdgeInsets.zero,
-                    materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                    visualDensity: VisualDensity.compact,
-                  );
-                },
-                loading: () => const SizedBox.shrink(),
-                error: (_, __) => const SizedBox.shrink(),
-              ),
-            ],
+          title: Text(
+            activeStrategy.name,
+            style: const TextStyle(fontSize: 21),
+            overflow: !kIsWeb && Platform.isIOS ? TextOverflow.ellipsis : null,
           ),
         ),
         body: Center(
@@ -1087,6 +1037,28 @@ class _MissionMapPageState extends ConsumerState<MissionMapPage> {
         ),
       ),
     );
+  }
+
+  void _navigateToMissionCreate(BuildContext context) {
+    final activeStrategy = ref.read(activeStrategyProvider);
+    final visionAsync = activeStrategy == null
+        ? null
+        : ref.read(strategyVisionProvider(activeStrategy.id));
+    final visionComplete = visionAsync?.valueOrNull != null;
+
+    if (!visionComplete) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Please complete your Vision before creating a Mission Map.',
+          ),
+          backgroundColor: AppTheme.error,
+          duration: Duration(seconds: 4),
+        ),
+      );
+      return;
+    }
+    context.go('/mission/create');
   }
 
   Widget _buildEmptyState() {
@@ -1122,7 +1094,7 @@ class _MissionMapPageState extends ConsumerState<MissionMapPage> {
             const SizedBox(height: 32),
             ElevatedButton.icon(
               onPressed: () {
-                context.go('/mission/create');
+                _navigateToMissionCreate(context);
               },
               icon: const Icon(Icons.add),
               label: const Text('Create Mission Map'),
@@ -1150,7 +1122,7 @@ class _MissionMapPageState extends ConsumerState<MissionMapPage> {
 
           // Strategy Start Date Section
           Container(
-            padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
+            padding: const EdgeInsets.symmetric(vertical: 2, horizontal: 16),
             decoration: BoxDecoration(
               color: AppTheme.surface,
               borderRadius: BorderRadius.circular(12),
@@ -1161,11 +1133,11 @@ class _MissionMapPageState extends ConsumerState<MissionMapPage> {
                 const Icon(
                   Icons.calendar_today,
                   color: AppTheme.primary,
-                  size: 20,
+                  size: 16,
                 ),
                 const SizedBox(width: 12),
                 const Text(
-                  'Strategy Start Date:',
+                  'Start Date:',
                   style: TextStyle(
                     fontSize: 16,
                     fontWeight: FontWeight.w600,
@@ -1182,7 +1154,7 @@ class _MissionMapPageState extends ConsumerState<MissionMapPage> {
                   ),
                 ),
                 const Spacer(),
-                TextButton.icon(
+                IconButton(
                   onPressed: () async {
                     final now = DateTime.now();
                     final initialDate = missionMap.strategyStartDate ?? now;
@@ -1197,42 +1169,21 @@ class _MissionMapPageState extends ConsumerState<MissionMapPage> {
                     }
                   },
                   icon: const Icon(Icons.edit, size: 16),
-                  label: const Text('Change Date'),
-                  style: TextButton.styleFrom(
-                    foregroundColor: AppTheme.primary,
-                  ),
+                  color: AppTheme.primary,
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(),
+                  tooltip: 'Change Date',
                 ),
               ],
             ),
           ),
-          const SizedBox(height: 24),
+          // const SizedBox(height: 24),
 
-          // Visual timeline bar
-          _buildVisualTimeline(missionMap, missions),
+          // Visual timeline bar (temporarily removed)
+          // _buildVisualTimeline(missionMap, missions),
 
-          const SizedBox(height: 32),
+          // const SizedBox(height: 32)
 
-          // All missions timeline
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              const Text(
-                'Mission Timeline',
-                style: TextStyle(
-                  fontSize: 20,
-                  fontWeight: FontWeight.bold,
-                  color: AppTheme.graphite,
-                ),
-              ),
-              IconButton(
-                onPressed: () => _showAddMissionDialog(missionMap, missions),
-                icon: const Icon(Icons.add_circle),
-                tooltip: 'Add Mission',
-                iconSize: 28,
-                color: AppTheme.primary,
-              ),
-            ],
-          ),
           const SizedBox(height: 16),
 
           ListView.separated(
@@ -1262,214 +1213,33 @@ class _MissionMapPageState extends ConsumerState<MissionMapPage> {
     );
   }
 
-  Widget _buildVisualTimeline(MissionMap missionMap, List<MissionDocument> missions) {
-    if (missionMap.strategyStartDate == null) {
-      return const SizedBox.shrink();
-    }
+  // Widget _buildVisualTimeline(MissionMap missionMap, List<MissionDocument> missions) {
+  //   if (missionMap.strategyStartDate == null) {
+  //     return const SizedBox.shrink();
+  //   }
 
-    // Calculate total duration and individual mission positions
-    int totalMonths = 0;
-    for (var mission in missions) {
-      totalMonths += mission.durationMonths;
-    }
+  //   // Calculate total duration and individual mission positions
+  //   int totalMonths = 0;
+  //   for (var mission in missions) {
+  //     totalMonths += mission.durationMonths;
+  //   }
 
-    if (totalMonths == 0) return const SizedBox.shrink();
+  //   if (totalMonths == 0) return const SizedBox.shrink();
 
-    // Calculate cumulative positions for date labels
-    final List<int> cumulativeMonths = [0];
-    for (int i = 0; i < missions.length; i++) {
-      cumulativeMonths.add(cumulativeMonths[i] + missions[i].durationMonths);
-    }
+  //   // Calculate cumulative positions for date labels
+  //   final List<int> cumulativeMonths = [0];
+  //   for (int i = 0; i < missions.length; i++) {
+  //     cumulativeMonths.add(cumulativeMonths[i] + missions[i].durationMonths);
+  //   }
 
-    // Calculate current date position
-    final now = DateTime.now();
-    final startDate = missionMap.strategyStartDate!;
-    final monthsSinceStart = (now.year - startDate.year) * 12 + (now.month - startDate.month);
-    final currentDatePosition = monthsSinceStart / totalMonths;
+  //   // Calculate current date position
+  //   final now = DateTime.now();
+  //   final startDate = missionMap.strategyStartDate!;
+  //   final monthsSinceStart = (now.year - startDate.year) * 12 + (now.month - startDate.month);
+  //   final currentDatePosition = monthsSinceStart / totalMonths;
 
-    return Container(
-      padding: const EdgeInsets.only(left: 20, right: 20, top: 12, bottom: 36),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: AppTheme.grayLight),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          LayoutBuilder(
-            builder: (context, constraints) {
-              final availableWidth = constraints.maxWidth;
-
-              return SizedBox(
-                height: 90, // Reduced height without circled numbers
-                child: Stack(
-                  clipBehavior: Clip.none,
-                  children: [
-                    // Date labels at top
-                    ...[
-                      for (int i = 0; i <= missions.length; i++)
-                        Positioned(
-                          left: availableWidth * (cumulativeMonths[i] / totalMonths) - 15,
-                          top: 4, // Position just above the bars
-                          child: _buildTimelineDate(
-                            DateTime(
-                              startDate.year,
-                              startDate.month + cumulativeMonths[i],
-                              1,
-                            ),
-                          ),
-                        ),
-                    ],
-                    // Mission rectangles with labels
-                    Positioned(
-                      top: 26, // Position below date labels
-                      left: 0,
-                      right: 0,
-                      bottom: 0,
-                      child: Row(
-                      children: [
-                        for (int i = 0; i < missions.length; i++) ...[
-                          Expanded(
-                            flex: missions[i].durationMonths,
-                            child: Container(
-                              margin: EdgeInsets.only(
-                                right: i < missions.length - 1 ? 4 : 0,
-                              ),
-                              decoration: BoxDecoration(
-                                color: i == missionMap.currentMissionIndex
-                                    ? AppTheme.primary.withOpacity(0.2)
-                                    : i < (missionMap.currentMissionIndex ?? 0)
-                                        ? AppTheme.success.withOpacity(0.2)
-                                        : AppTheme.grayMedium.withOpacity(0.2),
-                                borderRadius: BorderRadius.circular(8),
-                                border: Border.all(
-                                  color: i == missionMap.currentMissionIndex
-                                      ? AppTheme.primary
-                                      : i < (missionMap.currentMissionIndex ?? 0)
-                                          ? AppTheme.success
-                                          : AppTheme.grayMedium,
-                                  width: 2,
-                                ),
-                              ),
-                                    child: LayoutBuilder(
-                                      builder: (context, constraints) {
-                                        // Calculate appropriate font size based on bar width
-                                        final barWidth = constraints.maxWidth;
-                                        final barHeight = constraints.maxHeight;
-                                        final missionTitle = missions[i].mission;
-                                        
-                                        // Estimate characters that can fit
-                                        // Rough estimate: 7 pixels per character at base font size
-                                        final maxCharsPerLine = (barWidth - 8) / 7;
-                                        final estimatedLines = (missionTitle.length / maxCharsPerLine).ceil();
-                                        
-                                        // Calculate font size to fit (with minimum and maximum)
-                                        double fontSize = 11;
-                                        if (barWidth < 80) {
-                                          fontSize = 8;
-                                        } else if (barWidth < 120) {
-                                          fontSize = 9;
-                                        } else if (barWidth < 160) {
-                                          fontSize = 10;
-                                        } else if (barWidth >= 200) {
-                                          fontSize = 12;
-                                        }
-                                        
-                                        // Reduce font size if we have many lines
-                                        if (estimatedLines > 3 && barHeight < 50) {
-                                          fontSize = fontSize * 0.85;
-                                        }
-                                        
-                                        return Padding(
-                                          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
-                                          child: Align(
-                                            alignment: Alignment.topCenter,
-                                            child: InkWell(
-                                              onTap: () {
-                                                context.go('/mission/${missions[i].id}');
-                                              },
-                                              borderRadius: BorderRadius.circular(4),
-                                              child: Padding(
-                                                padding: const EdgeInsets.all(2),
-                                                child: Text(
-                                                  missionTitle,
-                                                  textAlign: TextAlign.center,
-                                                  maxLines: 4,
-                                                  overflow: TextOverflow.ellipsis,
-                                                  style: TextStyle(
-                                                    fontSize: fontSize,
-                                                    fontWeight: FontWeight.w600,
-                                                    color: i == missionMap.currentMissionIndex
-                                                        ? AppTheme.primary
-                                                        : i < (missionMap.currentMissionIndex ?? 0)
-                                                            ? AppTheme.success.withOpacity(0.9)
-                                                            : AppTheme.grayMedium,
-                                                    height: 1.2,
-                                                    decoration: TextDecoration.underline,
-                                                    decorationColor: (i == missionMap.currentMissionIndex
-                                                        ? AppTheme.primary
-                                                        : i < (missionMap.currentMissionIndex ?? 0)
-                                                            ? AppTheme.success.withOpacity(0.9)
-                                                            : AppTheme.grayMedium).withOpacity(0.3),
-                                                  ),
-                                                ),
-                                              ),
-                                            ),
-                                          ),
-                                        );
-                                      },
-                                    ),
-                            ),
-                          ),
-                        ],
-                      ],
-                      ),
-                    ),
-                    // Current date indicator line (20% of bar height from bottom)
-                    if (currentDatePosition >= 0 && currentDatePosition <= 1)
-                      Positioned(
-                        left: availableWidth * currentDatePosition,
-                        top: 77, // Adjusted for new height (90 total - 13px line = 77)
-                        child: Container(
-                          width: 2,
-                          height: 13, // 20% of bar height (64px * 0.2)
-                          color: AppTheme.error,
-                        ),
-                      ),
-                    // Today label positioned under the line
-                    if (currentDatePosition >= 0 && currentDatePosition <= 1)
-                      Positioned(
-                        left: availableWidth * currentDatePosition - 30, // Center the label (60px width / 2)
-                        bottom: -24, // Position below the timeline
-                        child: Container(
-                          width: 60,
-                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                          decoration: BoxDecoration(
-                            color: AppTheme.error,
-                            borderRadius: BorderRadius.circular(4),
-                          ),
-                          child: Text(
-                            'Today',
-                            textAlign: TextAlign.center,
-                            style: const TextStyle(
-                              fontSize: 11,
-                              color: Colors.white,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                        ),
-                      ),
-                  ],
-                ),
-              );
-            },
-          ),
-        ],
-      ),
-    );
-  }
-
+  //   return const SizedBox.shrink(); // method body removed temporarily
+  // }
   Widget _buildTimelineConnector() {
     return Padding(
       padding: const EdgeInsets.only(left: 35),
@@ -1513,45 +1283,11 @@ class _MissionMapPageState extends ConsumerState<MissionMapPage> {
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        // Timeline marker
-        Column(
-          children: [
-            Container(
-              width: 40,
-              height: 40,
-              decoration: BoxDecoration(
-                color: isCompleted ? statusColor : backgroundColor,
-                border: Border.all(
-                  color: borderColor,
-                  width: 2,
-                ),
-                borderRadius: BorderRadius.circular(20),
-              ),
-              child: Center(
-                child: isCompleted
-                    ? const Icon(
-                        Icons.check,
-                        color: Colors.white,
-                        size: 20,
-                      )
-                    : Text(
-                        '${index + 1}',
-                        style: TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.bold,
-                          color: statusColor,
-                        ),
-                      ),
-              ),
-            ),
-          ],
-        ),
-        const SizedBox(width: 16),
 
         // Mission content
         Expanded(
           child: Container(
-            padding: const EdgeInsets.all(20),
+            padding: const EdgeInsets.fromLTRB(20, 10, 20, 20),
             decoration: BoxDecoration(
               color: backgroundColor,
               borderRadius: BorderRadius.circular(12),
@@ -1563,6 +1299,59 @@ class _MissionMapPageState extends ConsumerState<MissionMapPage> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
+                // Top row: expand button + risk badge + edit button
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 2),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.center,
+                    children: [
+                      if (!isEditing) ...[
+                        IconButton(
+                          icon: Icon(
+                            isExpanded ? Icons.expand_less : Icons.expand_more,
+                            size: 18,
+                          ),
+                          onPressed: () => _toggleMissionExpansion(index),
+                          tooltip: isExpanded ? 'Collapse' : 'Expand',
+                          color: AppTheme.primary,
+                          padding: EdgeInsets.zero,
+                          constraints: const BoxConstraints(),
+                        ),
+                        const SizedBox(width: 8),
+                      ],
+                      if (mission.useBudgets) ...[
+                        const SizedBox(width: 6),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: AppTheme.primary.withOpacity(0.1),
+                            borderRadius: BorderRadius.circular(4),
+                          ),
+                          child: Text(
+                            'Budgeting',
+                            style: TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w600,
+                              color: AppTheme.primary,
+                            ),
+                          ),
+                        ),
+                      ],
+                      const Spacer(),
+                      if (!isEditing) ...[
+                        IconButton(
+                          icon: const Icon(Icons.edit, size: 16),
+                          onPressed: () => _startEditingMission(mission, index),
+                          tooltip: 'Edit Mission',
+                          color: AppTheme.primary,
+                          padding: EdgeInsets.zero,
+                          constraints: const BoxConstraints(),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+                // Title row
                 Row(
                   children: [
                     Expanded(
@@ -1580,42 +1369,24 @@ class _MissionMapPageState extends ConsumerState<MissionMapPage> {
                                 isDense: true,
                               ),
                             )
-                          : Text(
-                              mission.mission,
-                              style: TextStyle(
-                                fontSize: 18,
-                                fontWeight: FontWeight.bold,
-                                color: isFuture 
-                                    ? AppTheme.graphite.withOpacity(0.5)
-                                    : AppTheme.graphite,
+                          : GestureDetector(
+                              onTap: () => context.go('/mission/${mission.id}'),
+                              child: Text(
+                                mission.mission,
+                                style: TextStyle(
+                                  fontSize: 18,
+                                  fontWeight: FontWeight.bold,
+                                  color: isFuture 
+                                      ? AppTheme.primary.withOpacity(0.4)
+                                      : AppTheme.primary,
+                                  decoration: TextDecoration.underline,
+                                  decorationColor: isFuture
+                                      ? AppTheme.primary.withOpacity(0.4)
+                                      : AppTheme.primary,
+                                ),
                               ),
                             ),
                     ),
-                    if (!isEditing) ...[
-                      const SizedBox(width: 8),
-                      IconButton(
-                        icon: Icon(
-                          isExpanded ? Icons.expand_less : Icons.expand_more,
-                          size: 18,
-                        ),
-                        onPressed: () => _toggleMissionExpansion(index),
-                        tooltip: isExpanded ? 'Collapse' : 'Expand',
-                        color: AppTheme.primary,
-                      ),
-                      IconButton(
-                        icon: const Icon(Icons.edit, size: 18),
-                        onPressed: () => _startEditingMission(mission, index),
-                        tooltip: 'Edit Mission',
-                        color: AppTheme.primary,
-                      ),
-                      if (missions.length > 1)
-                        IconButton(
-                          icon: const Icon(Icons.delete_outline, size: 18),
-                          onPressed: () => _deleteMission(missionMap, missions, index),
-                          tooltip: 'Delete Mission',
-                          color: AppTheme.error,
-                        ),
-                    ],
                   ],
                 ),
                 const SizedBox(height: 8),
@@ -1644,10 +1415,24 @@ class _MissionMapPageState extends ConsumerState<MissionMapPage> {
                         fontWeight: FontWeight.w500,
                       ),
                     ),
-                    const SizedBox(width: 12),
-                    _buildRiskBadge(mission.riskLevel),
                   ],
                 ),
+                if (isEditing) ...[
+                  const SizedBox(height: 8),
+                  Row(
+                    children: [
+                      Checkbox(
+                        value: _useBudgets,
+                        onChanged: (value) => setState(() => _useBudgets = value ?? false),
+                        activeColor: AppTheme.primary,
+                      ),
+                      const Text(
+                        'Enable Budgeting',
+                        style: TextStyle(fontSize: 14, color: AppTheme.graphite),
+                      ),
+                    ],
+                  ),
+                ],
                 const SizedBox(height: 12),
                 Text(
                   mission.focus,
@@ -1661,6 +1446,18 @@ class _MissionMapPageState extends ConsumerState<MissionMapPage> {
                 ),
                 if (isExpanded) ...[
                   const SizedBox(height: 16),
+                  isEditing
+                      ? _buildEditableSection(
+                          'Mission Focus',
+                          _focusController,
+                          Icons.track_changes,
+                        )
+                      : _buildExpandableSection(
+                          'Mission Focus',
+                          mission.focus,
+                          Icons.track_changes,
+                        ),
+                  if (!isEditing) const SizedBox(height: 12),
                   isEditing
                       ? _buildEditableSection(
                           'Structural Shift',
@@ -1704,25 +1501,37 @@ class _MissionMapPageState extends ConsumerState<MissionMapPage> {
                 if (isEditing) ...[
                   const SizedBox(height: 16),
                   Row(
-                    mainAxisAlignment: MainAxisAlignment.end,
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      TextButton(
-                        onPressed: _isSaving ? null : _cancelEditing,
-                        child: const Text('Cancel'),
-                      ),
-                      const SizedBox(width: 8),
-                      ElevatedButton(
-                        onPressed: _isSaving ? null : () => _saveMission(missionMap, missions, index),
-                        child: _isSaving
-                            ? const SizedBox(
-                                width: 16,
-                                height: 16,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2,
-                                  valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
-                                ),
-                              )
-                            : const Text('Save'),
+                      if (missions.length > 1)
+                        TextButton(
+                          onPressed: _isSaving ? null : () => _deleteMission(missionMap, missions, index),
+                          style: TextButton.styleFrom(foregroundColor: AppTheme.error),
+                          child: const Text('Delete'),
+                        )
+                      else
+                        const SizedBox.shrink(),
+                      Row(
+                        children: [
+                          TextButton(
+                            onPressed: _isSaving ? null : _cancelEditing,
+                            child: const Text('Cancel'),
+                          ),
+                          const SizedBox(width: 8),
+                          ElevatedButton(
+                            onPressed: _isSaving ? null : () => _saveMission(missionMap, missions, index),
+                            child: _isSaving
+                                ? const SizedBox(
+                                    width: 16,
+                                    height: 16,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                      valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                                    ),
+                                  )
+                                : const Text('Save'),
+                          ),
+                        ],
                       ),
                     ],
                   ),
@@ -1732,45 +1541,6 @@ class _MissionMapPageState extends ConsumerState<MissionMapPage> {
           ),
         ),
       ],
-    );
-  }
-
-  Widget _buildRiskBadge(RiskLevel? level) {
-    Color color;
-    String label;
-
-    switch (level) {
-      case RiskLevel.low:
-        color = AppTheme.success;
-        label = 'Low Risk';
-        break;
-      case RiskLevel.medium:
-        color = AppTheme.warning;
-        label = 'Medium Risk';
-        break;
-      case RiskLevel.high:
-        color = AppTheme.error;
-        label = 'High Risk';
-        break;
-      default:
-        color = Colors.grey;
-        label = 'Unknown';
-    }
-
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-      decoration: BoxDecoration(
-        color: color.withOpacity(0.1),
-        borderRadius: BorderRadius.circular(4),
-      ),
-      child: Text(
-        label,
-        style: TextStyle(
-          fontSize: 11,
-          fontWeight: FontWeight.w600,
-          color: color,
-        ),
-      ),
     );
   }
 
@@ -1890,6 +1660,350 @@ class _MissionMapPageState extends ConsumerState<MissionMapPage> {
             isDense: true,
             hintText: 'e.g., 12',
           ),
+        ),
+      ],
+    );
+  }
+}
+
+class _MissionMapCommentDialog extends ConsumerStatefulWidget {
+  final String missionMapId;
+  final String strategyName;
+
+  const _MissionMapCommentDialog({
+    required this.missionMapId,
+    required this.strategyName,
+  });
+
+  @override
+  ConsumerState<_MissionMapCommentDialog> createState() =>
+      _MissionMapCommentDialogState();
+}
+
+class _MissionMapCommentDialogState
+    extends ConsumerState<_MissionMapCommentDialog> {
+  final _formKey = GlobalKey<FormState>();
+  final _commentController = TextEditingController();
+  bool _isSaving = false;
+  bool _composing = false;
+
+  @override
+  void dispose() {
+    _commentController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _save() async {
+    if (!_formKey.currentState!.validate()) return;
+    setState(() => _isSaving = true);
+    try {
+      final firestoreService = ref.read(firestoreServiceProvider);
+      final currentUser = ref.read(currentUserProvider).value;
+      if (currentUser == null) throw Exception('User not authenticated');
+
+      final commentId = FirebaseFirestore.instance
+          .collection('user_comments')
+          .doc()
+          .id;
+
+      await firestoreService.saveUserComment(UserComment(
+        id: commentId,
+        userId: currentUser.uid,
+        entityId: widget.missionMapId,
+        entityType: 'mission_map',
+        commentText: _commentController.text.trim(),
+        parentCommentId: null,
+        createdAt: DateTime.now(),
+        updatedAt: DateTime.now(),
+      ));
+
+      if (mounted) {
+        Navigator.of(context).pop();
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Comment saved successfully!'),
+            backgroundColor: AppTheme.success,
+            duration: Duration(seconds: 2),
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error saving comment: $e'),
+            backgroundColor: AppTheme.error,
+            duration: const Duration(seconds: 3),
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isSaving = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      content: SizedBox(
+        width: 500,
+        child: Form(
+          key: _formKey,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: AppTheme.grayLight.withOpacity(0.3),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: AppTheme.grayLight),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(Icons.map_outlined,
+                        size: 16, color: AppTheme.primary),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text(
+                            'MISSION MAP',
+                            style: TextStyle(
+                              fontSize: 10,
+                              fontWeight: FontWeight.w600,
+                              color: AppTheme.grayMedium,
+                              letterSpacing: 0.5,
+                            ),
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            widget.strategyName,
+                            style: const TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w500,
+                              color: AppTheme.graphite,
+                            ),
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 8),
+              if (_composing) ...[                TextFormField(
+                  controller: _commentController,
+                  decoration: InputDecoration(
+                    labelText: 'Comment',
+                    hintText:
+                        'Share your thoughts, progress, or reflections...',
+                    alignLabelWithHint: true,
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(8),
+                      borderSide: const BorderSide(
+                          color: AppTheme.primary, width: 2),
+                    ),
+                    counterText: '',
+                  ),
+                  maxLines: 8,
+                  maxLength: 1000,
+                  style: const TextStyle(fontSize: 12),
+                  autofocus: true,
+                  validator: (value) {
+                    if (value == null || value.trim().isEmpty) {
+                      return 'Please enter your comment';
+                    }
+                    if (value.trim().length < 5) {
+                      return 'Comment must be at least 5 characters';
+                    }
+                    return null;
+                  },
+                ),
+                const SizedBox(height: 2),
+                Row(
+                  children: [
+                    ListenableBuilder(
+                      listenable: _commentController,
+                      builder: (ctx, _) => Text(
+                        '${_commentController.text.length}/1000',
+                        style: const TextStyle(
+                          fontSize: 11,
+                          color: AppTheme.grayMedium,
+                        ),
+                      ),
+                    ),
+                    const Spacer(),
+                    TextButton(
+                      onPressed: _isSaving
+                          ? null
+                          : () => setState(() {
+                                _composing = false;
+                                _commentController.clear();
+                              }),
+                      child: const Text('Cancel',
+                          style: TextStyle(fontSize: 12)),
+                    ),
+                    const SizedBox(width: 4),
+                    ElevatedButton(
+                      onPressed: _isSaving ? null : _save,
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: AppTheme.primary,
+                        foregroundColor: Colors.white,
+                        textStyle: const TextStyle(fontSize: 10),
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 12, vertical: 2),
+                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                        minimumSize: Size.zero,
+                      ),
+                      child: _isSaving
+                          ? const SizedBox(
+                              width: 16,
+                              height: 16,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                valueColor: AlwaysStoppedAnimation<Color>(
+                                    Colors.white),
+                              ),
+                            )
+                          : const Text('Submit'),
+                    ),
+                  ],
+                ),
+              ] else
+                GestureDetector(
+                  onTap: () => setState(() => _composing = true),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 12, vertical: 10),
+                    decoration: BoxDecoration(
+                      border: Border.all(color: AppTheme.grayLight),
+                      borderRadius: BorderRadius.circular(8),
+                      color: AppTheme.grayLight.withOpacity(0.2),
+                    ),
+                    child: const Row(
+                      children: [
+                        Icon(Icons.add_comment_outlined,
+                            size: 14, color: AppTheme.grayMedium),
+                        SizedBox(width: 8),
+                        Text(
+                          'Add a comment...',
+                          style: TextStyle(
+                              fontSize: 12, color: AppTheme.grayMedium),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              Builder(
+                builder: (ctx) {
+                  final commentsAsync = ref.watch(
+                    commentsForEntityStreamProvider(
+                        (widget.missionMapId, 'mission_map')),
+                  );
+                  return commentsAsync.when(
+                    data: (allComments) {
+                      final parents = allComments
+                          .where((c) => c.parentCommentId == null)
+                          .toList()
+                        ..sort(
+                            (a, b) => b.createdAt.compareTo(a.createdAt));
+                      if (parents.isEmpty) return const SizedBox.shrink();
+                      return Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Divider(height: 16),
+                          ConstrainedBox(
+                            constraints:
+                                const BoxConstraints(maxHeight: 240),
+                            child: SingleChildScrollView(
+                              child: Column(
+                                mainAxisSize: MainAxisSize.min,
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: _buildCommentWidgets(
+                                    allComments, parents),
+                              ),
+                            ),
+                          ),
+                        ],
+                      );
+                    },
+                    loading: () => const SizedBox.shrink(),
+                    error: (_, __) => const SizedBox.shrink(),
+                  );
+                },
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  List<Widget> _buildCommentWidgets(
+      List<UserComment> allComments, List<UserComment> parents) {
+    final widgets = <Widget>[];
+    for (final parent in parents) {
+      widgets.add(Padding(
+        padding: const EdgeInsets.only(bottom: 8),
+        child: _commentTile(parent),
+      ));
+      final replies = allComments
+          .where((c) => c.parentCommentId == parent.id)
+          .toList()
+        ..sort((a, b) => a.createdAt.compareTo(b.createdAt));
+      for (final reply in replies) {
+        widgets.add(Padding(
+          padding: const EdgeInsets.only(left: 8, bottom: 8),
+          child: Container(
+            padding: const EdgeInsets.only(left: 8),
+            decoration: const BoxDecoration(
+              border: Border(
+                left: BorderSide(color: AppTheme.primary, width: 2),
+              ),
+            ),
+            child: _commentTile(reply),
+          ),
+        ));
+      }
+    }
+    return widgets;
+  }
+
+  Widget _commentTile(UserComment comment) {
+    final now = DateTime.now();
+    final diff = now.difference(comment.createdAt);
+    final String timeAgo;
+    if (diff.inMinutes < 1) {
+      timeAgo = 'just now';
+    } else if (diff.inHours < 1) {
+      timeAgo = '${diff.inMinutes}m ago';
+    } else if (diff.inDays < 1) {
+      timeAgo = '${diff.inHours}h ago';
+    } else if (diff.inDays < 30) {
+      timeAgo = '${diff.inDays}d ago';
+    } else {
+      timeAgo = DateFormat('MMM d').format(comment.createdAt);
+    }
+    final authorName = ref.watch(userByIdProvider(comment.userId)).value?.fullName;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          authorName != null ? '$timeAgo · $authorName' : timeAgo,
+          style: const TextStyle(fontSize: 10, color: AppTheme.grayMedium),
+        ),
+        Text(
+          comment.commentText,
+          style: const TextStyle(fontSize: 12, color: AppTheme.graphite),
         ),
       ],
     );
